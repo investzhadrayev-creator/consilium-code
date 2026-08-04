@@ -67,6 +67,45 @@ def _peer_pe_excluded(data):
             and "trailing" in str(data.get("peer_median_pe_basis") or ""))
 
 
+def _peer_multiple_block(data):
+    """The peer median WITH the company multiple on the SAME basis, or an explicit refusal.
+
+    Two numbers on different bases are not a comparison, however confident the sentence between
+    them reads. The in-house peer median is trailing (EDGAR EPS x Tiingo price); the forward
+    company multiple comes from a different source and a different period. `comparable` is the
+    gate, computed once here rather than re-derived by every reader.
+    """
+    def _num(v):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    rows = data.get("peer_multiples")
+    rows = rows if isinstance(rows, list) else []
+    count = len([r for r in rows if isinstance(r, dict)]) or None
+
+    peer_med = _num(data.get("peer_median_pe"))
+    peer_basis = data.get("peer_median_pe_basis") or None
+
+    trailing_peer = "trailing" in str(peer_basis or "").lower()
+    if trailing_peer:
+        company = _num(data.get("pe_trailing_company"))
+        company_basis = data.get("pe_trailing_company_basis") or None
+    else:
+        company = _num(data.get("fwd_pe"))
+        company_basis = data.get("fwd_pe_basis") or None
+
+    comparable = bool(peer_med is not None and company is not None
+                      and count is not None and peer_basis and company_basis)
+    return {
+        "median": peer_med,
+        "count": count,
+        "basis": peer_basis,
+        "company": company,
+        "company_basis": company_basis,
+        "comparable": comparable,
+        "excluded_from_pe_cap": _peer_pe_excluded(data),
+    }
+
+
 def _pe_anchor_fwd(data):
     """The peer/sector anchor for the FORWARD P/E cap -- forward-basis inputs only.
 
@@ -1133,6 +1172,17 @@ def analyze(data, spec):
     if _category_f:
         _out_extra = dict(_category_f)
     return {
+        # v4.2.77 (g).4 — the peer multiple, published as ONE object so the number cannot travel
+        # without its basis. The in-house peer median is TRAILING (edgar_tiingo_trailing_inhouse);
+        # the forward company multiple comes from another source and another period, so
+        # `comparable` is decided HERE, once, and the human document is forbidden to compare when
+        # it is False. Placed in RESULT, not in base_inp: the first draft of this field went into
+        # the IVC input dict, where the renderer that reads it could never have seen it — caught by
+        # the pin that confronts what renderers read with what analyze() returns.
+        # `count` is None rather than 0 when peer rows are missing: a median over an unknown number
+        # of peers must not be published as a median over none.
+        "peer_multiple": _peer_multiple_block(data),
+
         "_FALLBACK": False, "_harness": True,
         "run_complete": True,
         "iv_computable": bool(_iv_ok),

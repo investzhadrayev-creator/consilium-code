@@ -1605,3 +1605,66 @@ class TestPeAnchorHasOneInput(unittest.TestCase):
         """The NFLX-2026-07-16 guard survives the cut: a wrong anchor is worse than no anchor."""
         self.assertIsNone(app._pe_anchor_fwd({"peer_median_pe": 95.09,
                                               "peer_median_pe_basis": "trailing"}))
+
+
+class TestPeerMultipleBlockMatchesBases(unittest.TestCase):
+    """v4.2.77 (g).4. The peer median and the company multiple must be published on ONE basis or
+    the comparison must be refused. The in-house peer median is TRAILING; the forward company
+    multiple comes from a different source and period. A sentence placed between two such numbers
+    does not make them comparable — it only makes the mismatch invisible."""
+
+    def test_a_trailing_peer_median_pairs_with_the_trailing_company_multiple(self):
+        b = app._peer_multiple_block({
+            "peer_median_pe": 24.6, "peer_median_pe_basis": "edgar_tiingo_trailing_inhouse",
+            "peer_multiples": [{"ticker": "A"}, {"ticker": "B"}, {"ticker": "C"}],
+            "pe_trailing_company": 31.2, "pe_trailing_company_basis": "alpha_vantage_trailing_reported",
+            "fwd_pe": 19.0, "fwd_pe_basis": "alpha_vantage"})
+        self.assertTrue(b["comparable"])
+        self.assertEqual(b["company"], 31.2, "the FORWARD multiple was paired with a trailing median")
+        self.assertEqual(b["count"], 3)
+
+    def test_no_company_multiple_on_that_basis_means_NOT_comparable(self):
+        b = app._peer_multiple_block({
+            "peer_median_pe": 24.6, "peer_median_pe_basis": "edgar_tiingo_trailing_inhouse",
+            "peer_multiples": [{"ticker": "A"}], "fwd_pe": 19.0, "fwd_pe_basis": "alpha_vantage"})
+        self.assertFalse(b["comparable"], "a trailing median was declared comparable to nothing")
+        self.assertIsNone(b["company"])
+
+    def test_missing_peer_rows_give_count_None_not_zero(self):
+        """A median over an unknown number of peers must not be published as a median over none."""
+        b = app._peer_multiple_block({"peer_median_pe": 24.6,
+                                      "peer_median_pe_basis": "edgar_tiingo_trailing_inhouse",
+                                      "pe_trailing_company": 31.2,
+                                      "pe_trailing_company_basis": "av_trailing"})
+        self.assertIsNone(b["count"])
+        self.assertFalse(b["comparable"], "an unknown N still produced a comparison")
+
+
+class TestPeerMultipleReachesRESULT(unittest.TestCase):
+    """v4.2.77. The first draft of `peer_multiple` was written into `base_inp`, the IVC input dict,
+    while the brief reads `res.peer_multiple` from RESULT. Both units were individually correct and
+    every unit test of the block passed — the field simply never arrived. Same shape as the
+    gps_quant case: a contract asserted only where it is PRODUCED, never where it is CONSUMED.
+    So this pin drives analyze() and looks at what a renderer would actually see.
+    """
+
+    def test_the_block_is_published_in_RESULT_not_in_the_ivc_inputs(self):
+        d = mature_data()
+        d.update({"peer_median_pe": 24.6,
+                  "peer_median_pe_basis": "edgar_tiingo_trailing_inhouse",
+                  "peer_multiples": [{"ticker": "A"}, {"ticker": "B"}],
+                  "pe_trailing_company": 31.2,
+                  "pe_trailing_company_basis": "alpha_vantage_trailing_reported"})
+        r = analyze(d, mature_spec())
+        self.assertIn("peer_multiple", r, "the renderer's field never reaches RESULT")
+        self.assertEqual(r["peer_multiple"]["count"], 2)
+        self.assertTrue(r["peer_multiple"]["comparable"])
+        self.assertEqual(r["peer_multiple"]["basis"], "edgar_tiingo_trailing_inhouse")
+
+    def test_a_run_without_peers_still_publishes_the_block_as_a_refusal(self):
+        """Absence must be STATED, not omitted: a missing key and a refused comparison look the
+        same to a renderer that only checks truthiness, and one of them is a pipeline defect."""
+        r = analyze(mature_data(), mature_spec())
+        self.assertIn("peer_multiple", r)
+        self.assertFalse(r["peer_multiple"]["comparable"])
+        self.assertIsNone(r["peer_multiple"]["count"])

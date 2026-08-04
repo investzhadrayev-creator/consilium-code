@@ -73,6 +73,24 @@ const RESULT = {
   market_context: { capex_deployed_2y: 3480.0, capex_intensity_pct: 8.4,
                     revision_vs_price: { erb_90d: 0.031, rel_strength_6m: -0.182,
                                          divergence: true } },
+  // v4.2.77 (g).4: peer median and company multiple on ONE basis, with N. The fixture carries the
+  // trailing pair because that is what the pipeline actually produces (edgar_tiingo_trailing_inhouse).
+  peer_multiple: { median: 24.6, count: 5, basis: 'edgar_tiingo_trailing_inhouse',
+                   company: 31.2, company_basis: 'alpha_vantage_trailing_reported',
+                   comparable: true, excluded_from_pe_cap: true },
+  // v4.2.77 (g).3: the pack as the merge actually shapes it — themed sections, some dated, some
+  // refused. A fixture of clean dated bullets would have proved only that a regex matches a regex.
+  _fact_pack: [
+    '## 5. News catalysts',
+    '* 2026-06-18 — announced a multi-year cloud contract with a named counterparty.',
+    '* Management repeatedly described demand as strong.',
+    '* [UNVERIFIED] — analyst day date not found in the search results.',
+    '## 6. Moat evidence',
+    '* 2026-05-02 — competitor launched a rival tier.',
+    '## 12. Latest reported quarter',
+    '* Q2 2026 — backlog reported at $638bn on the earnings call.',
+    '* [TERMINAL-ONLY: professional-terminal data, not reachable by search]',
+  ].join('\n'),
 };
 
 async function render(over) {
@@ -80,6 +98,14 @@ async function render(over) {
   const $ = (name) => ({ first: () => ({ json:
     name === 'Run Code' ? res
   : name === 'Parse DI' ? (res._di_payload || { required_mos_rung_pct: 20, rung_signals: [] })
+  : name === 'Extract Memo' ? { memo_text: 'memo', memo_ok: true,
+      business_profile: (res._business_profile === undefined
+        ? 'Компания зарабатывает на подписке. Рост идёт из международных рынков. '
+          + 'Главный вопрос — удержится ли цена подписки.'
+        : res._business_profile) }
+  : name === 'Verify FACT_PACK Entity' ? (res._fact_pack === undefined
+      ? (() => { throw new Error('no pack on this run'); })()
+      : { choices: [{ message: { content: res._fact_pack } }] })
   : name === 'Collect Usage' ? { council: (res._council === undefined
       ? { participated: ['Stage 2a Claude','Stage 2b Claude','Stage 4 Gemini','Stage 5 Auditor','Stage 6 Arbiter'],
           absent: [], count: 5, full_slate: true }
@@ -102,11 +128,13 @@ async function renderMd(over) { return (await render(over)).json.brief_md; }
   // named by hand arrived, and nobody diffed the output against the mockup. This list is that diff,
   // performed by machine on every run.
   const SPEC_SECTIONS = [
+    '## Что это за бизнес',
     '## Покупать?',
     '## Инвестиционный тезис',
     '## Сколько компания стоит?',
     '## По какой цене мы бы купили?',
     '## Настроение рынка и главные новости',
+    '## Катализаторы с датами',
     '## Что у компании хорошо, а что плохо',
     '## Почему мы считаем именно так?',
     '## Что может изменить ответ?',
@@ -392,6 +420,8 @@ async function renderMd(over) { return (await render(over)).json.brief_md; }
     assert(/12\.6%|12\.57%|12,6/.test(t) || /15\.7%|16\.1%/.test(t) || /%/.test(t),
       'the thesis names no measured number at all');
     assert(/8\.4%/.test(t), 'the capex leg lost its intensity figure');
+    assert(!/\$3480|\$3,480/.test(t),
+      'an absolute capex figure was stamped with a dollar sign whose unit is unverified');
     assert(/3\.1%/.test(t) && /-18\.2%/.test(t), 'the revisions-vs-price pair lost its numbers');
   });
 
@@ -414,6 +444,80 @@ async function renderMd(over) { return (await render(over)).json.brief_md; }
       assert(/Тезис не построен/.test(t), 'a run with no measured factor still produced prose');
       assert(/отсутствие данных, а не вывод/.test(t),
         'the absence must not read as a finding about the company');
+    });
+
+  await check('v4.2.77 (g).4: the peer line prints N, both numbers and the shared basis',
+    async () => {
+      assert(/Медиана мультипликатора 5 сопоставимых компаний/.test(md),
+        'N is missing — a median over five names would read as a median over the market');
+      assert(/24\.60/.test(md) && /31\.20/.test(md), 'one of the two multiples is absent');
+      assert(/edgar_tiingo_trailing_inhouse/.test(md), 'the shared basis is not stated');
+      assert(!/сектор/i.test(md.slice(md.indexOf('Медиана мультипликатора'),
+                                      md.indexOf('## Сколько компания стоит?'))),
+        'the word "sector" came back — the number would borrow a breadth it does not have');
+      assert(/дороже сопоставимых/.test(md), 'the direction does not follow 31.2 > 24.6');
+    });
+
+  await check('v4.2.77 (g).4: mismatched bases REFUSE the comparison', async () => {
+    // A trailing median against a forward multiple is the defect that produced a 143x cap.
+    const bad = await renderMd({ peer_multiple: { median: 24.6, count: 5,
+      basis: 'edgar_tiingo_trailing_inhouse', company: 31.2, company_basis: 'alpha_vantage',
+      comparable: false, excluded_from_pe_cap: true } });
+    assert(/не сведены к одному базису/.test(bad), 'two bases were compared anyway');
+    assert(!/против 31\.20/.test(bad), 'the refused comparison still printed its numbers');
+    assert(/отказ от сравнения, а не утверждение/.test(bad),
+      'the refusal must not read as a finding about valuation');
+  });
+
+  await check('v4.2.77 (g).4: an unknown N cannot be printed as a comparison', async () => {
+    const noN = await renderMd({ peer_multiple: { median: 24.6, count: null,
+      basis: 'edgar_tiingo_trailing_inhouse', company: 31.2,
+      company_basis: 'alpha_vantage_trailing_reported', comparable: false,
+      excluded_from_pe_cap: true } });
+    assert(/число компаний в ней неизвестно/.test(noN), 'a median over an unknown N was compared');
+  });
+
+  await check('v4.2.77 (g).3: only DATED lines from sections 5 and 12 become catalysts',
+    async () => {
+      const t = md.slice(md.indexOf('## Катализаторы с датами'),
+                         md.indexOf('## Что у компании хорошо'));
+      assert(/2026-06-18/.test(t), 'a dated news event was dropped');
+      assert(/Q2 2026/.test(t), 'section 12 (the reported quarter) never reached the section');
+      assert(!/described demand as strong/.test(t),
+        'an UNDATED claim was published as a catalyst — the reader cannot calendar it');
+      assert(!/\[UNVERIFIED\]|TERMINAL-ONLY/.test(t), 'a refusal marker was printed as an event');
+      assert(!/rival tier/.test(t),
+        'section 6 leaked in: the catalyst list must be sections 5 and 12, not everything dated');
+    });
+
+  await check('v4.2.77 (g).3: three absences print three DIFFERENT sentences', async () => {
+    // "unreachable source", "found nothing" and "never executed" are not the same fact, and a
+    // reader who cannot tell them apart reads all three as "this company has no catalysts".
+    const noPack = md.indexOf('## Катализаторы') >= 0
+      ? await renderMd({ _fact_pack: undefined }) : null;
+    const failedCall = await renderMd({ _fact_pack: '## SOURCE_CALL_FAILED: Stage 1 FP news\n\ndead' });
+    const empty = await renderMd({ _fact_pack: '## 5. News catalysts\n\nNothing with a date here.' });
+    assert(/до этой секции не доехал/.test(noPack), 'a missing pack does not name itself');
+    assert(/источник был недоступен/.test(failedCall), 'a failed news call reads as an empty world');
+    assert(/событий с датами не вернул/.test(empty), 'an empty search reads as a pipeline failure');
+    assert(!/источник был недоступен/.test(empty), 'two different absences printed the same sentence');
+  });
+
+  await check('v4.2.77 (g).1: the business description comes FIRST and is labelled as judgment',
+    async () => {
+      assert(md.indexOf('## Что это за бизнес') < md.indexOf('## Покупать?'),
+        'the description must precede the verdict — the reader meets the company first');
+      assert(/зарабатывает на подписке/.test(md), 'the captured profile never reached the brief');
+      assert(/Описание — суждение модели/.test(md),
+        'the label is missing: a model description would stand beside arithmetic unmarked');
+    });
+
+  await check('v4.2.77 (g).1: a missing profile is a pipeline gap, not a fact about the company',
+    async () => {
+      const bare = await renderMd({ _business_profile: null });
+      const t = bare.slice(bare.indexOf('## Что это за бизнес'), bare.indexOf('## Покупать?'));
+      assert(/пропуск конвейера/.test(t), 'the absence reads as a statement about the company');
+      assert(!/зарабатывает на подписке/.test(t), 'a stale profile survived the empty case');
     });
 
 console.log('\n' + (failed ? 'FAILED' : 'OK') + ' — ' + passed + ' passed, ' + failed + ' failed');

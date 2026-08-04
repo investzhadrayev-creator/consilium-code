@@ -384,6 +384,41 @@ CASES = [
      "  if (true) {",
      "test_brief_render.js",
      "an unmeasured run states the absence instead of inventing a thesis"),
+    ("peer-01", "microservice/app.py",
+     "    comparable = bool(peer_med is not None and company is not None",
+     "    comparable = bool(True or peer_med is not None and company is not None",
+     "test_harness.TestPeerMultipleBlockMatchesBases.test_no_company_multiple_on_that_basis_means_NOT_comparable",
+     "two multiples on different bases are never declared comparable"),
+    ("peer-02", "microservice/app.py",
+     "    count = len([r for r in rows if isinstance(r, dict)]) or None",
+     "    count = len([r for r in rows if isinstance(r, dict)])",
+     "test_harness.TestPeerMultipleBlockMatchesBases.test_missing_peer_rows_give_count_None_not_zero",
+     "an unknown peer count is an absence, never a zero"),
+    ("peer-03", "workflow/WORKFLOW.json",
+     "  if (_pm.comparable) {",
+     "  if (true) {",
+     "test_brief_render.js",
+     "the brief refuses the comparison the RESULT refused"),
+    ("cata-01", "workflow/WORKFLOW.json",
+     "        if (!_DATE.test(line)) continue;",
+     "        if (false) continue;",
+     "test_brief_render.js",
+     "an undated claim never becomes a calendar event"),
+    ("cata-02", "workflow/WORKFLOW.json",
+     "(5|12)",
+     "(5|6|12)",
+     "test_brief_render.js",
+     "the catalyst list is sections 5 and 12, not everything dated in the pack"),
+    ("cata-03", "workflow/WORKFLOW.json",
+     "  } else if (_sourceFailed) {",
+     "  } else if (false) {",
+     "test_brief_render.js",
+     "an unreachable source and an empty search print different sentences"),
+    ("peer-04", "microservice/app.py",
+     '        "peer_multiple": _peer_multiple_block(data),',
+     '        "peer_multiple_INPUTS_ONLY": _peer_multiple_block(data),',
+     "test_harness.TestPeerMultipleReachesRESULT.test_the_block_is_published_in_RESULT_not_in_the_ivc_inputs",
+     "the block is published where the renderer reads it, not merely computed"),
 ]
 
 
@@ -449,6 +484,19 @@ def main(argv):
     # "a value that looks like a measurement but isn't". Now it is a measurement.
     print("catalogue: %d cases, %d RED, %d SKIP, %d GREEN"
           % (len(cases), len(cases) - len(skipped) - len(empty), len(skipped), len(empty)))
+    # v4.2.77: a SKIP used to print the all-clear line anyway and exit 0. `SKIP` in this catalogue
+    # means the mutation's anchor did not match — the case was never applied, so the pin it targets
+    # was never probed. That is a REFUSAL OF THE CHECK, not a neutral outcome (rule 9), and it was
+    # printing the same word as a pass. Exactly the disease this repo already cured in run_tests.py,
+    # alive here in the tool that certifies the pins. Order matters: the unrun cases are named
+    # BEFORE any all-clear, and they outrank it.
+    if skipped:
+        print("NOT VERIFIED — these cases never applied (anchor did not match), so the pins they "
+              "target were not probed:")
+        for cid, g in skipped:
+            print("  %s: %s" % (cid, g))
+        print("A mutation that did not run has proved nothing about its pin.")
+        return 1
     print("all probed pins went RED — each can actually fail")
     return 0
 

@@ -56,7 +56,8 @@ def run_node_suite():
                 os.path.join(TESTS_DIR, "test_fp_merge.js"),
                 os.path.join(TESTS_DIR, "test_lite_assemble.js"),
                 os.path.join(TESTS_DIR, "test_parse_verdict.js"),
-                os.path.join(TESTS_DIR, "test_e2e_result_vs_tables.js")]
+                os.path.join(TESTS_DIR, "test_e2e_result_vs_tables.js"),
+                os.path.join(TESTS_DIR, "test_extract_memo.js")]
     try:
         subprocess.run(["node", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
