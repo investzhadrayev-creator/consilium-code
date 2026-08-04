@@ -1,0 +1,998 @@
+[
+  {
+    "_FALLBACK": false,
+    "_harness": true,
+    "base_determinism": {
+      "discount_rate_used": 0.12,
+      "dividend_growth_used": 0.10476732816565715,
+      "dividend_yield_used": 0,
+      "fade_used": true,
+      "flags": [
+        "SINGLE_LEG_RUN: the FCF leg was not built (levered_fcf_per_share <= 0 (-8.128345916266301) — no positive FCF base to grow). The verdict rests on the GAAP leg alone — the dual-basis cross-check that normally picks the more conservative of two answers did not run."
+      ],
+      "llm_disc": null,
+      "llm_terminal_g": null,
+      "llm_weights": {
+        "base": 0.5,
+        "bear": 0.25,
+        "bull": 0.25
+      },
+      "scenario_weights_used": {
+        "base": 0.5,
+        "bear": 0.25,
+        "bull": 0.25
+      },
+      "terminal_growth_used": 0.04,
+      "years_used": 10
+    },
+    "bull_bear": {
+      "bear_total": -18.84,
+      "bull_total": 43.46,
+      "net_skew": 24.62,
+      "rows": [
+        {
+          "delta_implied_cagr_pp": 6.68,
+          "delta_iv": 100.67,
+          "delta_iv_pct": 79.59,
+          "expected_impact": 30.2,
+          "label": "OCI hypergrowth extends corridor upper bound",
+          "probability": 0.3,
+          "side": "BULL"
+        },
+        {
+          "delta_implied_cagr_pp": 5.29,
+          "delta_iv": 75.09,
+          "delta_iv_pct": 59.36,
+          "expected_impact": 15.02,
+          "label": "FY26 total revenue grew 17% to $67.4B with cloud revenue up 39% to $34.0B, evidencing acceleration not deceleration",
+          "probability": 0.2,
+          "side": "BULL"
+        },
+        {
+          "delta_implied_cagr_pp": -4.6,
+          "delta_iv": -43.79,
+          "delta_iv_pct": -34.62,
+          "expected_impact": -10.95,
+          "label": "Post-earnings selloff: rel_strength_6m -23.3% and rel_strength_12m -64.5% despite headline growth, multiple compression risk persists",
+          "probability": 0.25,
+          "side": "BEAR"
+        },
+        {
+          "delta_implied_cagr_pp": -1.75,
+          "delta_iv": -18.66,
+          "delta_iv_pct": -14.75,
+          "expected_impact": -5.6,
+          "label": "Capex exploded from $21.215B (FY25) to $55.663B (FY26) for AI infra buildout, crushing levered FCF to -$23.686B, risking growth funded by debt",
+          "probability": 0.3,
+          "side": "BEAR"
+        },
+        {
+          "delta_implied_cagr_pp": -1.04,
+          "delta_iv": -11.44,
+          "delta_iv_pct": -9.04,
+          "expected_impact": -2.29,
+          "label": "EPS growth (eps_cagr_5y 5.21%) lags revenue growth (rev_cagr_5y 10.72%) due to rising interest expense ($3.578B->$4.599B FY25->FY26) and dilution risk from AI-related debt",
+          "probability": 0.2,
+          "side": "BEAR"
+        },
+        {
+          "delta_implied_cagr_pp": -0.63,
+          "delta_iv": -7.03,
+          "delta_iv_pct": -5.56,
+          "expected_impact": -1.76,
+          "label": "RPO backlog $638B (9.5x FY26 revenue) de-risks multi-year revenue visibility, supports premium terminal multiple",
+          "probability": 0.25,
+          "side": "BULL"
+        }
+      ],
+      "sum_expected_impact": 24.62
+    },
+    "central_lens": {
+      "advisory_only": true,
+      "computed_on": "gaap_base",
+      "delta_iv_vs_verdict_pct": -12.6,
+      "delta_vs": "verdict_leg(gaap_eps)",
+      "flags": [],
+      "future_pe_basis": "min(pe_median_5y, pe_median_10y) — NO 25 ceiling",
+      "future_pe_used": 27.53,
+      "fv10_per_share": 343.26,
+      "gap_decomposition": {
+        "base_change": 0,
+        "bases_differ": false,
+        "growth_change": -15.97,
+        "multiple_change": 0,
+        "multiple_differs": false,
+        "note": "each figure is the IV change from swapping ONE factor to its central value; they do not sum to the total gap because the factors interact",
+        "verdict_iv": 126.49
+      },
+      "growth_basis": "median of annual revenue increments (5y window)",
+      "growth_used": 0.08379751137629587,
+      "implied_cagr_pct": 9.24,
+      "iv": 110.52,
+      "note": "CENTRAL LENS — advisory. No verdict, alert or MoS rung reads this."
+    },
+    "dual_basis": null,
+    "flags": [
+      "peer_median_pe_23.8_EXCLUDED_from_cap_basis_is_trailing_not_forward",
+      "growth_divergence: LLM base g 15.0% vs anchor 10.5% (4.5pp > 3pp)",
+      "pe_divergence: LLM base future_pe 22.0 vs anchor 27.5 (5.5 > 5 points)",
+      "SINGLE_LEG_RUN: the FCF leg was not built (levered_fcf_per_share <= 0 (-8.128345916266301) — no positive FCF base to grow). The verdict rests on the GAAP leg alone — the dual-basis cross-check that normally picks the more conservative of two answers did not run."
+    ],
+    "fp_vectors": {
+      "data_questionable": true,
+      "pct": 0.889,
+      "threshold": 0.3,
+      "threshold_origin": "PROVISIONAL calibration, n=4 (1 clean); recalibrate at 6 clean runs",
+      "total": 9,
+      "unverified": 8
+    },
+    "fv10_verdict_leg": 392.85,
+    "gates": {
+      "hurdle_gate": "FAIL"
+    },
+    "gps": {
+      "_max_note": null,
+      "blocks": [
+        {
+          "evidence": {
+            "eps_cagr5": 0.05210450082687812,
+            "max_quant": 16,
+            "pts": {
+              "durability": 2,
+              "eps": 0,
+              "rev": 2
+            },
+            "rev_cagr3": 0.10476732816565715,
+            "rev_cagr5": 0.10721151086579872
+          },
+          "max": 16,
+          "name": "A (growth)",
+          "points": 4
+        },
+        {
+          "evidence": "rpo 638000000000 (RPO of $638B vs FY26 revenue of $67.357B, ~9.5x coverage) signals long multi-year revenue runway",
+          "max": 4,
+          "name": "A_runway",
+          "points": 4
+        },
+        {
+          "evidence": {
+            "de_haircut_applied": false,
+            "fcf_conversion": -1.3862000351144144,
+            "max": 15,
+            "op_margin_series": [
+              0.3416860711261643,
+              0.33679506386004116,
+              0.3426061864020655,
+              0.355687519197297,
+              0.3758245015934188,
+              0.2574458058435438,
+              0.262101133042399,
+              0.2898925624516153,
+              0.30798445965957594,
+              0.30592217586887777
+            ],
+            "pts": {
+              "fcf_conv": 0,
+              "margin_trend": 0,
+              "roe": 5
+            },
+            "roe": 0.4019713936200245,
+            "source": "deterministic from payload.roe / op_margin_series / fcf_conversion (GROUND_TRUTH)"
+          },
+          "max": 15,
+          "name": "B (profitability)",
+          "points": 5
+        },
+        {
+          "evidence": {
+            "fwd_pe_vs_sector": 0.674496644295302,
+            "implied_cagr": 0.1072,
+            "max": 15,
+            "peg": 0.734,
+            "pts": {
+              "fwd_pe": 5,
+              "icagr": 0,
+              "peg": 5
+            }
+          },
+          "max": 15,
+          "name": "C (valuation)",
+          "points": 10
+        },
+        {
+          "evidence": {
+            "de": 0,
+            "debt_uncertain": false,
+            "dilution_cagr": -0.007252007581426523,
+            "max": 10,
+            "pts": {
+              "de": 4,
+              "sbc": 1,
+              "shares": 3
+            },
+            "sbc_rev": 0.07142539008566295
+          },
+          "max": 10,
+          "name": "D (balance sheet)",
+          "points": 8
+        },
+        {
+          "evidence": "cloud revenue (IaaS+SaaS) reached $34.0 billion, up 39% YoY, with Cloud Infrastructure revenue growing 93% YoY (FY2026), on top of integrated stack (DB+apps+infra) and license support renewal-based recurring revenue model",
+          "max": 15,
+          "name": "E_moat",
+          "points": 11
+        },
+        {
+          "evidence": {
+            "erb_90d": 0.028,
+            "max_quant": 10,
+            "pts": {
+              "erb": 2,
+              "rel_strength": 0
+            },
+            "rel_strength_6m": -0.23268682794514162
+          },
+          "max": 10,
+          "name": "F (momentum)",
+          "points": 2
+        },
+        {
+          "evidence": "revenue growth accelerated from 8.38% (FY24) to 17.35% (FY25) to 17.35%+ (FY26), with EBITDA margin expanding from 50.35% (FY24) to 54.26% (FY25)",
+          "max": 5,
+          "name": "F_forecast_trend",
+          "points": 4
+        },
+        {
+          "evidence": "capex surged from $21.215B (FY25) to $55.663B (FY26, +162%) funding AI infra buildout, while buybacks were cut to $95M (FY26) from $600M (FY25) and dividends grew from $1.70 to $2.00/share (dps_series)",
+          "max": 5,
+          "name": "G_capalloc",
+          "points": 3
+        },
+        {
+          "evidence": "analyst buy_share_latest 0.816 and price_target mean $248.15 vs current_price $141.85 (75% implied upside), though rel_strength_6m -23.27% and short_shares up 19.31% biweekly to 50,068,756 shows near-term negative momentum",
+          "max": 5,
+          "name": "H_sentiment",
+          "points": 3
+        }
+      ],
+      "max": 100,
+      "max_nominal": 100,
+      "quant_detail": {
+        "A": {
+          "eps_cagr5": 0.05210450082687812,
+          "max_quant": 16,
+          "pts": {
+            "durability": 2,
+            "eps": 0,
+            "rev": 2
+          },
+          "rev_cagr3": 0.10476732816565715,
+          "rev_cagr5": 0.10721151086579872
+        },
+        "B": {
+          "de_haircut_applied": false,
+          "fcf_conversion": -1.3862000351144144,
+          "max": 15,
+          "op_margin_series": [
+            0.3416860711261643,
+            0.33679506386004116,
+            0.3426061864020655,
+            0.355687519197297,
+            0.3758245015934188,
+            0.2574458058435438,
+            0.262101133042399,
+            0.2898925624516153,
+            0.30798445965957594,
+            0.30592217586887777
+          ],
+          "pts": {
+            "fcf_conv": 0,
+            "margin_trend": 0,
+            "roe": 5
+          },
+          "roe": 0.4019713936200245,
+          "source": "deterministic from payload.roe / op_margin_series / fcf_conversion (GROUND_TRUTH)"
+        },
+        "C": {
+          "fwd_pe_vs_sector": 0.674496644295302,
+          "implied_cagr": 0.1072,
+          "max": 15,
+          "peg": 0.734,
+          "pts": {
+            "fwd_pe": 5,
+            "icagr": 0,
+            "peg": 5
+          }
+        },
+        "D": {
+          "de": 0,
+          "debt_uncertain": false,
+          "dilution_cagr": -0.007252007581426523,
+          "max": 10,
+          "pts": {
+            "de": 4,
+            "sbc": 1,
+            "shares": 3
+          },
+          "sbc_rev": 0.07142539008566295
+        },
+        "F": {
+          "erb_90d": 0.028,
+          "max_quant": 10,
+          "pts": {
+            "erb": 2,
+            "rel_strength": 0
+          },
+          "rel_strength_6m": -0.23268682794514162
+        }
+      },
+      "total": 54
+    },
+    "growth_anchor": {
+      "base_growth_used": 0.10476732816565715,
+      "basis": "min(rev_cagr_3y, rev_cagr_5y) capped 20% (deterministic anchor)",
+      "flags": [
+        "growth_divergence: LLM base g 15.0% vs anchor 10.5% (4.5pp > 3pp)"
+      ],
+      "llm_base_g": 0.15,
+      "rev_cagr_3y": 0.10476732816565715,
+      "rev_cagr_5y": 0.10721151086579872
+    },
+    "iv_computable": true,
+    "ivc_base": {
+      "buy_threshold_hurdle": 126.49,
+      "engine": "eps",
+      "eps_terminal": 13.268,
+      "eps_terminal_dilution_adj": 14.2697,
+      "flags": [],
+      "fv10_per_share": 392.85,
+      "hurdle_gate": "FAIL",
+      "implied_cagr_pct": 10.72,
+      "inputs": {
+        "base_per_share": 5.863761153054221,
+        "dilution_cagr": -0.007252007581426523,
+        "discount_rate": 0.12,
+        "div_yield": 0,
+        "fade": true,
+        "future_pe": 27.53,
+        "g": 0.10476732816565715,
+        "hurdle": 0.12,
+        "price": 141.85,
+        "terminal_g": 0.04
+      },
+      "intrinsic_value": 126.49,
+      "mos_ladder": [
+        {
+          "buy_threshold_price": 114.99,
+          "discount_to_current_pct": 18.94,
+          "implied_cagr_at_threshold_pct": 13.07,
+          "mos_target_pct": 10,
+          "reached": false,
+          "selftest_mos_at_threshold_ok": true
+        },
+        {
+          "buy_threshold_price": 105.4,
+          "discount_to_current_pct": 25.69,
+          "implied_cagr_at_threshold_pct": 14.06,
+          "mos_target_pct": 20,
+          "reached": false,
+          "selftest_mos_at_threshold_ok": true
+        },
+        {
+          "buy_threshold_price": 97.3,
+          "discount_to_current_pct": 31.41,
+          "implied_cagr_at_threshold_pct": 14.98,
+          "mos_target_pct": 30,
+          "reached": false,
+          "selftest_mos_at_threshold_ok": true
+        }
+      ],
+      "mos_pct": -10.83,
+      "pe_cap_effective": 27.53,
+      "self_tests": {
+        "hurdle_identity_ok": true,
+        "iv_recompute_ok": true,
+        "mos_cagr_sign_identity_ok": true,
+        "pe_cap_checked": true
+      },
+      "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+      "year5_reference": 156.33,
+      "years": 10
+    },
+    "market_context": {
+      "multiple_compression": {
+        "_why_no_divergence": "no forward EPS estimate available; a trailing-window comparison would be an artifact, not a signal",
+        "divergence_available": false,
+        "fear_discount_setup": false,
+        "fwd_pe": 16.08,
+        "multiple_discount_pct": 41.6,
+        "pe_hist_median": 27.53
+      },
+      "reinvestment_quality": {
+        "_note": "each capex $ producing operating income = Google-2004, not a bubble; negative or near-zero = the fear may be right",
+        "capex_deployed_2y": 76878000000,
+        "capex_intensity_pct": 82.6,
+        "delta_operating_income_2y": 5253000000,
+        "incremental_roic_pct": 6.8
+      },
+      "revision_vs_price": {
+        "_note": "positive revisions into a falling price = market fear vs analyst evidence",
+        "divergence": true,
+        "erb_90d": 0.028,
+        "rel_strength_6m": -0.23268682794514162
+      }
+    },
+    "mos_ladder": [
+      {
+        "buy_threshold_price": 114.99,
+        "discount_to_current_pct": 18.94,
+        "implied_cagr_at_threshold_pct": 13.07,
+        "mos_target_pct": 10,
+        "reached": false,
+        "selftest_mos_at_threshold_ok": true
+      },
+      {
+        "buy_threshold_price": 105.4,
+        "discount_to_current_pct": 25.69,
+        "implied_cagr_at_threshold_pct": 14.06,
+        "mos_target_pct": 20,
+        "reached": false,
+        "selftest_mos_at_threshold_ok": true
+      },
+      {
+        "buy_threshold_price": 97.3,
+        "discount_to_current_pct": 31.41,
+        "implied_cagr_at_threshold_pct": 14.98,
+        "mos_target_pct": 30,
+        "reached": false,
+        "selftest_mos_at_threshold_ok": true
+      }
+    ],
+    "mos_ladder_leg": "gaap_eps",
+    "mos_pct_by_leg": {},
+    "mos_pct_verdict_leg": null,
+    "pe_anchor": {
+      "base_future_pe_used": 27.53,
+      "basis": "min(pe_median_5y, pe_median_10y, 30) — deterministic, no floor",
+      "flags": [
+        "pe_divergence: LLM base future_pe 22.0 vs anchor 27.5 (5.5 > 5 points)"
+      ],
+      "llm_base_pe": 22,
+      "pe_median_10y": 27.53,
+      "pe_median_5y": 33.18
+    },
+    "pe_cap": {
+      "anchor_used": 33,
+      "anchors_available": true,
+      "flags": [
+        "peer_median_pe_23.8_EXCLUDED_from_cap_basis_is_trailing_not_forward"
+      ]
+    },
+    "peer_multiple": {
+      "basis": "edgar_tiingo_trailing_inhouse",
+      "company": 24.33,
+      "company_basis": "alpha_vantage_trailing_reported",
+      "comparable": true,
+      "count": 3,
+      "excluded_from_pe_cap": true,
+      "median": 23.84,
+      "rows": [
+        {
+          "fy_end": "2026-06-30",
+          "market_cap": 3634455450000,
+          "pe_trailing": 27.17,
+          "revenue_ltm": 331839000000,
+          "ticker": "MSFT"
+        },
+        {
+          "fy_end": "2026-01-31",
+          "market_cap": 177768200000,
+          "pe_trailing": 23.84,
+          "revenue_ltm": 41525000000,
+          "ticker": "CRM"
+        },
+        {
+          "fy_end": "2025-12-31",
+          "market_cap": 214694690849,
+          "pe_trailing": 20.27,
+          "revenue_ltm": 67535000000,
+          "ticker": "IBM"
+        }
+      ]
+    },
+    "pwfv": 134.5,
+    "pwfv_by_leg": {
+      "fcf_per_share": null,
+      "gaap_eps": 134.5
+    },
+    "pwfv_leg": "gaap_eps",
+    "reverse_dcf": {
+      "actual_eps_cagr_5y": 0.05210450082687812,
+      "actual_rev_cagr_3y": 0.10476732816565715,
+      "actual_rev_cagr_5y": 0.10721151086579872,
+      "advisory_only": true,
+      "at_hurdle_pct": 12,
+      "basis": "growth that makes implied CAGR equal the hurdle at the current price, verdict multiple/fade/dilution held fixed",
+      "compare_against": "actual_eps_cagr_5y (same quantity as the solve); actual_rev_cagr_* is a different series, shown for context",
+      "future_pe_held": 27.53,
+      "g_implied_at_current_price": 0.1228,
+      "selftest_reverse_matches_forward": true
+    },
+    "run_complete": true,
+    "scenarios": {
+      "base": {
+        "overrides": {},
+        "result": {
+          "buy_threshold_hurdle": 126.49,
+          "engine": "eps",
+          "eps_terminal": 13.268,
+          "eps_terminal_dilution_adj": 14.2697,
+          "flags": [],
+          "fv10_per_share": 392.85,
+          "hurdle_gate": "FAIL",
+          "implied_cagr_pct": 10.72,
+          "inputs": {
+            "base_per_share": 5.863761153054221,
+            "dilution_cagr": -0.007252007581426523,
+            "discount_rate": 0.12,
+            "div_yield": 0,
+            "fade": true,
+            "future_pe": 27.53,
+            "g": 0.10476732816565715,
+            "hurdle": 0.12,
+            "price": 141.85,
+            "terminal_g": 0.04
+          },
+          "intrinsic_value": 126.49,
+          "mos_ladder": [
+            {
+              "buy_threshold_price": 114.99,
+              "discount_to_current_pct": 18.94,
+              "implied_cagr_at_threshold_pct": 13.07,
+              "mos_target_pct": 10,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 105.4,
+              "discount_to_current_pct": 25.69,
+              "implied_cagr_at_threshold_pct": 14.06,
+              "mos_target_pct": 20,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 97.3,
+              "discount_to_current_pct": 31.41,
+              "implied_cagr_at_threshold_pct": 14.98,
+              "mos_target_pct": 30,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            }
+          ],
+          "mos_pct": -10.83,
+          "pe_cap_effective": 27.53,
+          "self_tests": {
+            "hurdle_identity_ok": true,
+            "iv_recompute_ok": true,
+            "mos_cagr_sign_identity_ok": true,
+            "pe_cap_checked": true
+          },
+          "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+          "year5_reference": 156.33,
+          "years": 10
+        },
+        "weight": 0.5
+      },
+      "bear": {
+        "overrides": {
+          "future_pe": 18,
+          "growth_rate": 0.08
+        },
+        "result": {
+          "buy_threshold_hurdle": 70.5,
+          "engine": "eps",
+          "eps_terminal": 11.3107,
+          "eps_terminal_dilution_adj": 12.1647,
+          "flags": [],
+          "fv10_per_share": 218.96,
+          "hurdle_gate": "FAIL",
+          "implied_cagr_pct": 4.44,
+          "inputs": {
+            "base_per_share": 5.863761153054221,
+            "dilution_cagr": -0.007252007581426523,
+            "discount_rate": 0.12,
+            "div_yield": 0,
+            "fade": true,
+            "future_pe": 18,
+            "g": 0.08,
+            "hurdle": 0.12,
+            "price": 141.85,
+            "terminal_g": 0.04
+          },
+          "intrinsic_value": 70.5,
+          "mos_ladder": [
+            {
+              "buy_threshold_price": 64.09,
+              "discount_to_current_pct": 54.82,
+              "implied_cagr_at_threshold_pct": 13.07,
+              "mos_target_pct": 10,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 58.75,
+              "discount_to_current_pct": 58.58,
+              "implied_cagr_at_threshold_pct": 14.06,
+              "mos_target_pct": 20,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 54.23,
+              "discount_to_current_pct": 61.77,
+              "implied_cagr_at_threshold_pct": 14.98,
+              "mos_target_pct": 30,
+              "reached": false,
+              "selftest_mos_at_threshold_ok": true
+            }
+          ],
+          "mos_pct": -50.3,
+          "pe_cap_effective": 27.53,
+          "self_tests": {
+            "hurdle_identity_ok": true,
+            "iv_recompute_ok": true,
+            "mos_cagr_sign_identity_ok": true,
+            "pe_cap_checked": true
+          },
+          "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+          "year5_reference": 91.26,
+          "years": 10
+        },
+        "weight": 0.25
+      },
+      "bull": {
+        "overrides": {
+          "future_pe": 26,
+          "growth_rate": 0.2
+        },
+        "result": {
+          "buy_threshold_hurdle": 214.54,
+          "engine": "eps",
+          "eps_terminal": 23.8287,
+          "eps_terminal_dilution_adj": 25.6278,
+          "flags": [],
+          "fv10_per_share": 666.32,
+          "hurdle_gate": "PASS",
+          "implied_cagr_pct": 16.73,
+          "inputs": {
+            "base_per_share": 5.863761153054221,
+            "dilution_cagr": -0.007252007581426523,
+            "discount_rate": 0.12,
+            "div_yield": 0,
+            "fade": true,
+            "future_pe": 26,
+            "g": 0.2,
+            "hurdle": 0.12,
+            "price": 141.85,
+            "terminal_g": 0.04
+          },
+          "intrinsic_value": 214.54,
+          "mos_ladder": [
+            {
+              "buy_threshold_price": 195.03,
+              "discount_to_current_pct": -37.49,
+              "implied_cagr_at_threshold_pct": 13.07,
+              "mos_target_pct": 10,
+              "reached": true,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 178.78,
+              "discount_to_current_pct": -26.04,
+              "implied_cagr_at_threshold_pct": 14.06,
+              "mos_target_pct": 20,
+              "reached": true,
+              "selftest_mos_at_threshold_ok": true
+            },
+            {
+              "buy_threshold_price": 165.03,
+              "discount_to_current_pct": -16.34,
+              "implied_cagr_at_threshold_pct": 14.98,
+              "mos_target_pct": 30,
+              "reached": true,
+              "selftest_mos_at_threshold_ok": true
+            }
+          ],
+          "mos_pct": 51.24,
+          "pe_cap_effective": 27.53,
+          "self_tests": {
+            "hurdle_identity_ok": true,
+            "iv_recompute_ok": true,
+            "mos_cagr_sign_identity_ok": true,
+            "pe_cap_checked": true
+          },
+          "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+          "year5_reference": 223.24,
+          "years": 10
+        },
+        "weight": 0.25
+      }
+    },
+    "scenarios_by_leg": {
+      "fcf_per_share": null,
+      "gaap_eps": {
+        "base": {
+          "overrides": {},
+          "result": {
+            "buy_threshold_hurdle": 126.49,
+            "engine": "eps",
+            "eps_terminal": 13.268,
+            "eps_terminal_dilution_adj": 14.2697,
+            "flags": [],
+            "fv10_per_share": 392.85,
+            "hurdle_gate": "FAIL",
+            "implied_cagr_pct": 10.72,
+            "inputs": {
+              "base_per_share": 5.863761153054221,
+              "dilution_cagr": -0.007252007581426523,
+              "discount_rate": 0.12,
+              "div_yield": 0,
+              "fade": true,
+              "future_pe": 27.53,
+              "g": 0.10476732816565715,
+              "hurdle": 0.12,
+              "price": 141.85,
+              "terminal_g": 0.04
+            },
+            "intrinsic_value": 126.49,
+            "mos_ladder": [
+              {
+                "buy_threshold_price": 114.99,
+                "discount_to_current_pct": 18.94,
+                "implied_cagr_at_threshold_pct": 13.07,
+                "mos_target_pct": 10,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 105.4,
+                "discount_to_current_pct": 25.69,
+                "implied_cagr_at_threshold_pct": 14.06,
+                "mos_target_pct": 20,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 97.3,
+                "discount_to_current_pct": 31.41,
+                "implied_cagr_at_threshold_pct": 14.98,
+                "mos_target_pct": 30,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              }
+            ],
+            "mos_pct": -10.83,
+            "pe_cap_effective": 27.53,
+            "self_tests": {
+              "hurdle_identity_ok": true,
+              "iv_recompute_ok": true,
+              "mos_cagr_sign_identity_ok": true,
+              "pe_cap_checked": true
+            },
+            "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+            "year5_reference": 156.33,
+            "years": 10
+          },
+          "weight": 0.5
+        },
+        "bear": {
+          "overrides": {
+            "future_pe": 18,
+            "growth_rate": 0.08
+          },
+          "result": {
+            "buy_threshold_hurdle": 70.5,
+            "engine": "eps",
+            "eps_terminal": 11.3107,
+            "eps_terminal_dilution_adj": 12.1647,
+            "flags": [],
+            "fv10_per_share": 218.96,
+            "hurdle_gate": "FAIL",
+            "implied_cagr_pct": 4.44,
+            "inputs": {
+              "base_per_share": 5.863761153054221,
+              "dilution_cagr": -0.007252007581426523,
+              "discount_rate": 0.12,
+              "div_yield": 0,
+              "fade": true,
+              "future_pe": 18,
+              "g": 0.08,
+              "hurdle": 0.12,
+              "price": 141.85,
+              "terminal_g": 0.04
+            },
+            "intrinsic_value": 70.5,
+            "mos_ladder": [
+              {
+                "buy_threshold_price": 64.09,
+                "discount_to_current_pct": 54.82,
+                "implied_cagr_at_threshold_pct": 13.07,
+                "mos_target_pct": 10,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 58.75,
+                "discount_to_current_pct": 58.58,
+                "implied_cagr_at_threshold_pct": 14.06,
+                "mos_target_pct": 20,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 54.23,
+                "discount_to_current_pct": 61.77,
+                "implied_cagr_at_threshold_pct": 14.98,
+                "mos_target_pct": 30,
+                "reached": false,
+                "selftest_mos_at_threshold_ok": true
+              }
+            ],
+            "mos_pct": -50.3,
+            "pe_cap_effective": 27.53,
+            "self_tests": {
+              "hurdle_identity_ok": true,
+              "iv_recompute_ok": true,
+              "mos_cagr_sign_identity_ok": true,
+              "pe_cap_checked": true
+            },
+            "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+            "year5_reference": 91.26,
+            "years": 10
+          },
+          "weight": 0.25
+        },
+        "bull": {
+          "overrides": {
+            "future_pe": 26,
+            "growth_rate": 0.2
+          },
+          "result": {
+            "buy_threshold_hurdle": 214.54,
+            "engine": "eps",
+            "eps_terminal": 23.8287,
+            "eps_terminal_dilution_adj": 25.6278,
+            "flags": [],
+            "fv10_per_share": 666.32,
+            "hurdle_gate": "PASS",
+            "implied_cagr_pct": 16.73,
+            "inputs": {
+              "base_per_share": 5.863761153054221,
+              "dilution_cagr": -0.007252007581426523,
+              "discount_rate": 0.12,
+              "div_yield": 0,
+              "fade": true,
+              "future_pe": 26,
+              "g": 0.2,
+              "hurdle": 0.12,
+              "price": 141.85,
+              "terminal_g": 0.04
+            },
+            "intrinsic_value": 214.54,
+            "mos_ladder": [
+              {
+                "buy_threshold_price": 195.03,
+                "discount_to_current_pct": -37.49,
+                "implied_cagr_at_threshold_pct": 13.07,
+                "mos_target_pct": 10,
+                "reached": true,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 178.78,
+                "discount_to_current_pct": -26.04,
+                "implied_cagr_at_threshold_pct": 14.06,
+                "mos_target_pct": 20,
+                "reached": true,
+                "selftest_mos_at_threshold_ok": true
+              },
+              {
+                "buy_threshold_price": 165.03,
+                "discount_to_current_pct": -16.34,
+                "implied_cagr_at_threshold_pct": 14.98,
+                "mos_target_pct": 30,
+                "reached": true,
+                "selftest_mos_at_threshold_ok": true
+              }
+            ],
+            "mos_pct": 51.24,
+            "pe_cap_effective": 27.53,
+            "self_tests": {
+              "hurdle_identity_ok": true,
+              "iv_recompute_ok": true,
+              "mos_cagr_sign_identity_ok": true,
+              "pe_cap_checked": true
+            },
+            "year5_note": "reference only — the verdict is the 10-year horizon; a 5-year cut ends before the fade and is systematically optimistic",
+            "year5_reference": 223.24,
+            "years": 10
+          },
+          "weight": 0.25
+        }
+      }
+    },
+    "scenarios_leg": "gaap_eps",
+    "self_tests_all": true,
+    "sensitivity": {
+      "_note": "Sum EI is a one-factor sensitivity sum; NOT additive to scenario PWFV-IV. Both terms are on the VERDICT leg.",
+      "by_leg": {
+        "fcf_per_share": null,
+        "gaap_eps": 24.62
+      },
+      "leg": "gaap_eps",
+      "pwfv_minus_iv_verdict_leg": 8.01,
+      "sum_expected_impact": 24.62
+    },
+    "street_view": {
+      "_tier": "yahoo consensus; named-bank targets belong to FACT_PACK with source+date",
+      "analyst_actions_recent": [],
+      "analyst_count": 49,
+      "analyst_count_basis": "finnhub rec_trends (sum of latest-month rating buckets)",
+      "consensus_target_high": null,
+      "consensus_target_low": null,
+      "consensus_target_mean": 248.15,
+      "pwfv_vs_street_pct": -45.8,
+      "recommendation_breakdown": {
+        "buy": 25,
+        "hold": 8,
+        "period": "2026-08-01",
+        "sell": 1,
+        "strongBuy": 15,
+        "strongSell": 0,
+        "total": 49
+      },
+      "recommendation_key": null,
+      "recommendation_mean": null,
+      "upside_to_target_pct": 74.9
+    },
+    "three_year_table": {
+      "pe_basis": "today's Tiingo price divided by that fiscal year's EPS — NOT a historical multiple; no historical price series is held by this pipeline",
+      "price_used": 141.85,
+      "rows": [
+        {
+          "eps": 3.708,
+          "fcf": 11807000000,
+          "fy_end": "2024-05-31",
+          "net_income": 10467000000,
+          "pe_at_todays_price": 38.26,
+          "revenue": 52961000000
+        },
+        {
+          "eps": 4.342,
+          "fcf": -394000000,
+          "fy_end": "2025-05-31",
+          "net_income": 12443000000,
+          "pe_at_todays_price": 32.67,
+          "revenue": 57399000000
+        },
+        {
+          "eps": 5.864,
+          "fcf": -23686000000,
+          "fy_end": "2026-05-31",
+          "net_income": 17087000000,
+          "pe_at_todays_price": 24.19,
+          "revenue": 67357000000
+        }
+      ]
+    },
+    "verdict_cap": "AVOID",
+    "weights": {
+      "base": 0.5,
+      "bear": 0.25,
+      "bull": 0.25
+    },
+    "year5_reference": 156.33
+  }
+]
