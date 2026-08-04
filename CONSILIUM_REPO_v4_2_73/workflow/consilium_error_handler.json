@@ -1,0 +1,96 @@
+{
+ "name": "Consilium Error Handler",
+ "nodes": [
+  {
+   "parameters": {
+    "content": "## Consilium Error Handler\n\nFires when **Consilium Spine** fails, so a dead run announces itself in Telegram instead of sitting silently until you open n8n.\n\n**Setup (once):**\n1. Import this workflow and **Save** it. Do NOT activate it — an error workflow doesn't need to be active.\n2. Set `TELEGRAM_CHAT_ID` as an env var (same chat you send tickers from), or hardcode it in the `Format Error` node.\n3. Attach the Telegram credential to the `Send Alert` node (the same one the main workflow uses).\n4. In **Consilium Spine** → Options → Settings → **Error workflow** → select *Consilium Error Handler* → Save.\n\n**Note:** the Error Trigger only fires on AUTOMATIC executions (a real Telegram-triggered run). Manual test runs do not trigger it — that's n8n behaviour, not a bug. To test, break something and send a ticker for real.\n\n**Known blind spot:** if the failure is in the main workflow's TRIGGER node itself, n8n never starts an execution, so `execution.id`/`execution.url` are absent and this handler may not fire at all. Everything downstream of the trigger is covered.",
+    "height": 460,
+    "width": 420,
+    "color": 4
+   },
+   "id": "note_setup",
+   "name": "SETUP",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -40,
+    -40
+   ]
+  },
+  {
+   "parameters": {},
+   "id": "node_error_trigger",
+   "name": "Error Trigger",
+   "type": "n8n-nodes-base.errorTrigger",
+   "typeVersion": 1,
+   "position": [
+    440,
+    180
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Shape the Error Trigger payload into something readable on a phone.\n// Documented fields: workflow.{id,name}, execution.{id,url,error,lastNodeExecuted,mode,retryOf}.\n// execution.id/url require executions to be saved in the DB, and are ABSENT when the failure\n// is in the main workflow's trigger node — so treat every field as optional.\nconst d = $input.first().json || {};\nconst wf = d.workflow || {};\nconst ex = d.execution || {};\nconst err = ex.error || {};\n\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst node = ex.lastNodeExecuted || '(unknown node)';\nlet msg = err.message || err.description || 'no error message provided';\n\n// Translate the failures we actually hit into a verdict + next action, so the alert says what\n// to DO, not just what broke.\nlet hint = '';\nconst m = msg.toLowerCase();\nif (m.includes('overloaded') || msg.includes('529')) {\n  hint = 'Provider capacity (HTTP 529) — not a pipeline bug. Re-send the ticker.';\n} else if (msg.includes('429') || m.includes('rate limit')) {\n  hint = 'Rate limited. Wait a few minutes, then re-send the ticker.';\n} else if (msg.includes('401') || msg.includes('403')) {\n  hint = 'Auth rejected — check the credential for this node (expired key/secret?).';\n} else if (m.includes('is not defined') || m.includes('cannot read')) {\n  hint = 'Code defect in a node — send this message to Claude, do not re-run blindly.';\n} else if (m.includes('timeout') || m.includes('etimedout')) {\n  hint = 'Timeout — Railway may be cold-starting. Re-send once; if it repeats, check the service.';\n} else if (m.includes('econnrefused') || m.includes('enotfound')) {\n  hint = 'Microservice unreachable — is growth-enrich up? Is PYTHON_SERVICE_URL set?';\n}\n\nconst lines = [\n  '\\u274C <b>Consilium run failed</b>',\n  '',\n  '<b>Workflow:</b> ' + esc(wf.name || 'unknown'),\n  '<b>Failed at:</b> <code>' + esc(node) + '</code>',\n  '<b>Error:</b> ' + esc(String(msg).slice(0, 400)),\n];\nif (hint) lines.push('', '\\u27A1\\uFE0F <b>' + esc(hint) + '</b>');\nif (ex.url) lines.push('', '<a href=\"' + ex.url + '\">Open execution in n8n</a>');\nelse if (ex.id) lines.push('', '<b>Execution id:</b> ' + esc(ex.id));\nif (ex.retryOf) lines.push('<i>(this was a retry of ' + esc(ex.retryOf) + ')</i>');\n\nreturn [{ json: {\n  text: lines.join('\\n'),\n  chat_id: 'YOUR_TELEGRAM_CHAT_ID',   // not a secret; $env is unavailable in n8n 2.x Code nodes\n  _node: node,\n  _hint: hint,\n} }];"
+   },
+   "id": "node_format",
+   "name": "Format Error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    180
+   ]
+  },
+  {
+   "parameters": {
+    "chatId": "={{ $json.chat_id }}",
+    "text": "={{ $json.text }}",
+    "additionalFields": {
+     "parse_mode": "HTML",
+     "appendAttribution": false
+    }
+   },
+   "id": "node_send",
+   "name": "Send Alert",
+   "type": "n8n-nodes-base.telegram",
+   "typeVersion": 1.2,
+   "position": [
+    880,
+    180
+   ],
+   "credentials": {
+    "telegramApi": {
+     "name": "Telegram account"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Error Trigger": {
+   "main": [
+    [
+     {
+      "node": "Format Error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Format Error": {
+   "main": [
+    [
+     {
+      "node": "Send Alert",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "pinData": {}
+}
