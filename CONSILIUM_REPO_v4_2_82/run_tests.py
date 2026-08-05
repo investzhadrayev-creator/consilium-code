@@ -20,11 +20,32 @@ TESTS_DIR = os.path.join(REPO_ROOT, "tests")
 
 
 def run_python_suite():
+    """Returns (ok, skipped) — the SAME contract the JS half has carried since 2026-07-17.
+
+    That day the rule was written down: "a check reports what it examined, or it reports nothing;
+    never let 'skipped' and 'passed' print the same word." It was then applied to
+    `run_node_suite()` and NOT to this function, half a screen above it — so
+    `result.wasSuccessful()` kept returning True for a run containing self-skips, and the runner
+    printed ALL GREEN over them.
+
+    It was not theoretical. `test_C_block_scores_the_VERDICT_leg_not_the_optimistic_one` skipped
+    itself on every run since it was written: its fixture never built an FCF leg, so the invariant
+    that the scorecard must credit the leg the VERDICT follows — and not the optimistic one — was
+    never once executed. The suite reported 477 tests; 476 ran. The architect's wording, kept
+    here because it is the whole point: **"477 ALL GREEN" honestly reads "477 declared, 476
+    executed."**
+
+    A skip is not a failure and is not a pass. It is the third state, and it blocks the green
+    verdict exactly as an unrun JS gate does.
+    """
     sys.path.insert(0, TESTS_DIR)
     loader = unittest.TestLoader()
     suite = loader.discover(start_dir=TESTS_DIR, pattern="test_*.py")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    return result.wasSuccessful()
+    # `result.skipped` is a list of (testcase, reason). Both halves are reported: a reason with no
+    # test name cannot be traced, and a test name with no reason cannot be judged.
+    skipped = ["%s (%s)" % (t.id().split(".")[-1], reason) for t, reason in result.skipped]
+    return result.wasSuccessful(), skipped
 
 
 def run_node_suite():
@@ -78,11 +99,16 @@ def run_node_suite():
 
 
 if __name__ == "__main__":
-    ok_py = run_python_suite()
-    ok_js, skipped = run_node_suite()
+    ok_py, skipped_py = run_python_suite()
+    ok_js, skipped_js = run_node_suite()
     print("\n" + "=" * 70)
     # Order matters: a gate that did not run is reported BEFORE any green claim, and outranks
     # one. "Passed" and "was never asked" must never print the same word.
+    if skipped_py:
+        print("SKIPPED PYTHON CHECKS — %d:" % len(skipped_py))
+        for s in skipped_py:
+            print("   - " + s)
+    skipped = skipped_js + (["python: %s" % s for s in skipped_py] if skipped_py else [])
     if skipped:
         print("NOT VERIFIED — these gates could not run: " + ", ".join(skipped))
         print("A check that did not run has not passed. Do not deploy on this result.")

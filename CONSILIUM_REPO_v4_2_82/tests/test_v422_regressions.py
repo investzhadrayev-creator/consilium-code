@@ -200,11 +200,20 @@ class TestGpsWiringV424(unittest.TestCase):
 
     @staticmethod
     def _run(spec_over=None, data_over=None):
-        # levered_fcf_per_share ACTIVATES the FCF leg -> dual_basis exists -> the verdict-leg test
-        # actually runs. Without it that test self-skips, and a test that skips is a test that
-        # reports green having checked nothing (see run_tests.py / test_undef.js, same day).
+        # THE FCF LEG NEEDS TWO INPUTS, NOT ONE. This comment used to claim that
+        # `levered_fcf_per_share` alone "ACTIVATES the FCF leg -> dual_basis exists -> the
+        # verdict-leg test actually runs". It was false from the moment v4.2.60 (dil-03) landed:
+        # analyze() now REFUSES the FCF leg when net dilution is unknown, because gross dilution
+        # cannot be derived from an unknown net and assuming zero would flatter the leg that
+        # competes to be the verdict. So `fcfps = None`, `dual_basis` stayed null, and the pin below
+        # went on skipping itself — under a comment asserting that it did not.
+        #
+        # The comment is the finding: it stated an OUTCOME nobody measured. Same class as
+        # rule 5 (a fixture agreeing with itself proves nothing), one layer out — prose agreeing
+        # with an intention rather than with the code. `dilution_cagr` is what was missing.
         data = {"ticker": "TEST", "eps0_reported": 2.5, "peg": 1.45,
                 "levered_fcf_per_share": 2.25,
+                "dilution_cagr": 0.01,
                 "price_data": {"current_price": 50}, "macro_data": {"risk_free": 0.04}}
         data.update(data_over or {})
         spec = {"assumptions": {"growth_rate": 0.10, "future_pe": 20, "hurdle": 0.12},
@@ -238,14 +247,33 @@ class TestGpsWiringV424(unittest.TestCase):
 
     def test_C_block_scores_the_VERDICT_leg_not_the_optimistic_one(self):
         """verdict_cap follows the conservative leg. If C scored the optimistic leg, the scorecard
-        would credit valuation that the verdict denies, in the same report."""
+        would credit valuation that the verdict denies, in the same report.
+
+        v4.2.82 changeset: the `if not db: self.skipTest(...)` that used to open this test is gone.
+        A missing FCF leg is now a FAILURE of this test, not an excuse from it — the absent leg was
+        the reason the invariant went unchecked from the day it was written. The two guards below
+        are what make the assertion mean something: both legs must exist, and they must DIFFER,
+        because when the legs coincide the pin is satisfied by either one and cannot tell the
+        verdict leg from the optimistic one.
+        """
         r = self._run()
         db = r.get("dual_basis")
-        if not db:
-            self.skipTest("no FCF leg in this fixture")
-        leg = db[db["verdict_leg"]]
+        self.assertTrue(db, "the fixture must build BOTH legs — without dual_basis this invariant "
+                            "is not tested, and a skip here reads as a pass")
+        ic_g = db["gaap_eps"]["implied_cagr_pct"]
+        ic_f = db["fcf_per_share"]["implied_cagr_pct"]
+        self.assertIsNotNone(ic_g)
+        self.assertIsNotNone(ic_f)
+        self.assertNotAlmostEqual(ic_g, ic_f, places=2,
+                                  msg="the legs must differ, else scoring the optimistic leg "
+                                      "would satisfy this pin too")
+        verdict_leg = db["verdict_leg"]
+        self.assertEqual(verdict_leg, "gaap_eps" if ic_g <= ic_f else "fcf_per_share",
+                         "the verdict leg must be the CONSERVATIVE one")
+        leg = db[verdict_leg]
         self.assertAlmostEqual(r["gps"]["quant_detail"]["C"]["implied_cagr"],
-                               leg["implied_cagr_pct"] / 100.0, places=6)
+                               leg["implied_cagr_pct"] / 100.0, places=6,
+                               msg="block C scored a leg the verdict does not follow")
 
     def test_reduced_max_survives_the_block_assembly(self):
         """gps_quant reduces a block's max when an input is unmeasurable; analyze() hardcoded

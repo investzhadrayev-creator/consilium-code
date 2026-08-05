@@ -39,6 +39,15 @@ CASES = [
      'fcf_inp["future_pe"] = round(base_inp["future_pe"] * 0.9, 2)',
      "test_harness.TestLegSymmetryAndDilutionNaming.test_both_legs_share_one_exit_multiple",
      "both legs carry one exit multiple"),
+    # v4.2.82 changeset. The pin this probes had NEVER executed: its fixture built no FCF leg, so
+    # it self-skipped on every run since it was written, and the runner counted the skip as green.
+    # The mutation is the defect in its most plausible form — the scorecard reading the leg that
+    # flatters, while the verdict in the same report follows the leg that does not.
+    ("leg-04", "microservice/app.py",
+     '        _verdict_ic_pct = (dual_basis.get(dual_basis["verdict_leg"]) or {}).get("implied_cagr_pct")',
+     '        _verdict_ic_pct = max([x for x in [(dual_basis.get("gaap_eps") or {}).get("implied_cagr_pct"), (dual_basis.get("fcf_per_share") or {}).get("implied_cagr_pct")] if x is not None] or [None])',
+     "test_v422_regressions.TestGpsWiringV424.test_C_block_scores_the_VERDICT_leg_not_the_optimistic_one",
+     "block C scores the VERDICT leg, never the optimistic one"),
     # ---- money core: share denominator ----
     ("shares-01", "workflow/WORKFLOW.json",
      "const shc=shares_used;",

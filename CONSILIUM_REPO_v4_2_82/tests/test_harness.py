@@ -1396,11 +1396,19 @@ class TestVerdictCapFollowsConservativeLeg(unittest.TestCase):
         db = r.get("dual_basis") or {}
         g = (db.get("gaap_eps") or {}).get("implied_cagr_pct")
         f = (db.get("fcf_per_share") or {}).get("implied_cagr_pct")
-        if g is None or f is None:
-            self.skipTest("fixture did not produce two legs")
-        if max(g, f) >= 12.0 > min(g, f):
-            self.assertEqual(r["verdict_cap"], "AVOID",
-                             "one leg below the hurdle must cap the verdict at AVOID")
+        # v4.2.82 changeset. This test carried TWO silent exits: a `skipTest` when a leg was
+        # missing, and a bare `if max >= 12 > min:` around the only assertion — so a fixture that
+        # drifted off the hurdle would have made the test pass having asserted nothing at all, and
+        # without even the word "skipped" to show for it. The quieter of the two was the `if`.
+        # Both preconditions are now assertions: this fixture is REQUIRED to straddle the hurdle,
+        # because straddling it is the entire scenario the test is named after.
+        self.assertIsNotNone(g, "fixture must produce a GAAP leg")
+        self.assertIsNotNone(f, "fixture must produce an FCF leg")
+        self.assertTrue(max(g, f) >= 12.0 > min(g, f),
+                        "the fixture must STRADDLE the hurdle (legs %.2f / %.2f) — otherwise this "
+                        "test cannot observe one leg lifting another" % (g, f))
+        self.assertEqual(r["verdict_cap"], "AVOID",
+                         "one leg below the hurdle must cap the verdict at AVOID")
 
 
 class TestValuationCoreIdentities(unittest.TestCase):

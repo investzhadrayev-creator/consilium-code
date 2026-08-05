@@ -61,6 +61,25 @@ def facts():
     m = re.search(r"Ran (\d+) tests", p.stdout + p.stderr)
     f["tests"] = int(m.group(1)) if m else None
     f["tests_green"] = p.returncode == 0 and "ALL GREEN" in (p.stdout + p.stderr)
+    # v4.2.82 changeset (mandate 03 §1.5). The catalogue size was the ONE number this builder did
+    # not produce — and it is the one that went stale: the seed carried "102 cases" and "57 cases"
+    # in adjacent lines of the same metadata block, because 57 was typed by hand and never revisited.
+    # Every other number here is read from the tree; leaving one exception invited exactly the class
+    # this tool exists to close. The catalogue already prints its own size (v4.2.67, after a
+    # hand-count said 54 where the file held 41), so nothing is counted here either — the line is
+    # PARSED from the tool that measured it.
+    q = subprocess.run([sys.executable, "tools/mutation_probe.py"], cwd=REPO,
+                       capture_output=True, text=True, timeout=3600)
+    mm = re.search(r"catalogue: (\d+) cases, (\d+) RED, (\d+) SKIP, (\d+) GREEN",
+                   q.stdout + q.stderr)
+    f["mutations"] = int(mm.group(1)) if mm else None
+    f["mutations_red"] = int(mm.group(2)) if mm else None
+    f["mutations_skip"] = int(mm.group(3)) if mm else None
+    f["mutations_green"] = int(mm.group(4)) if mm else None
+    # A SKIP is a refusal of the check and a GREEN is an empty pin (rule 9). Either one means the
+    # catalogue cannot certify anything, so the package must not quote it as if it could.
+    f["mutations_clean"] = (mm is not None and q.returncode == 0
+                            and f["mutations_skip"] == 0 and f["mutations_green"] == 0)
     return f
 
 
@@ -74,6 +93,11 @@ def main():
         return 1
     if not f["tests_green"]:
         print("\n!! suite is not green — the package must not claim it is")
+        return 1
+    if not f["mutations_clean"]:
+        print("\n!! mutation catalogue is not clean (SKIP = refusal of the check, GREEN = empty "
+              "pin) — the package must not quote it:", f["mutations"], f["mutations_red"],
+              f["mutations_skip"], f["mutations_green"])
         return 1
     # archive: root is the repo itself, NOT a wrapper folder (a wrapper made the seed's unpack
     # instruction produce repo/repo_out/... and broke the one test with an absolute path)
@@ -103,7 +127,9 @@ def main():
     print("  архив: %s" % name)
     print("  воркфлоу: %s" % f["workflow_name"])
     print("  микросервис (единая версия сборки): %s" % f["build"][0])
-    print("  сьют: %d тестов, ALL GREEN" % f["tests"])
+    print("  сьют: %d тестов, ALL GREEN, 0 SKIP" % f["tests"])
+    print("  каталог мутаций: %d кейсов, %d RED, %d SKIP, %d GREEN"
+          % (f["mutations"], f["mutations_red"], f["mutations_skip"], f["mutations_green"]))
     print("  HANDOFF: %d строк, секции %s" % (f["handoff_lines"], f["handoff_range"]))
     return 0
 
