@@ -30,9 +30,17 @@ jobs:
       - name: Найти новейшее дерево версии
         id: tree
         run: |
-          DIR=$(ls -d CONSILIUM_REPO_v4_2_* 2>/dev/null | sort -V | tail -1)
+          # ищем ТОЛЬКО каталоги: рядом лежат .zip-архивы с теми же именами,
+          # и фильтр по имени выбрал бы архив вместо дерева
+          echo "Кандидаты:"
+          find . -maxdepth 1 -type d -name 'CONSILIUM_REPO_v4_2_*' -printf '%f\n' | sort -V
+          DIR=$(find . -maxdepth 1 -type d -name 'CONSILIUM_REPO_v4_2_*' -printf '%f\n' | sort -V | tail -1)
           if [ -z "$DIR" ]; then
-            echo "Дерево версии не найдено — нечего проверять."
+            echo "Каталог версии не найден — нечего проверять."
+            exit 1
+          fi
+          if [ ! -f "$DIR/run_tests.py" ]; then
+            echo "В каталоге $DIR нет run_tests.py — это не дерево версии."
             exit 1
           fi
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
