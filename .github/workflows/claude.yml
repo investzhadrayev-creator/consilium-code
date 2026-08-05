@@ -1,0 +1,70 @@
+name: claude
+
+# Агент-исполнитель. Просыпается, когда в карточке задачи или в комментарии
+# упомянут @claude. Делает работу и открывает заявку на изменение (pull request).
+#
+# Аутентификация — токеном подписки (CLAUDE_CODE_OAUTH_TOKEN), не API-ключом:
+# расход идёт из лимитов подписки оператора.
+#
+# ВАЖНО: агент НЕ пишет в основную ветку. Только ветка + заявка на изменение.
+# Приёмка архитектором перед слиянием остаётся обязательной.
+
+on:
+  issues:
+    types: [opened, assigned]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude:
+    # экономия лимита: запускаемся только на явное упоминание
+    if: |
+      contains(github.event.issue.body, '@claude') ||
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Забрать репозиторий
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Агент
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Ты работаешь в проекте Consilium Spine — автоматизированный equity research
+            под философией Грэма-Додда. Правила проекта обязательны к исполнению:
+            прочитай CLAUDE.md в новейшем дереве CONSILIUM_REPO_v4_2_* и следуй ему.
+
+            Железные правила этого проекта:
+            1. Никогда не пиши в основную ветку — только ветка и заявка на изменение.
+            2. Каждое изменение сопровождается пином, который проверяет СВОЙСТВО, а не форму,
+               и негативным контролем (мутацией), доказывающим, что пин может покраснеть.
+            3. Отказ проверки не равен проходу: SKIP, NOT_EXEC, пропущенный тест — не зелёный.
+            4. Перед отгрузкой прогони `npm install`, `python run_tests.py` и
+               `python tools/mutation_probe.py` в дереве версии; сьют обязан быть зелёным,
+               каталог — без SKIP, GREEN и NOT_EXEC.
+            5. Числа о работе бери с выхода инструментов, не из памяти и не из документов.
+            6. Ничего не выдумывай: если данных нет — так и напиши. Утверждение по допущению
+               вместо чтения источника — самая дорогая ошибка этого проекта.
+            7. В описании заявки перечисли: что изменено, какие пины добавлены, какие мутации
+               краснеют, и что осталось незакрытым.
