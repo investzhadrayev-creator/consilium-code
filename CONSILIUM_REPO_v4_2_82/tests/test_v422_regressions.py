@@ -188,9 +188,6 @@ class TestSplitConfirmationReadsBothEndpoints(unittest.TestCase):
         self.assertEqual(with_cc[0]["end"], "2023-12-31")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
 
 class TestGpsWiringV424(unittest.TestCase):
     """v4.2.4 — two defects the live NFLX 2026-07-17 report exposed. Both are the SAME disease as
@@ -299,3 +296,19 @@ class TestGpsWiringV424(unittest.TestCase):
         r = self._run(data_over={"fwd_pe_vs_sector": 0.9})
         c_block = next(b for b in r["gps"]["blocks"] if b["name"].startswith("C "))
         self.assertEqual(c_block["max"], 15, "all three C inputs present -> full 15")
+
+
+# v4.2.82 micro-changeset (architect's decision, 2026-08-05). This guard used to sit ~150 lines
+# further up — between TestSplitConfirmationReadsBothEndpoints and TestGpsWiringV424 —
+# so `python3 tests/test_v422_regressions.py` executed unittest.main() at that point and ran only
+# the classes defined ABOVE it, printing a green summary over a SUBSET without the word "skipped"
+# appearing anywhere. Under `unittest discover` the file was fine, which is exactly why it
+# survived: the harmless path was the one everybody used.
+#
+# Third mechanism of one class in a single day: (1) a self-skip counted as a pass, (2) a bare `if`
+# around the only assertion, (3) a main-guard truncating a direct run. The rule they share is the
+# one from 2026-07-17 — a check reports what it examined, or it reports nothing — and each time it
+# was defeated by a DIFFERENT mechanism, never by a repeat. Auditing for the known shape is not
+# enough; the shape is not the invariant.
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
