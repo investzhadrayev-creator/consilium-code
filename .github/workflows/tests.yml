@@ -1,0 +1,61 @@
+name: suite
+
+# Гоняет полный сьют и каталог мутаций на САМОМ СВЕЖЕМ дереве версии в репозитории.
+# Запускается при каждой заливке и вручную кнопкой Run workflow.
+#
+# Node и npm install обязательны: без node_modules JS-гейты (в частности test_undef.js)
+# молча не стартуют, и раннер честно скажет NOT VERIFIED. Класс известен проекту.
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Забрать репозиторий
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Найти новейшее дерево версии
+        id: tree
+        run: |
+          DIR=$(ls -d CONSILIUM_REPO_v4_2_* 2>/dev/null | sort -V | tail -1)
+          if [ -z "$DIR" ]; then
+            echo "Дерево версии не найдено — нечего проверять."
+            exit 1
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Проверяем дерево: $DIR"
+
+      - name: Маркер сборки — ровно одна строка
+        working-directory: ${{ steps.tree.outputs.dir }}
+        run: |
+          N=$(grep -h '__build__ = ' microservice/*.py | sort -u | wc -l)
+          grep -h '__build__ = ' microservice/*.py | sort -u
+          if [ "$N" -ne 1 ]; then
+            echo "Маркеры сборки расходятся: $N разных строк."
+            exit 1
+          fi
+
+      - name: npm install
+        working-directory: ${{ steps.tree.outputs.dir }}
+        run: npm install
+
+      - name: Полный сьют
+        working-directory: ${{ steps.tree.outputs.dir }}
+        run: python run_tests.py
+
+      - name: Каталог мутаций
+        working-directory: ${{ steps.tree.outputs.dir }}
+        run: python tools/mutation_probe.py
