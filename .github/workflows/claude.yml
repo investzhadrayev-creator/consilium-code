@@ -52,9 +52,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-         
           claude_args: >-
-            --allowed-tools "Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(npm:*),Bash(ls:*),Bash(find:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Read,Write,Edit,Grep,Glob" --max-turns 40
+            --allowed-tools "Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(npm:*),Bash(ls:*),Bash(find:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Bash(sed:*),Bash(diff:*),Bash(echo:*),Read,Write,Edit,Grep,Glob" --max-turns 40
           prompt: |
             Ты работаешь в проекте Consilium Spine — автоматизированный equity research
             под философией Грэма-Додда. Правила проекта обязательны к исполнению:
@@ -91,3 +90,11 @@ jobs:
 
             Работа без опубликованной заявки считается НЕВЫПОЛНЕННОЙ. Если какая-то команда
             вернула отказ в правах — напечатай её текст и весь план работы в лог целиком.
+
+      - name: Сохранить протокол сессии для разбора
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-session-log
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: warn
