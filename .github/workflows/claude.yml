@@ -52,9 +52,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          show_full_output: true
+         
           claude_args: >-
-            --allowed-tools "Bash,Read,Write,Edit,Grep,Glob"
+            --allowed-tools "Bash(git:*),Bash(gh:*),Bash(python:*),Bash(npm:*),Read,Write,Edit,Grep,Glob" --max-turns 25
           prompt: |
             Ты работаешь в проекте Consilium Spine — автоматизированный equity research
             под философией Грэма-Додда. Правила проекта обязательны к исполнению:
