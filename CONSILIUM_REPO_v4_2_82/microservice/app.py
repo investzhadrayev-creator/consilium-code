@@ -331,6 +331,18 @@ def analyze(data, spec):
     _anchors = [x for x in (_pe_anchor_fwd(data), data.get("pe_hist_median"))
                 if isinstance(x, (int, float)) and x > 0]
     pe_flags = []
+    # Issue #12: ivc_lib's SECONDARY multiplier cap is min(pe_hist_median, 1.5*pe_sector_median)
+    # (ivc_lib.py, `pecap`). The value that reaches it under the "pe_sector_median" key is exactly
+    # _pe_anchor_fwd(data) -- see TestPeAnchorHasOneInput above for why the literal `pe_sector_median`
+    # field itself is a ghost the workflow never produces. Whenever _pe_anchor_fwd(data) comes back
+    # None, that half of the secondary cap is absent and the cap silently collapses to the historical
+    # median alone -- correct arithmetic, but invisible to the reader. Say so, loudly, without
+    # touching the arithmetic.
+    if _pe_anchor_fwd(data) is None:
+        pe_flags.append(
+            "pe_sector_median_absent: sector median is not produced by the pipeline, so the "
+            "secondary multiplier cap (min(pe_hist_median, 1.5x sector)) relies on the "
+            "historical median alone")
     if _peer_pe_excluded(data):
         pe_flags.append(
             "peer_median_pe_%.1f_EXCLUDED_from_cap_basis_is_trailing_not_forward"

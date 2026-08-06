@@ -76,6 +76,12 @@ CASES = [
      '_anchored_pe = min(_window_meds)',
      "test_harness.TestBaseFuturePeAnchoring.test_ceiling_bites_high_median",
      "the 25 ceiling bites"),
+    # ---- issue #12: the secondary multiplier cap's silent one-legged collapse ----
+    ("secmed-01", "microservice/app.py",
+     '    if _pe_anchor_fwd(data) is None:',
+     '    if False:',
+     "test_harness.TestPeSectorMedianAbsentFlag.test_flag_present_and_names_the_cause_when_sector_anchor_is_absent",
+     "an absent sector anchor is flagged, not left to silently halve the secondary PE cap"),
     # ---- money core: determinism of base ----
     ("determ-01", "microservice/app.py",
      '"discount_rate": _hurdle,   # = hurdle (mandate A); llm_disc recorded below',
