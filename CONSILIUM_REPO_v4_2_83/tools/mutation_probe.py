@@ -630,6 +630,12 @@ CASES = [
      "    if False:",
      "test_harness.TestPeSectorMedianAbsentFlag.test_flag_present_and_names_the_cause_when_sector_anchor_is_absent",
      "the sector-median-absent flag fires when the anchor cannot be built"),
+    # ---- issue #21: the double-absence case (pe_hist_median ALSO missing) ----
+    ("secmed-02", "microservice/app.py",
+     '        if _f(data.get("pe_hist_median"), None) is not None:',
+     "        if True:",
+     "test_harness.TestPeSectorMedianAbsentFlag.test_flag_says_NOT_applied_when_both_anchors_are_absent",
+     "a double-anchor absence says the cap is NOT applied, not a false historical-median fallback"),
     # ---- issue #14: the historical-reconstruction stand (as_of filter, ROE, same-basis P/E) ----
     ("asof-01", "microservice/edgar_facts.py",
      '    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)\n        out["_as_of"] = as_of',

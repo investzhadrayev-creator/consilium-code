@@ -339,10 +339,20 @@ def analyze(data, spec):
     # median alone -- correct arithmetic, but invisible to the reader. Say so, loudly, without
     # touching the arithmetic.
     if _pe_anchor_fwd(data) is None:
-        pe_flags.append(
-            "pe_sector_median_absent: sector median is not produced by the pipeline, so the "
-            "secondary multiplier cap (min(pe_hist_median, 1.5x sector)) relies on the "
-            "historical median alone")
+        if _f(data.get("pe_hist_median"), None) is not None:
+            pe_flags.append(
+                "pe_sector_median_absent: sector median is not produced by the pipeline, so the "
+                "secondary multiplier cap (min(pe_hist_median, 1.5x sector)) relies on the "
+                "historical median alone")
+        else:
+            # Issue #21: with BOTH anchors absent, `caps` in ivc_lib is empty and `pecap` is
+            # None -- the secondary cap does not fall back to anything, it does not apply at
+            # all. The old message above promised a working historical-median fallback that
+            # does not exist in this case. Say so honestly instead of half-truthing it.
+            pe_flags.append(
+                "pe_sector_median_absent: sector median is not produced by the pipeline, and "
+                "pe_hist_median is also absent, so the secondary multiplier cap "
+                "(min(pe_hist_median, 1.5x sector)) is NOT applied: both anchors absent")
     if _peer_pe_excluded(data):
         pe_flags.append(
             "peer_median_pe_%.1f_EXCLUDED_from_cap_basis_is_trailing_not_forward"
