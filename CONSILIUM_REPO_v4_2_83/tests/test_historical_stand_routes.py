@@ -66,6 +66,24 @@ class TestEdgarFactsRouteAsOf(unittest.TestCase):
         self.assertEqual(ends, ["2023-12-31", "2024-12-31"])
         self.assertNotIn("_as_of", body)
 
+    def test_as_of_wrong_type_is_a_named_refusal_not_a_500(self):
+        """edgar_facts filters with `f.get("filed") <= as_of` -- a plain string comparison. A
+        non-string as_of (a caller sending the bare int 20240601 instead of the quoted date)
+        used to reach that comparison unchecked and raise 'TypeError: <= not supported between
+        instances of str and int', 500ing the route (reproduced against pre-fix app.py before
+        writing this test). Deleting the isinstance guard in app.py's _edgar_facts reproduces
+        the 500 -- that is the mutation this test exists to kill."""
+        ef._FACTS_CACHE["RTEST"] = (time.time(), self._mock_facts())
+        resp = self.client.post("/edgar_facts", json={"cik": "RTEST", "as_of": 20240601})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertIn("as_of", body["_errors"])
+        self.assertNotIn("_as_of", body)
+        # ticker/cik path still processes normally -- only the bad as_of value is refused,
+        # same as the omitted-as_of case above.
+        ends = [p["end"] for p in body["revenue"]]
+        self.assertEqual(ends, ["2023-12-31", "2024-12-31"])
+
 
 class TestPriceOnDateRoute(unittest.TestCase):
     """Issue #20 pt.2: publish tiingo_price_on_date + pe_same_share_basis to an HTTP caller.
@@ -104,6 +122,27 @@ class TestPriceOnDateRoute(unittest.TestCase):
         body = resp.get_json()
         self.assertIsNone(body.get("price_record"))
         self.assertIn("request", body.get("_errors", {}))
+
+    def test_eps_wrong_type_is_a_named_refusal_not_a_500(self):
+        """pe_same_share_basis divides eps_as_filed by the split factor (`eps_as_filed /
+        factor`). A string eps (a caller sending "50.0" instead of 50.0 -- an easy JSON-body
+        mistake) used to reach that division unchecked and raise 'TypeError: unsupported
+        operand type(s) for /: str and float', 500ing the route (reproduced against pre-fix
+        app.py before writing this test) -- pe_same_share_basis's own guard only catches
+        eps_as_filed is None, never the wrong-type case. Deleting the isinstance guard in
+        app.py's _price_on_date reproduces the 500 -- that is the mutation this test kills."""
+        raw_row = {"close": 1000.0, "adjClose": 100.0, "splitFactor": 1.0}
+        with mock.patch.dict(os.environ, {"TIINGO_TOKEN": "t"}), \
+             mock.patch.object(mp, "_get_json", return_value=[raw_row]):
+            resp = self.client.post("/price_on_date",
+                                    json={"ticker": "NFLX", "date": "2019-03-15", "eps": "50.0"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertIn("eps_NFLX", body["_errors"])
+        self.assertIsNone(body["pe_same_share_basis"])
+        # price_record/split_factor still returned -- only the eps leg is refused.
+        self.assertEqual(body["price_record"], raw_row)
+        self.assertAlmostEqual(body["split_factor"], 10.0, places=6)
 
     def test_route_never_defaults_an_undeterminable_split_factor_to_one(self):
         raw_row = {"close": 1000.0, "adjClose": 137.0}   # matches no clean multiple, not ~1
