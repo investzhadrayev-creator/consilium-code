@@ -264,6 +264,40 @@ class TestHarnessPeCap(unittest.TestCase):
         self.assertTrue(any("capped" in f for f in r["pe_cap"]["flags"]))
 
 
+class TestPeSectorMedianAbsentFlag(unittest.TestCase):
+    """v4.2.83 (issue #12). base_inp["pe_sector_median"] (app.py, set from _pe_anchor_fwd(data))
+    feeds ivc_lib's SECONDARY multiple cap `min(pe_hist_median, 1.5*pe_sector_median)`. When no
+    peer/sector anchor exists this input is None and the cap's second term silently drops -- the
+    reader never learns the secondary ceiling now rests on the historical median alone. The flag
+    must reach RESULT (both "flags" and "pe_cap.flags", not stay inside _pe_anchor_fwd), name the
+    reason, and change NOTHING about the cap's VALUE -- it only names what the arithmetic was
+    already doing.
+    """
+
+    def test_flag_present_and_names_the_cause_when_sector_anchor_is_absent(self):
+        d = mature_data()
+        d["pe_hist_median"] = 50.0
+        d["peer_median_pe"] = None       # no peer/sector anchor -> pe_sector_median is None
+        r = analyze(d, mature_spec())
+        self.assertEqual(r["ivc_base"]["pe_cap_effective"], 50.0,
+                         "with no sector anchor the secondary cap must fall back to pe_hist_median alone")
+        self.assertTrue(any(f.startswith("pe_sector_median_absent") for f in r["flags"]),
+                        "the flag must reach the RESULT, not stay inside _pe_anchor_fwd")
+        flag = next(f for f in r["pe_cap"]["flags"] if f.startswith("pe_sector_median_absent"))
+        self.assertIn("not produced by the pipeline", flag)
+        self.assertIn("historical median alone", flag)
+
+    def test_no_flag_and_cap_folds_in_the_sector_anchor_when_present(self):
+        d = mature_data()
+        d["pe_hist_median"] = 50.0
+        d["peer_median_pe"] = 20.0       # 1.5x = 30, tighter than the 50 historical alone
+        r = analyze(d, mature_spec())
+        self.assertEqual(r["ivc_base"]["pe_cap_effective"], 30.0,
+                         "with a sector anchor present the secondary cap must combine both terms")
+        self.assertFalse(any(f.startswith("pe_sector_median_absent") for f in r["flags"]))
+        self.assertFalse(any(f.startswith("pe_sector_median_absent") for f in r["pe_cap"]["flags"]))
+
+
 class TestHarnessHonestFailure(unittest.TestCase):
     """When a required driver is missing, the harness must return an HONEST error rather than
     invent a default. A fabricated growth_rate is exactly the hallucination this whole

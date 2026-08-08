@@ -335,6 +335,15 @@ def analyze(data, spec):
         pe_flags.append(
             "peer_median_pe_%.1f_EXCLUDED_from_cap_basis_is_trailing_not_forward"
             % data.get("peer_median_pe"))
+    # v4.2.83 (issue #12): base_inp["pe_sector_median"] is _pe_anchor_fwd(data) (line ~298) --
+    # when it is None, ivc_lib's secondary multiple cap `min(pe_hist_median, 1.5*pe_sector_median)`
+    # silently drops its second term and collapses to the historical median alone. That collapse
+    # was invisible to the reader. Surface it here (reaches RESULT via pe_flags -> both "flags" and
+    # "pe_cap.flags" below) rather than leaving it inside the function that computes the anchor.
+    if base_inp.get("pe_sector_median") is None:
+        pe_flags.append(
+            "pe_sector_median_absent: sector median is not produced by the pipeline -- "
+            "the secondary multiple cap relies on the historical median alone")
 
     def _cap_pe(v):
         if not isinstance(v, (int, float)) or v <= 0:
