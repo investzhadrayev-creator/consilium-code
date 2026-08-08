@@ -1,0 +1,18 @@
+﻿2026-08-08T08:54:05.5793573Z ##[group]Run git fetch origin main --depth=50
+2026-08-08T08:54:05.5795191Z [36;1mgit fetch origin main --depth=50[0m
+2026-08-08T08:54:05.5796530Z [36;1mecho "=== файлы заявки ==="[0m
+2026-08-08T08:54:05.5798093Z [36;1mgit diff --stat origin/main...HEAD[0m
+2026-08-08T08:54:05.5799424Z [36;1mecho "=== дифф ==="[0m
+2026-08-08T08:54:05.5800681Z [36;1mgit diff origin/main...HEAD > /tmp/pr.diff[0m
+2026-08-08T08:54:05.5802088Z [36;1mwc -l /tmp/pr.diff[0m
+2026-08-08T08:54:05.5858259Z shell: /usr/bin/bash -e {0}
+2026-08-08T08:54:05.5859372Z ##[endgroup]
+2026-08-08T08:54:05.8763310Z From https://github.com/investzhadrayev-creator/consilium-code
+2026-08-08T08:54:05.8765846Z  * branch            main       -> FETCH_HEAD
+2026-08-08T08:54:05.8797768Z === файлы заявки ===
+2026-08-08T08:54:05.8865361Z  CONSILIUM_REPO_v4_2_83/microservice/app.py     | 12 +++++++
+2026-08-08T08:54:05.8868318Z  CONSILIUM_REPO_v4_2_83/tests/test_harness.py   | 50 ++++++++++++++++++++++++++
+2026-08-08T08:54:05.8871164Z  CONSILIUM_REPO_v4_2_83/tools/mutation_probe.py |  6 ++++
+2026-08-08T08:54:05.8873353Z  3 files changed, 68 insertions(+)
+2026-08-08T08:54:05.8875033Z === дифф ===
+2026-08-08T08:54:05.8953015Z 101 /tmp/pr.diff

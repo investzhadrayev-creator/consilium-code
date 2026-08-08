@@ -66,7 +66,7 @@ jobs:
           # там защита не даёт агенту будить самого себя.
           allowed_bots: "*"
           claude_args: >-
-            --allowed-tools "Bash(gh:*),Bash(git:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Read,Grep,Glob,Write" --max-turns 30
+            --allowed-tools "Bash(gh:*),Bash(git:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Read,Grep,Glob,Write" --max-turns 60
           prompt: |
             Ты — независимый аудитор изменений в проекте Consilium Spine. Ты НЕ писал этот код.
             Твоя задача — найти дефекты до слияния. Ничего не исправляй, только докладывай.

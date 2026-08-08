@@ -630,6 +630,36 @@ CASES = [
      "    if False:",
      "test_harness.TestPeSectorMedianAbsentFlag.test_flag_present_and_names_the_cause_when_sector_anchor_is_absent",
      "the sector-median-absent flag fires when the anchor cannot be built"),
+    # ---- issue #14: the historical-reconstruction stand (as_of filter, ROE, same-basis P/E) ----
+    ("asof-01", "microservice/edgar_facts.py",
+     '    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)\n        out["_as_of"] = as_of',
+     "    if False:\n        facts = _filter_facts_as_of(facts, as_of)\n        out[\"_as_of\"] = as_of",
+     "test_edgar_facts.TestAsOfFilter.test_as_of_excludes_facts_filed_after_the_cutoff",
+     "as_of excludes every fact FILED after the cutoff, not just ones whose period ends after it"),
+    ("asof-02", "microservice/edgar_facts.py",
+     '    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)\n        out["_as_of"] = as_of',
+     "    if False:\n        facts = _filter_facts_as_of(facts, as_of)\n        out[\"_as_of\"] = as_of",
+     "test_edgar_facts.TestAsOfFilter.test_as_of_excludes_equity_filed_after_the_cutoff",
+     "the equity series obeys the SAME as_of cutoff as everything else"),
+    ("roe-01", "microservice/edgar_facts.py",
+     "    neg = [e for e in ends if eq[e] <= 0]\n    if neg:",
+     "    neg = [e for e in ends if eq[e] <= 0]\n    if False:",
+     "test_edgar_facts.TestEquityAndRoe.test_negative_equity_refuses_with_a_reason_not_a_number",
+     "negative/zero equity refuses ROE with a named reason, never a computed number"),
+    # THE mandate's own words: "снятие фильтра по дате обязано покраснеть" is asof-01/02 above;
+    # "замена коэффициента сплита на единицу обязана покраснеть" is splitfactor-02 below, in the
+    # literal form the mandate names -- the factor forced to 1 rather than the one it measured.
+    ("splitfactor-01", "microservice/macro_prices.py",
+     '    return None, ("split_factor_undeterminable: close/adjClose ratio %.4f matches no clean "\n'
+     '                  "split multiple and is not ~1.0" % ratio)',
+     "    return 1.0, None",
+     "test_historical_stand.TestSameShareBasisPE.test_undeterminable_split_factor_refuses_never_defaults_to_one",
+     "an undeterminable split factor is REFUSED, never silently defaulted to 1"),
+    ("splitfactor-02", "microservice/macro_prices.py",
+     "    eps_today_basis = eps_as_filed / factor",
+     "    eps_today_basis = eps_as_filed / 1.0",
+     "test_historical_stand.TestSameShareBasisPE.test_pe_matches_a_manual_calculation_across_a_confirmed_split",
+     "price and EPS are reconciled onto the MEASURED split factor, not a hardcoded 1"),
 ]
 
 
