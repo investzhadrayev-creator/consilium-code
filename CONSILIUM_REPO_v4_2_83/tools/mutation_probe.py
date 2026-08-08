@@ -659,15 +659,30 @@ CASES = [
     # "matches no clean split multiple" message) was deleted along with the clean-multiple list
     # it belonged to; the mutation now targets the branch that replaced it -- a product/ratio
     # disagreement beyond tolerance -- forcing the SAME never-default-to-1 failure mode.
+    # v4.2.83 (issue #26): refreshed for the divCash-driven residual rewrite -- the old fragment
+    # (bare product vs ratio, fixed 5% tolerance) no longer exists verbatim after the constant was
+    # replaced with an expected dividend contribution computed from `daily_rows`' own divCash.
     ("splitfactor-01", "microservice/macro_prices.py",
-     '    if abs(ratio - product) / product > _SPLIT_RATIO_TOLERANCE:\n'
-     '        return None, ("split_factor_undeterminable: splitFactor product %.4f and close/adjClose "\n'
-     '                      "ratio %.4f disagree by more than the %.0f%% dividend-drag tolerance"\n'
-     '                      % (product, ratio, _SPLIT_RATIO_TOLERANCE * 100))\n'
+     '    if abs(ratio - expected) / expected > _SPLIT_RESIDUAL_TOLERANCE:\n'
+     '        return None, ("split_factor_undeterminable: splitFactor product %.4f, expected dividend "\n'
+     '                      "contribution %.4f (expected ratio %.4f), and close/adjClose ratio %.4f "\n'
+     '                      "disagree by more than the %.1f%% residual tolerance"\n'
+     '                      % (product, div_contribution, expected, ratio,\n'
+     '                         _SPLIT_RESIDUAL_TOLERANCE * 100))\n'
      '    return product, None',
      "    return 1.0, None",
      "test_historical_stand.TestSameShareBasisPE.test_undeterminable_split_factor_refuses_never_defaults_to_one",
      "an undeterminable split factor is REFUSED, never silently defaulted to 1"),
+    # issue #26: the mandate's own words -- "мутация 'ожидаемый вклад -> 1.0' обязана краснеть".
+    # Forcing the dividend signal to 1.0 (i.e. ignoring divCash entirely, the pre-#26 behaviour)
+    # must turn the MSFT pin red: with contribution pinned to 1.0, expected = product = 1.0
+    # against the real observed ratio of 1.0737 -- a 7.37% gap the 1% residual cannot absorb, so
+    # the run refuses a name that should pass clean.
+    ("splitfactor-04", "microservice/macro_prices.py",
+     "        contribution *= close / (close - div)\n    return contribution, None",
+     "        contribution *= close / (close - div)\n    return 1.0, None",
+     "test_historical_stand.TestSameShareBasisPE.test_msft_dividend_drift_with_no_split_does_not_refuse",
+     "the expected dividend contribution is MEASURED from divCash, never forced to 1.0"),
     ("splitfactor-02", "microservice/macro_prices.py",
      "    eps_today_basis = eps_as_filed / factor",
      "    eps_today_basis = eps_as_filed / 1.0",

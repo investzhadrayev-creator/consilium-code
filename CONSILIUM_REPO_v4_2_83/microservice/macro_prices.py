@@ -177,14 +177,59 @@ def tiingo_daily_rows_since(symbol, start, errors):
 
 # Issue #24: NVDA 2020-03-23 lived at close/adjClose = 40.2006 -- two real splits (4:1, 10:1)
 # compound to EXACTLY 40, and the leftover 0.2006 is accumulated-dividend admixture folded into
-# Tiingo's adjustment, not a third split. A tolerance is needed to tell "the same event, seen
-# through a noisier lens" from "the two signals disagree about what actually happened". 5% is
-# chosen because it comfortably covers multi-year dividend drag for the low-to-moderate-yield
-# growth names this pipeline evaluates (NVDA's own case above lands at ~0.5%, an order of
-# magnitude inside it) while staying far below the smallest possible real split: any split at
-# all -- 2:1, or a reverse 1:2 -- moves the ratio by at least 100% (2x or 1/2x), so a genuine
-# extra or missing split can never hide inside this margin.
-_SPLIT_RATIO_TOLERANCE = 0.05
+# Tiingo's adjustment, not a third split.
+#
+# Issue #26: a FIXED tolerance for that admixture is a losing construction -- it grows with the
+# length of the window, not with anything the code measures. MSFT never split since 2018-12-24,
+# so the splitFactor product is 1.0, yet seven years of quarterly dividends alone drove
+# close/adjClose to 1.0737 -- a 7.4% "admixture" that blew straight through the old 5% constant.
+# 7 of 29 live checks refused for exactly this reason (MSFT x3 dates, ORCL x4).
+#
+# The admixture is not noise: Tiingo computes it from `divCash`, a field on the SAME daily rows
+# already fetched for the splitFactor product. Its own back-adjustment mechanics divide every
+# EARLIER adjClose by (close - divCash) / close on each ex-dividend day, so the further back
+# `date` sits, the more such divisions compound into today's adjClose --
+# `_dividend_adjustment_contribution` below replays exactly that arithmetic. Checked against
+# MSFT's real numbers: splitFactor product 1.0, observed ratio 1.0737, dividend contribution
+# computed from divCash ~= 1.07 -- product * contribution lands within a fraction of a percent of
+# the observed ratio (see the MSFT pin in test_historical_stand.py).
+#
+# What is left over after subtracting the MEASURED dividend contribution is either ordinary data
+# noise or a genuine problem (a missed split, a bad row) -- and either way it is small: this
+# residual tolerance only has to cover the gap between Tiingo's TRUE ex-dividend-day adjustment
+# (base = the pre-ex-div close) and this function's approximation (base = that SAME day's own
+# close), an error on the order of (divCash/close)^2 -- negligible for any real dividend yield --
+# plus ordinary rounding. 1% is generous against that while staying twenty times tighter than the
+# old blanket 5%: a genuine missed or extra split still moves the ratio by at least 100% (2:1, or
+# a reverse 1:2), so it can never hide inside a 1% band.
+_SPLIT_RESIDUAL_TOLERANCE = 0.01
+
+
+def _dividend_adjustment_contribution(daily_rows):
+    """Expected multiplicative contribution of cash dividends to close/adjClose -- issue #26,
+    replaying Tiingo's own back-adjustment mechanics: on every ex-dividend day, Tiingo divides
+    every EARLIER adjClose by (close - divCash) / close so its series shows no artificial jump on
+    the ex-div date. The reciprocal of that division, compounded across every daily row that paid
+    a dividend since `date`, is exactly how much close/adjClose drifts upward from dividends
+    alone -- with no split at all, MSFT 2018-12-24 sits at ~1.07 on this signal by itself.
+
+    Rows with no dividend (`divCash` 0/missing) contribute 1.0 and are skipped -- a non-payer, or
+    a day between ex-div dates, must never move the product.
+
+    Returns (contribution, None) on success -- 1.0 when nothing was paid. Returns (None, reason)
+    when a row claims a dividend its own `close` cannot support (divCash >= close): undeterminable,
+    never silently skipped.
+    """
+    contribution = 1.0
+    for row in daily_rows:
+        div = (row or {}).get("divCash")
+        if not isinstance(div, (int, float)) or div <= 0:
+            continue
+        close = (row or {}).get("close")
+        if not isinstance(close, (int, float)) or close <= div:
+            return None, "a daily row pays a dividend its own close cannot support"
+        contribution *= close / (close - div)
+    return contribution, None
 
 
 def split_factor_since(price_record, daily_rows):
@@ -200,10 +245,15 @@ def split_factor_since(price_record, daily_rows):
     SECONDARY check: `close` is the raw price as it actually traded that day -- in THAT DAY's
     share basis. `adjClose` is rebased to TODAY's share count. Their ratio close/adjClose is
     therefore ALSO the cumulative split multiplier, but Tiingo's adjustment folds in cash
-    dividends too, so this ratio is contaminated by however much has been paid out since. The two
-    signals must agree within `_SPLIT_RATIO_TOLERANCE`; if they don't, something neither signal
-    alone would catch is wrong (a bad row, a data gap, a corporate action this model doesn't
-    know), and the mandate is a refusal quoting BOTH numbers, not a guess at which one to trust.
+    dividends too, so this ratio is contaminated by however much has been paid out since. Issue
+    #26: rather than tolerate that contamination with a fixed margin, `daily_rows`' own `divCash`
+    column is used to compute the EXPECTED dividend contribution
+    (`_dividend_adjustment_contribution`), and the ratio is checked against product * that
+    contribution -- not against the bare product. If they don't agree within
+    `_SPLIT_RESIDUAL_TOLERANCE`, something neither signal alone would catch is wrong (a bad row,
+    a data gap, a corporate action this model doesn't know), and the mandate is a refusal quoting
+    ALL THREE numbers -- product, expected dividend contribution, ratio -- not a guess at which
+    to trust.
 
     Undeterminable -- missing rows, missing fields, or a disagreement beyond tolerance -- is
     ALWAYS a refusal, never defaulted to 1.0: mandate 'отсутствие данных для приведения — отказ,
@@ -230,10 +280,17 @@ def split_factor_since(price_record, daily_rows):
             return None, "split_factor_undeterminable: a daily row is missing a usable splitFactor"
         product *= sf
 
-    if abs(ratio - product) / product > _SPLIT_RATIO_TOLERANCE:
-        return None, ("split_factor_undeterminable: splitFactor product %.4f and close/adjClose "
-                      "ratio %.4f disagree by more than the %.0f%% dividend-drag tolerance"
-                      % (product, ratio, _SPLIT_RATIO_TOLERANCE * 100))
+    div_contribution, div_reason = _dividend_adjustment_contribution(daily_rows)
+    if div_reason:
+        return None, "split_factor_undeterminable: %s" % div_reason
+    expected = product * div_contribution
+
+    if abs(ratio - expected) / expected > _SPLIT_RESIDUAL_TOLERANCE:
+        return None, ("split_factor_undeterminable: splitFactor product %.4f, expected dividend "
+                      "contribution %.4f (expected ratio %.4f), and close/adjClose ratio %.4f "
+                      "disagree by more than the %.1f%% residual tolerance"
+                      % (product, div_contribution, expected, ratio,
+                         _SPLIT_RESIDUAL_TOLERANCE * 100))
     return product, None
 
 

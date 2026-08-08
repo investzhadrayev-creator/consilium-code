@@ -154,6 +154,67 @@ class TestSameShareBasisPE(unittest.TestCase):
             self.assertEqual(got, factor, "factor %s: %s" % (factor, reason))
             self.assertIsNone(reason)
 
+    def test_msft_dividend_drift_with_no_split_does_not_refuse(self):
+        """Issue #26, THE pin. MSFT 2018-12-24: no split since (splitFactor product = 1.0), but
+        the LIVE close/adjClose ratio was 1.0737 -- seven years of dividends alone, which blew
+        through the old fixed 5% tolerance and refused 7 of 29 live historical checks (MSFT x3,
+        ORCL x4). Real Tiingo rows for a 7-year window are ~1,800 individual days; this collapses
+        them to their net effect for a compact, exact-arithmetic pin (same 'own example in
+        miniature' shape as the NVDA compound-split pin above), using the REAL ratio reported
+        live for MSFT (1.0737, issue #26's own numbers) and a single dividend row engineered to
+        reproduce it exactly: close 107.37, divCash 7.37 -> contribution = 107.37/100 = 1.0737.
+        Manual calc: product = 1.0 (no split); dividend contribution = 1.0737; expected =
+        1.0 * 1.0737 = 1.0737 = the observed ratio exactly -- no refusal, and the returned
+        factor is the SPLIT product (1.0), not the dividend-inflated ratio."""
+        price_record = {"close": 107.37, "adjClose": 100.0}   # ratio = 1.0737
+        daily_rows = [{"splitFactor": 1.0, "divCash": 0.0},
+                     {"splitFactor": 1.0, "divCash": 7.37, "close": 107.37},
+                     {"splitFactor": 1.0, "divCash": 0.0}]
+        factor, reason = mp.split_factor_since(price_record, daily_rows)
+        self.assertIsNone(reason)
+        self.assertAlmostEqual(factor, 1.0, places=6)
+
+    def test_nvda_v3_case_stays_green_at_exactly_40(self):
+        """Issue #26's own regression guard: the issue #24 NVDA pin (two real splits, 4:1 and
+        10:1, compounding to exactly 40, plus ~0.5% of dividend admixture the old code tolerated
+        blindly) must still pass green under the new divCash-driven check. These daily_rows carry
+        no divCash field at all (Tiingo reports none for the split days themselves), so the
+        expected dividend contribution is 1.0 and the entire 0.5015% gap between the ratio
+        (40.2006) and the product (40.0) falls inside the new, far smaller residual tolerance."""
+        price_record = {"close": 4020.06, "adjClose": 100.0}   # ratio = 40.2006
+        daily_rows = [{"splitFactor": 1.0}, {"splitFactor": 4.0}, {"splitFactor": 1.0},
+                     {"splitFactor": 10.0}, {"splitFactor": 1.0}]   # product = 40.0 exactly
+        factor, reason = mp.split_factor_since(price_record, daily_rows)
+        self.assertIsNone(reason)
+        self.assertEqual(factor, 40.0)
+
+    def test_real_discrepancy_beyond_the_dividend_contribution_is_still_a_refusal_with_three_numbers(self):
+        """A genuine data problem (a missed split, a bad row) must still refuse even after the
+        measured dividend contribution explains part of the drift -- 'a real discrepancy' per the
+        mandate. Same dividend admixture as the MSFT pin above (contribution = 1.0737), but the
+        observed ratio is 1.3 -- 21% beyond what the dividends explain, far past the 1% residual.
+        The refusal must name all three numbers: the splitFactor product, the expected dividend
+        contribution, and the raw ratio -- never a guess at which to trust."""
+        price_record = {"close": 130.0, "adjClose": 100.0}   # ratio = 1.3
+        daily_rows = [{"splitFactor": 1.0, "divCash": 0.0},
+                     {"splitFactor": 1.0, "divCash": 7.37, "close": 107.37},
+                     {"splitFactor": 1.0, "divCash": 0.0}]
+        factor, reason = mp.split_factor_since(price_record, daily_rows)
+        self.assertIsNone(factor)
+        self.assertIn("split_factor_undeterminable", reason)
+        self.assertIn("1.0000", reason)    # splitFactor product
+        self.assertIn("1.0737", reason)    # expected dividend contribution
+        self.assertIn("1.3000", reason)    # raw close/adjClose ratio
+
+    def test_dividend_row_whose_close_cannot_support_its_own_divCash_is_undeterminable(self):
+        """A row claiming divCash >= its own close is bad data, not a payer to skip silently --
+        the mandate's refusal rule applies to the dividend signal too, not only the split one."""
+        price_record = {"close": 107.0, "adjClose": 100.0}
+        daily_rows = [{"splitFactor": 1.0, "divCash": 50.0, "close": 40.0}]
+        factor, reason = mp.split_factor_since(price_record, daily_rows)
+        self.assertIsNone(factor)
+        self.assertIn("split_factor_undeterminable", reason)
+
 
 class TestTiingoDailyRowsSince(unittest.TestCase):
     """Issue #24: the range fetch that feeds split_factor_since's product signal."""
