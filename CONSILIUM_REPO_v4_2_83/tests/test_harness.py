@@ -1625,13 +1625,18 @@ class TestPeAnchorHasOneInput(unittest.TestCase):
 
 
 class TestPeSectorMedianAbsentFlag(unittest.TestCase):
-    """Issue #12. ivc_lib's SECONDARY multiplier cap is min(pe_hist_median, 1.5*pe_sector_median).
-    The value that reaches it under the "pe_sector_median" key is _pe_anchor_fwd(data) (see
-    TestPeAnchorHasOneInput above: the literal `pe_sector_median` field is a ghost the workflow
-    never produces). When _pe_anchor_fwd(data) is None, that half of the secondary cap is absent
-    and the cap silently collapses to the historical median alone -- correct arithmetic, but a
-    reader of the report has no way to know it happened. The flag makes the absence loud without
-    touching the arithmetic at all."""
+    """Issue #12, extended by Issue #21. ivc_lib's SECONDARY multiplier cap is
+    min(pe_hist_median, 1.5*pe_sector_median). The value that reaches it under the
+    "pe_sector_median" key is _pe_anchor_fwd(data) (see TestPeAnchorHasOneInput above: the literal
+    `pe_sector_median` field is a ghost the workflow never produces). When _pe_anchor_fwd(data) is
+    None, that half of the secondary cap is absent and the cap silently collapses to the historical
+    median alone -- correct arithmetic, but a reader of the report has no way to know it happened.
+    The flag makes the absence loud without touching the arithmetic at all.
+
+    Issue #21 (auditor finding on PR #17, p.6): the flag above is only half-honest. It always
+    claimed "relies on the historical median alone", but if pe_hist_median is ALSO absent, `caps`
+    in ivc_lib is empty and `pecap` is None -- there is no fallback running at all. The tests below
+    split the message on that condition."""
 
     def test_flag_present_and_names_the_cause_when_sector_anchor_is_absent(self):
         d = mature_data()
@@ -1672,6 +1677,39 @@ class TestPeSectorMedianAbsentFlag(unittest.TestCase):
         out = ivc(inp)
         self.assertTrue(any("future_pe_above_cap_30.0" in f for f in out["flags"]),
                         "the secondary cap no longer uses the sector leg: %s" % out["flags"])
+
+    def test_flag_says_NOT_applied_when_both_anchors_are_absent(self):
+        """Issue #21 (auditor finding on PR #17, p.6). mature_data() carries pe_hist_median=32, so
+        clearing only peer_median_pe (the test above) leaves the historical-median fallback genuinely
+        alive -- the old message is honest in that case. This test clears BOTH anchors: with
+        pe_hist_median also None, ivc_lib's `caps` list (min(pe_hist_median, 1.5x pe_sector_median))
+        is empty, so `pecap` is None and the secondary multiplier cap is not applied at all -- it does
+        not "rely on the historical median alone" because there is no historical median to rely on."""
+        d = mature_data()
+        d["peer_median_pe"] = None
+        d["pe_hist_median"] = None
+        r = analyze(d, mature_spec())
+        hits = [f for f in r["flags"] if f.startswith("pe_sector_median_absent")]
+        self.assertEqual(len(hits), 1, "flag missing or duplicated: %s" % r["flags"])
+        self.assertIn("NOT applied", hits[0],
+                      "double-absence must say the cap is not applied, not that it falls back")
+        self.assertIn("both anchors absent", hits[0])
+        self.assertNotIn("historical median alone", hits[0],
+                         "must not claim a working fallback that does not exist")
+        self.assertTrue(any(f.startswith("pe_sector_median_absent") for f in r["pe_cap"]["flags"]),
+                        "the double-absence message must also reach the pe_cap block, not just flags")
+
+    def test_the_double_absence_reading_matches_the_arithmetic(self):
+        """Negative control at the ivc_lib level: with BOTH pe_hist_median and pe_sector_median
+        None, `caps` is empty and no future_pe, however extreme, can trip a cap that does not
+        exist -- confirms "NOT applied" above is literally true, not merely worded that way."""
+        from ivc_lib import ivc
+        inp = {"price": 100, "eps_normalized": 5, "growth_rate": 0.1, "future_pe": 999,
+               "pe_hist_median": None, "pe_sector_median": None}
+        out = ivc(inp)
+        self.assertFalse(any(f.startswith("future_pe_above_cap") for f in out["flags"]),
+                         "with both anchors absent there is no secondary cap left to trip: %s"
+                         % out["flags"])
 
 
 class TestPeerMultipleBlockMatchesBases(unittest.TestCase):
