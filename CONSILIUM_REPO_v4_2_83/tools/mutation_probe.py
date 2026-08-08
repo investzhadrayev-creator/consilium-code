@@ -655,9 +655,16 @@ CASES = [
     # THE mandate's own words: "снятие фильтра по дате обязано покраснеть" is asof-01/02 above;
     # "замена коэффициента сплита на единицу обязана покраснеть" is splitfactor-02 below, in the
     # literal form the mandate names -- the factor forced to 1 rather than the one it measured.
+    # v4.2.83 (issue #24): refreshed for the product-vs-ratio rewrite. The old anchor (the
+    # "matches no clean split multiple" message) was deleted along with the clean-multiple list
+    # it belonged to; the mutation now targets the branch that replaced it -- a product/ratio
+    # disagreement beyond tolerance -- forcing the SAME never-default-to-1 failure mode.
     ("splitfactor-01", "microservice/macro_prices.py",
-     '    return None, ("split_factor_undeterminable: close/adjClose ratio %.4f matches no clean "\n'
-     '                  "split multiple and is not ~1.0" % ratio)',
+     '    if abs(ratio - product) / product > _SPLIT_RATIO_TOLERANCE:\n'
+     '        return None, ("split_factor_undeterminable: splitFactor product %.4f and close/adjClose "\n'
+     '                      "ratio %.4f disagree by more than the %.0f%% dividend-drag tolerance"\n'
+     '                      % (product, ratio, _SPLIT_RATIO_TOLERANCE * 100))\n'
+     '    return product, None',
      "    return 1.0, None",
      "test_historical_stand.TestSameShareBasisPE.test_undeterminable_split_factor_refuses_never_defaults_to_one",
      "an undeterminable split factor is REFUSED, never silently defaulted to 1"),
@@ -679,7 +686,7 @@ CASES = [
      "test_historical_stand_routes.TestEdgarFactsRouteAsOf.test_as_of_wrong_type_is_a_named_refusal_not_a_500",
      "a non-string as_of is refused by name instead of 500ing the /edgar_facts route"),
     ("route-price-01", "microservice/app.py",
-     "    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker)",
+     "    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker, daily_rows=daily_rows)",
      "    pe = None",
      "test_historical_stand_routes.TestPriceOnDateRoute.test_route_returns_price_split_factor_and_same_basis_pe_for_a_confirmed_split",
      "/price_on_date actually computes and publishes pe_same_share_basis, not a stub"),
@@ -712,6 +719,12 @@ CASES = [
      "        if False:\n            units = _filter_units_as_of(units, as_of)",
      "test_edgar_facts.TestAsOfCompanyconceptLeg.test_as_of_filters_the_companyconcept_leg_of_shares_current",
      "as_of also filters the companyconcept leg of _shares_current, not just companyfacts"),
+    # ---- issue #24: composite splits + dividend admixture broke the single-day ratio ----
+    ("splitfactor-03", "microservice/macro_prices.py",
+     "    return product, None",
+     "    return ratio, None",
+     "test_historical_stand.TestSameShareBasisPE.test_compound_split_with_dividend_admixture_gives_the_exact_product_and_a_correct_pe",
+     "the splitFactor PRODUCT wins over the dividend-contaminated close/adjClose ratio"),
 ]
 
 
