@@ -1,0 +1,24 @@
+2026-08-08T10:28:29.2150000Z Job is about to start running on the hosted runner: GitHub Actions 1000000129
+2026-08-08T10:28:29.2150000Z Job is waiting for a hosted runner to come online.
+2026-08-08T10:28:29.2120000Z Requested labels: ubuntu-latest
+2026-08-08T10:28:29.2120000Z Job defined at: investzhadrayev-creator/consilium-code/.github/workflows/claude.yml@refs/heads/main
+2026-08-08T10:28:29.2120000Z Waiting for a runner to pick up this job...
+2026-08-08T10:28:29.2110000Z Evaluating claude.if
+2026-08-08T10:28:29.2110000Z Evaluating: (success() && ((contains(github.event.issue.body, '@claude') || contains(github.event.comment.body, '@claude'))))
+2026-08-08T10:28:29.2110000Z Expanded: (true && (contains('## Что это
+
+Продолжение слитого PR #18 (issue #20). Аудитор PR #18 верно указал: весь стенд
+исторической реконструкции (`as_of`, `roe_median_5y`, `pe_same_share_basis`) был
+посчитан, но не подключён ни к одному HTTP-маршруту. Эта заявка прорезает двери.
+
+Работа выполнена только в `CONSILIUM_REPO_v4_2_83/`. Файл `workflow/` не тронут.
+`microservice/ivc_lib.py` не тронут.
+
+## Что изменено
+
+**`microservice/app.py`**
+- Маршрут `/edgar_facts`: читает необязательное поле `as_of` из тела запроса и
+  пробрасывает в `edgar_facts(ticker, cik, as_of=...)`. Без поля поведение
+  прежнее (пин на это ниже).
+- Новый маршрут `/price_on_date`: тело `{"ticker","date","eps"?}`, �...(truncated)
+2026-08-08T10:28:29.2110000Z Result: true
