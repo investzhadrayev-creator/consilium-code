@@ -624,6 +624,12 @@ CASES = [
      "    if False:\n        _dd = _dd_nested",
      "test_harness.TestDebtZeroIsUnknownORCLCase.test_the_divergence_is_read_where_the_producer_writes_it",
      "the debt divergence is read where the producer writes it"),
+    # ---- v4.2.83 (issue #12): the secondary PE-cap sector anchor's absence must be stated ----
+    ("secmed-01", "microservice/app.py",
+     '    if base_inp.get("pe_sector_median") is None:',
+     "    if False:",
+     "test_harness.TestPeSectorMedianAbsentFlag.test_flag_present_and_names_the_cause_when_sector_anchor_is_absent",
+     "the pe_sector_median_absent flag fires when the secondary cap's sector term is missing"),
 ]
 
 
