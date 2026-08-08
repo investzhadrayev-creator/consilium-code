@@ -52,9 +52,9 @@ class EdgarTestBase(unittest.TestCase):
         for tax, tag in ef.SHARES_CURRENT:
             ef._CONCEPT_CACHE[("TEST", tax, tag)] = (time.time(), None)
 
-    def run_with(self, mock, cik="TEST"):
+    def run_with(self, mock, cik="TEST", as_of=None):
         ef._FACTS_CACHE[cik] = (time.time(), mock)
-        return ef.edgar_facts(cik=cik)
+        return ef.edgar_facts(cik=cik, as_of=as_of)
 
 
 class TestSeriesExtraction(EdgarTestBase):
@@ -718,3 +718,114 @@ class TestRevenueTagIntegrity(EdgarTestBase):
                          "an uncomparable jump must NOT be filed as a clean business event")
         self.assertTrue(r["provenance_unknown"], "it must be filed as an honest 'don't know'")
         self.assertIn("tag", r["provenance_unknown"][0]["provenance_uncomparable"])
+
+
+class TestAsOfFilter(EdgarTestBase):
+    """Issue #14, the historical-reconstruction stand. `as_of` restricts every fact to ones
+    FILED on or before that day -- what the public actually knew, not what a later restatement
+    says. The property under test is the FILTER ITSELF, not any one field it happens to touch."""
+
+    def test_as_of_excludes_facts_filed_after_the_cutoff(self):
+        """Pin (issue #14 §5.1): at a given as_of, no fact FILED later must survive -- even one
+        whose fiscal PERIOD ended well before the cutoff. Filtering on `end` instead of `filed`
+        is exactly the bug this pin exists to catch."""
+        mock = facts({"Revenues": usd([
+            row("2023-01-01", "2023-12-31", 100, accn="a", filed="2024-02-01"),
+            row("2024-01-01", "2024-12-31", 150, accn="b", filed="2025-02-01"),  # filed AFTER cutoff
+        ])})
+        r = self.run_with(mock, as_of="2024-06-01")
+        ends = [p["end"] for p in r["revenue"]]
+        self.assertEqual(ends, ["2023-12-31"])
+        self.assertNotIn("2024-12-31", ends, "a fact filed after as_of leaked through")
+        # property, not shape: walk every *_audit trail in the whole payload and check the SAME
+        # invariant everywhere it could possibly appear, not just in the one field we picked.
+        for key, val in r.items():
+            if key.endswith("_audit") and isinstance(val, list):
+                for point in val:
+                    if isinstance(point, dict) and point.get("filed"):
+                        self.assertLessEqual(point["filed"], "2024-06-01",
+                                             "%s carries a fact filed after as_of" % key)
+
+    def test_unset_as_of_matches_current_behavior_even_for_a_fact_filed_in_the_future(self):
+        """Pin (issue #14 §5.2): omitting as_of must change NOTHING -- not even drop a fact filed
+        implausibly far in the future. If the default path started filtering anything, this
+        fixture makes it visible immediately instead of by accident on a live ticker."""
+        mock = facts({"Revenues": usd([
+            row("2024-01-01", "2024-12-31", 150, accn="a", filed="2099-01-01"),
+        ])})
+        r = self.run_with(mock)
+        self.assertEqual(r["revenue"], [{"end": "2024-12-31", "val": 150}])
+        self.assertNotIn("_as_of", r)
+
+    def test_as_of_excludes_equity_filed_after_the_cutoff(self):
+        """Pin (issue #14 §5.6): the equity series obeys the SAME as_of cutoff as everything
+        else -- a company's book value disclosed after the cutoff must not leak into a
+        historical-date roe_median_5y read."""
+        mock = facts({"StockholdersEquity": usd([
+            row(None, "2022-12-31", 900, accn="e1", filed="2023-02-01"),
+            row(None, "2023-12-31", 950, accn="e2", filed="2024-02-01"),  # filed AFTER cutoff
+        ])})
+        r = self.run_with(mock, as_of="2023-06-01")
+        ends = [p["end"] for p in r["stockholders_equity"]]
+        self.assertEqual(ends, ["2022-12-31"])
+        self.assertNotIn("2023-12-31", ends)
+
+
+class TestEquityAndRoe(EdgarTestBase):
+    """Issue #14 §5: stockholders_equity + roe_median_5y did not exist before this change."""
+
+    def test_median_of_last_five_years_computed_correctly(self):
+        ends = ["2019-12-31", "2020-12-31", "2021-12-31", "2022-12-31", "2023-12-31"]
+        ni_vals = [80, 120, 90, 200, 150]     # / equity 1000 -> .08 .12 .09 .20 .15
+        ni_rows = [row(e[:4] + "-01-01", e, v, accn="ni" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e, v in zip(ends, ni_vals)]
+        eq_rows = [row(None, e, 1000, accn="eq" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e in ends]
+        mock = facts({"NetIncomeLoss": usd(ni_rows), "StockholdersEquity": usd(eq_rows)})
+        r = self.run_with(mock)
+        # sorted ROE: .08 .09 .12 .15 .20 -> median .12
+        self.assertAlmostEqual(r["roe_median_5y"], 0.12, places=6)
+        self.assertNotIn("roe_median_5y_refused", r["_flags"])
+
+    def test_negative_equity_refuses_with_a_reason_not_a_number(self):
+        """Pin (issue #14 §5.5): negative/zero equity is a REFUSAL by name
+        (roe_not_computable: negative_equity), never a number and never a silent skip."""
+        ends = ["2021-12-31", "2022-12-31", "2023-12-31"]
+        ni_rows = [row(e[:4] + "-01-01", e, 10, accn="ni" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e in ends]
+        eq_vals = [100, -50, 120]
+        eq_rows = [row(None, e, v, accn="eq" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e, v in zip(ends, eq_vals)]
+        mock = facts({"NetIncomeLoss": usd(ni_rows), "StockholdersEquity": usd(eq_rows)})
+        r = self.run_with(mock)
+        self.assertIsNone(r["roe_median_5y"])
+        self.assertEqual(r["_flags"]["roe_median_5y_refused"]["roe_not_computable"], "negative_equity")
+
+    def test_fewer_than_three_years_refuses_insufficient_history(self):
+        ends = ["2022-12-31", "2023-12-31"]
+        ni_rows = [row(e[:4] + "-01-01", e, 10, accn="ni" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e in ends]
+        eq_rows = [row(None, e, 100, accn="eq" + e[:4],
+                      filed=str(int(e[:4]) + 1) + "-02-01") for e in ends]
+        mock = facts({"NetIncomeLoss": usd(ni_rows), "StockholdersEquity": usd(eq_rows)})
+        r = self.run_with(mock)
+        self.assertIsNone(r["roe_median_5y"])
+        self.assertEqual(r["_flags"]["roe_median_5y_refused"]["roe_not_computable"], "insufficient_history")
+
+    def test_stockholders_equity_falls_back_to_combined_tag_with_a_flag(self):
+        mock = facts({"StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest": usd([
+            row(None, "2023-12-31", 500, accn="c1", filed="2024-02-01"),
+        ])})
+        r = self.run_with(mock)
+        self.assertEqual(r["stockholders_equity"], [{"end": "2023-12-31", "val": 500}])
+        self.assertIn("stockholders_equity_combined_basis", r["_flags"])
+
+    def test_primary_equity_tag_wins_when_both_present(self):
+        mock = facts({
+            "StockholdersEquity": usd([row(None, "2023-12-31", 400, accn="p1", filed="2024-02-01")]),
+            "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest": usd([
+                row(None, "2023-12-31", 999, accn="c1", filed="2024-02-01")]),
+        })
+        r = self.run_with(mock)
+        self.assertEqual(r["stockholders_equity"], [{"end": "2023-12-31", "val": 400}])
+        self.assertNotIn("stockholders_equity_combined_basis", r["_flags"])
