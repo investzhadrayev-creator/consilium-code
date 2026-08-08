@@ -797,6 +797,10 @@ def edgar_facts(ticker=None, cik=None, as_of=None):
 
     roe_median, roe_refusal = _roe_median_5y(out.get("net_income"), out.get("stockholders_equity"))
     out["roe_median_5y"] = roe_median
+    # issue #20 pt.4: the basis travels WITH the number, or a reader compares it to a peer's ROE
+    # computed on average capital as if the two were the same measure. See _roe_median_5y's
+    # docstring for why year-end equity was chosen over average capital.
+    out["roe_basis"] = "net_income / year_end_equity"
     if roe_refusal:
         out["_flags"]["roe_median_5y_refused"] = roe_refusal
 
