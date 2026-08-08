@@ -666,6 +666,52 @@ CASES = [
      "    eps_today_basis = eps_as_filed / 1.0",
      "test_historical_stand.TestSameShareBasisPE.test_pe_matches_a_manual_calculation_across_a_confirmed_split",
      "price and EPS are reconciled onto the MEASURED split factor, not a hardcoded 1"),
+    # ---- issue #20: wire the historical-reconstruction stand to HTTP (the #18 audit's finding
+    # that as_of/roe_median_5y/pe_same_share_basis were computed but reached no caller) ----
+    ("route-asof-01", "microservice/app.py",
+     'result = edgar_facts(body.get("ticker"), body.get("cik"), as_of)',
+     'result = edgar_facts(body.get("ticker"), body.get("cik"))',
+     "test_historical_stand_routes.TestEdgarFactsRouteAsOf.test_as_of_in_the_request_body_reaches_edgar_facts_and_filters_the_result",
+     "as_of in the /edgar_facts POST body actually reaches edgar_facts() and filters the result"),
+    ("route-asof-type-01", "microservice/app.py",
+     '    if as_of is not None and not isinstance(as_of, str):',
+     '    if False:',
+     "test_historical_stand_routes.TestEdgarFactsRouteAsOf.test_as_of_wrong_type_is_a_named_refusal_not_a_500",
+     "a non-string as_of is refused by name instead of 500ing the /edgar_facts route"),
+    ("route-price-01", "microservice/app.py",
+     "    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker)",
+     "    pe = None",
+     "test_historical_stand_routes.TestPriceOnDateRoute.test_route_returns_price_split_factor_and_same_basis_pe_for_a_confirmed_split",
+     "/price_on_date actually computes and publishes pe_same_share_basis, not a stub"),
+    ("route-price-type-01", "microservice/app.py",
+     '    if eps is not None and (not isinstance(eps, (int, float)) or isinstance(eps, bool)):',
+     '    if False:',
+     "test_historical_stand_routes.TestPriceOnDateRoute.test_eps_wrong_type_is_a_named_refusal_not_a_500",
+     "a string eps is refused by name instead of 500ing the /price_on_date route"),
+    ("roe-insufficient-01", "microservice/edgar_facts.py",
+     '    if len(ends) < 3:\n        return None, {"roe_not_computable": "insufficient_history", "years_available": len(ends)}',
+     '    if False:\n        return None, {"roe_not_computable": "insufficient_history", "years_available": len(ends)}',
+     "test_edgar_facts.TestEquityAndRoe.test_fewer_than_three_years_refuses_insufficient_history",
+     "fewer than 3 overlapping annual points refuses ROE by name, not a computed number"),
+    ("equity-fallback-01", "microservice/edgar_facts.py",
+     "    if not eq_series:\n        eq_series, eq_tag = _annual_instant_series(facts, EQUITY_TAGS_FALLBACK)\n        eq_combined = bool(eq_series)",
+     "    if False:\n        eq_series, eq_tag = _annual_instant_series(facts, EQUITY_TAGS_FALLBACK)\n        eq_combined = bool(eq_series)",
+     "test_edgar_facts.TestEquityAndRoe.test_stockholders_equity_falls_back_to_combined_tag_with_a_flag",
+     "the combined-basis equity tag is used, and flagged, when the primary tag is absent"),
+    ("asof-splits-companyconcept-01", "microservice/edgar_facts.py",
+     "                if as_of:\n"
+     "                    # companyconcept is a separate fetch, unfiltered by the caller's as_of --\n"
+     "                    # apply the same cutoff here or a restatement filed after as_of leaks in.\n"
+     "                    concept_units = _filter_units_as_of(concept_units, as_of)",
+     "                if False:\n"
+     "                    concept_units = _filter_units_as_of(concept_units, as_of)",
+     "test_edgar_facts.TestAsOfCompanyconceptLeg.test_as_of_filters_the_companyconcept_leg_of_confirmed_splits",
+     "as_of also filters the companyconcept leg of _detect_confirmed_splits, not just companyfacts"),
+    ("asof-shares-companyconcept-01", "microservice/edgar_facts.py",
+     "        if as_of:\n            units = _filter_units_as_of(units, as_of)",
+     "        if False:\n            units = _filter_units_as_of(units, as_of)",
+     "test_edgar_facts.TestAsOfCompanyconceptLeg.test_as_of_filters_the_companyconcept_leg_of_shares_current",
+     "as_of also filters the companyconcept leg of _shares_current, not just companyfacts"),
 ]
 
 

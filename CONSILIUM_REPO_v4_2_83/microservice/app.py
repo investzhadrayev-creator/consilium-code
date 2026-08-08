@@ -55,6 +55,8 @@ from edgar_facts import edgar_facts, raw_tags  # v1.8 facts + v4.2.44 raw-tag di
 from edgar_form4 import edgar_form4    # v2.8: SEC EDGAR Form 4 insider transactions (phase 2)
 from market_facts import market_facts  # v3.9: second-source forward data + in-house peer P/E
 from macro_prices import macro_prices  # v4.2: FRED risk-free + Tiingo series (keys stay server-side)
+from macro_prices import tiingo_price_on_date, split_factor_since, pe_same_share_basis
+                                        # v4.2.84: issue #20, historical-reconstruction stand pt.2
 
 app = Flask(__name__)
 
@@ -219,11 +221,28 @@ def _scenario_tree():
 def _edgar_facts():
     """
     SEC EDGAR primary-source financials (deterministic XBRL facts).
-    Body: {"ticker": "ASTS"}  (or {"cik": "0001780312"}).
+    Body: {"ticker": "ASTS"}  (or {"cik": "0001780312"}). Optional "as_of": "YYYY-MM-DD"
+    (issue #14/#20, the historical-reconstruction stand) restricts every fact to ones FILED on
+    or before that day -- what the public actually knew on that date, not what a later
+    restatement says. Omitted: not one line of behavior changes from before this field existed.
     edgar_facts() never throws; missing fields come back null with a '_missing' trail.
+
+    as_of is compared against a filing-date STRING inside edgar_facts (`f.get("filed") <= as_of`)
+    -- a non-string as_of (e.g. a bare int from a caller that forgot the quotes) throws a raw
+    TypeError there and the route 500s, same class of bug as the eps type-check below. Checked
+    here, at the boundary, so the route degrades to a named refusal instead: as_of is dropped
+    (ticker/cik still process normally) and the reason lands in _errors.
     """
     body = request.get_json(force=True, silent=True) or {}
-    return jsonify(edgar_facts(body.get("ticker"), body.get("cik"))), 200
+    as_of = body.get("as_of")
+    as_of_error = None
+    if as_of is not None and not isinstance(as_of, str):
+        as_of_error = "as_of must be a string 'YYYY-MM-DD', got %s" % type(as_of).__name__
+        as_of = None
+    result = edgar_facts(body.get("ticker"), body.get("cik"), as_of)
+    if as_of_error:
+        result.setdefault("_errors", {})["as_of"] = as_of_error
+    return jsonify(result), 200
 
 
 # ============================================================================
@@ -1418,6 +1437,54 @@ def _macro_prices():
     b = request.get_json(force=True, silent=True) or {}
     return jsonify(macro_prices(b.get("ticker"), b.get("benchmark", "SPY"),
                                 b.get("start", "2023-01-01"))), 200
+
+
+@app.route("/price_on_date", methods=["POST"])
+def _price_on_date():
+    """v4.2.84: issue #20, historical-reconstruction stand pt.2. PR #18 built
+    tiingo_price_on_date/pe_same_share_basis in macro_prices.py but wired them to no route --
+    its own docstring called pe_same_share_basis 'the most important part of the task' and the
+    #18 audit found it reachable only from unit tests. This route is the door.
+
+    A SEPARATE route rather than folding onto /market_facts: /market_facts is called on every
+    live run and returns TODAY's snapshot; this route exists only for a historical-date
+    reconstruction, a distinct caller from the always-on path, and must not change
+    /market_facts's response shape for a feature most runs never touch.
+
+    Body: {"ticker": "ADBE", "date": "2019-03-15", "eps": 50.0}
+      ticker, date required. eps optional -- EPS as reported in the filing AS OF that date, in
+      THAT filing's share basis; without it pe_same_share_basis is null with a named refusal
+      ("no EPS supplied"), price_record and split_factor are still returned.
+
+    Returns: {"ticker","date","price_record": {...raw Tiingo row...} | None,
+              "split_factor": float | None, "pe_same_share_basis": float | None, "_errors": {}}
+    Never throws. A missing trading day, an undeterminable split factor, or missing EPS are all
+    named refusals in _errors -- never a guessed number and never a silent 1.0 split factor.
+
+    eps must be a number: pe_same_share_basis divides by it (`eps_as_filed / factor`), and a
+    string eps (a caller sending "50.0" instead of 50.0, an easy JSON-body mistake) throws a raw
+    TypeError there that pe_same_share_basis's own None-check never catches -- it only guards
+    the missing case. Checked here, at the boundary, same fix as as_of above: a wrong-typed eps
+    is dropped (price_record/split_factor still returned) and the reason is a named refusal."""
+    b = request.get_json(force=True, silent=True) or {}
+    ticker, date = b.get("ticker"), b.get("date")
+    errors = {}
+    if not ticker or not date:
+        return jsonify({"ticker": ticker, "date": date, "price_record": None,
+                        "split_factor": None, "pe_same_share_basis": None,
+                        "_errors": {"request": "ticker and date are required"}}), 200
+    eps = b.get("eps")
+    if eps is not None and (not isinstance(eps, (int, float)) or isinstance(eps, bool)):
+        errors["eps_%s" % ticker] = "eps must be a number, got %s" % type(eps).__name__
+        eps = None
+    price_record = tiingo_price_on_date(ticker, date, errors)
+    split_factor, split_reason = split_factor_since(price_record)
+    if split_reason:
+        errors["split_factor_%s" % ticker] = split_reason
+    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker)
+    return jsonify({"ticker": ticker, "date": date, "price_record": price_record,
+                    "split_factor": split_factor, "pe_same_share_basis": pe,
+                    "_errors": errors}), 200
 
 
 def trigger_prices(result, ticker=None, spec_date=None, spec_version=None):

@@ -829,3 +829,60 @@ class TestEquityAndRoe(EdgarTestBase):
         r = self.run_with(mock)
         self.assertEqual(r["stockholders_equity"], [{"end": "2023-12-31", "val": 400}])
         self.assertNotIn("stockholders_equity_combined_basis", r["_flags"])
+
+    def test_roe_basis_travels_next_to_the_number(self):
+        """Pin (issue #20 pt.4): the #18 audit found roe_median_5y had no basis label next to
+        it -- a consumer would compare it to a peer's average-capital ROE as the same measure.
+        roe_basis names the actual denominator (year-end equity, per _roe_median_5y's docstring),
+        and must be present even when the median itself is refused -- the label describes what
+        the FIELD means, not a fact about this one company's history."""
+        mock = facts({"Revenues": usd([row("2024-01-01", "2024-12-31", 100)])})  # no equity at all
+        r = self.run_with(mock)
+        self.assertIsNone(r["roe_median_5y"])
+        self.assertEqual(r["roe_basis"], "net_income / year_end_equity")
+
+
+class TestAsOfCompanyconceptLeg(EdgarTestBase):
+    """Issue #20 pt.3, the two branches the #18 audit named as unpinned: `_detect_confirmed_
+    splits` and `_shares_current` both make a SEPARATE companyconcept fetch that bypasses the
+    caller's as_of filtering on `facts`, so each applies the same cutoff again internally
+    (edgar_facts.py:536-539, 620-621). Before this pin, deleting those two lines failed no test
+    in the tree -- a historical-date read could see a share count or a split restatement first
+    disclosed AFTER the requested as_of date."""
+
+    def test_as_of_filters_the_companyconcept_leg_of_shares_current(self):
+        # companyfacts carries nothing for shares_current -- forces the companyconcept fallback.
+        mock = facts({"Revenues": usd([row("2024-01-01", "2024-12-31", 100)])})
+        rows = [
+            row(None, "2023-06-30", 100000000, form="10-Q", accn="q1", filed="2023-07-20"),
+            row(None, "2024-06-30", 200000000, form="10-Q", accn="q2", filed="2024-07-20"),
+        ]
+        ef._CONCEPT_CACHE[("TEST", "dei", "EntityCommonStockSharesOutstanding")] = (
+            time.time(), {"shares": rows})
+        # Positive control: without as_of, the later (larger) filing wins -- proves the branch
+        # is reachable and the mock actually exercises it.
+        r_all = self.run_with(mock)
+        self.assertEqual(r_all["shares_current"], 200000000)
+        # With as_of set BEFORE the second filing's filed date, that filing must not be seen.
+        r_cut = self.run_with(mock, as_of="2023-12-31")
+        self.assertEqual(r_cut["shares_current"], 100000000,
+                         "a share count filed after as_of leaked through the companyconcept leg "
+                         "of _shares_current")
+
+    def test_as_of_filters_the_companyconcept_leg_of_confirmed_splits(self):
+        # companyfacts carries nothing for shares_diluted -- forces reliance on companyconcept.
+        mock = facts({"Revenues": usd([row("2024-01-01", "2024-12-31", 100)])})
+        pre_split = row("2012-09-30", "2013-09-28", 925331000, accn="s1", filed="2013-10-30")
+        restated = row("2012-09-30", "2013-09-28", 6521634000, accn="s3", filed="2015-10-28")
+        ef._CONCEPT_CACHE[("TEST", "us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding")] = (
+            time.time(), {"shares": [pre_split, restated]})
+        # Positive control: without as_of, the restatement is visible and the split confirms.
+        r_all = self.run_with(mock)
+        self.assertEqual(r_all["_flags"]["confirmed_splits"][0]["factor"], 7)
+        # With as_of BEFORE the restatement's filed date, only the pre-split value is visible --
+        # one distinct value can never confirm a split (needs two).
+        r_cut = self.run_with(mock, as_of="2014-01-01")
+        self.assertNotIn("confirmed_splits", r_cut["_flags"],
+                         "a restatement filed after as_of leaked through the companyconcept leg "
+                         "of _detect_confirmed_splits, confirming a split before it was public")
+        self.assertIn("confirmed_splits_none", r_cut["_flags"])
