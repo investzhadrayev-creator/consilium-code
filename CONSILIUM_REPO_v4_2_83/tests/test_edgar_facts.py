@@ -718,3 +718,130 @@ class TestRevenueTagIntegrity(EdgarTestBase):
                          "an uncomparable jump must NOT be filed as a clean business event")
         self.assertTrue(r["provenance_unknown"], "it must be filed as an honest 'don't know'")
         self.assertIn("tag", r["provenance_unknown"][0]["provenance_uncomparable"])
+
+
+class TestAsOfFilter(EdgarTestBase):
+    """v4.2.84 (issue #14 pt.1): as_of restricts every fact to what was FILED on or before that
+    date -- "known to the public that day", the whole reason the historical-validation stand
+    (mailbox/PREREG_2026-08-06_HISTORICAL_VALIDATION.md) needs this filter at all. Uses 'filed',
+    never the period end -- a fact about an old period filed LATE is exactly as invisible on the
+    as-of date as a fact about a period that hadn't happened yet."""
+
+    def test_as_of_excludes_facts_filed_after_the_date(self):
+        mock = facts({"Revenues": usd([
+            row("2022-01-01", "2022-12-31", 100, accn="a", filed="2023-02-01"),
+            row("2023-01-01", "2023-12-31", 150, accn="b", filed="2024-02-01"),  # filed AFTER as_of
+        ])})
+        ef._FACTS_CACHE["TEST"] = (time.time(), mock)
+        r = ef.edgar_facts(cik="TEST", as_of="2023-06-01")
+        ends = [p["end"] for p in r["revenue"]]
+        self.assertIn("2022-12-31", ends)
+        self.assertNotIn("2023-12-31", ends,
+                         "a fact filed 2024-02-01 leaked through an as_of of 2023-06-01")
+
+    def test_as_of_drops_a_later_restatement_of_an_earlier_period(self):
+        """The other half of the trap: a LATER refinement of an EARLIER period must also be
+        excluded -- as_of freezes what was KNOWN, not just which period a fact describes."""
+        mock = facts({"Revenues": usd([
+            row("2022-01-01", "2022-12-31", 100, accn="a", filed="2023-02-01"),
+            row("2022-01-01", "2022-12-31", 999, accn="b", filed="2024-05-01"),  # later restatement
+        ])})
+        ef._FACTS_CACHE["TEST"] = (time.time(), mock)
+        r = ef.edgar_facts(cik="TEST", as_of="2023-06-01")
+        self.assertEqual(r["revenue"], [{"end": "2022-12-31", "val": 100}],
+                         "a restatement filed after as_of must not override the as-of-known value")
+
+    def test_unset_as_of_matches_existing_behavior(self):
+        """Pin 2. No as_of -> identical to the pre-as_of code path. Every other test in this file
+        calls edgar_facts()/run_with() without as_of and must keep passing unmodified (48/48 did,
+        verified on this changeset) -- this test additionally shows the DEFAULT has no effect on a
+        fixture that deliberately spans a date an as_of filter WOULD cut."""
+        mock = facts({"Revenues": usd([
+            row("2022-01-01", "2022-12-31", 100, accn="a", filed="2023-02-01"),
+            row("2023-01-01", "2023-12-31", 150, accn="b", filed="2024-02-01"),
+        ])})
+        r = self.run_with(mock)
+        self.assertEqual([p["end"] for p in r["revenue"]], ["2022-12-31", "2023-12-31"])
+        self.assertNotIn("_as_of", r)
+
+    def test_confirmed_splits_respect_as_of(self):
+        """as_of must reach the companyconcept-merged path in _detect_confirmed_splits too -- that
+        path bypasses `facts` entirely (see _merge_units), so it needs its own filter call."""
+        mock = facts({"WeightedAverageNumberOfDilutedSharesOutstanding": shares([
+            row("2022-01-01", "2022-12-31", 500000000, accn="s1", filed="2023-02-01"),
+            row("2022-01-01", "2022-12-31", 1000000000, accn="s3", filed="2025-02-01"),  # restated late
+            row("2023-01-01", "2023-12-31", 1000000000, accn="s2", filed="2024-02-01"),
+        ])})
+        ef._FACTS_CACHE["TEST"] = (time.time(), mock)
+        r = ef.edgar_facts(cik="TEST", as_of="2024-01-01")
+        self.assertEqual(r["_flags"].get("confirmed_splits", []), [],
+                         "the restatement confirming the split was filed after as_of")
+
+    def test_invalid_as_of_is_refused_not_silently_ignored(self):
+        r = ef.edgar_facts(cik="TEST", as_of="not-a-date")
+        self.assertIn("as_of", r["_errors"])
+
+
+class TestEquityAndROE(EdgarTestBase):
+    """v4.2.84 (issue #14 pt.4): equity + roe_median_5y. Neither field existed before this change
+    -- PREREG §8's terminal-multiplier formula needs a terminal ROE input and the stand cannot
+    start without it."""
+
+    def _mock(self, equity_rows, ni_rows, equity_tag="StockholdersEquity"):
+        return facts({equity_tag: usd(equity_rows), "NetIncomeLoss": usd(ni_rows)})
+
+    def _series(self, pairs, kind):
+        out = []
+        for y, v in pairs:
+            filed = "%d-02-01" % (y + 1)
+            if kind == "equity":
+                out.append(row(None, "%d-12-31" % y, v, accn="e%d" % y, filed=filed))
+            else:
+                out.append(row("%d-01-01" % y, "%d-12-31" % y, v, accn="n%d" % y, filed=filed))
+        return out
+
+    def test_roe_median_5y_is_the_median_of_net_income_over_period_end_equity(self):
+        equity = self._series([(2020, 1000), (2021, 1100), (2022, 1200), (2023, 1300), (2024, 1400)], "equity")
+        ni = self._series([(2020, 100), (2021, 121), (2022, 96), (2023, 143), (2024, 168)], "ni")
+        r = self.run_with(self._mock(equity, ni))
+        # roes: .10, .11, .08, .11, .12 -> sorted .08 .10 .11 .11 .12 -> median .11
+        self.assertAlmostEqual(r["roe_median_5y"], 0.11, places=6)
+
+    def test_equity_falls_back_to_combined_tag_when_base_is_empty(self):
+        mock = facts({
+            "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest": usd([
+                row(None, "2024-12-31", 5000, accn="c1", filed="2025-02-01"),
+            ]),
+        })
+        r = self.run_with(mock)
+        self.assertEqual(r["equity"], [{"end": "2024-12-31", "val": 5000}])
+        self.assertIn("equity_basis_combined", r["_flags"])
+
+    def test_roe_negative_equity_is_refused_with_a_reason_not_a_number(self):
+        equity = self._series([(2020, 1000), (2021, 1100), (2022, -200), (2023, 1300), (2024, 1400)], "equity")
+        ni = self._series([(2020, 100), (2021, 121), (2022, 96), (2023, 143), (2024, 168)], "ni")
+        r = self.run_with(self._mock(equity, ni))
+        self.assertIsInstance(r["roe_median_5y"], dict,
+                              "a negative-equity year must produce a refusal object, not a number")
+        self.assertEqual(r["roe_median_5y"], {"error": "roe_not_computable", "reason": "negative_equity"})
+
+    def test_roe_insufficient_history_is_refused(self):
+        equity = self._series([(2023, 1000), (2024, 1100)], "equity")
+        ni = self._series([(2023, 100), (2024, 121)], "ni")
+        r = self.run_with(self._mock(equity, ni))
+        self.assertEqual(r["roe_median_5y"],
+                         {"error": "roe_not_computable", "reason": "insufficient_history"})
+
+    def test_equity_series_respects_as_of_filter(self):
+        """Pin 6. The same as_of choke point (_filter_facts_as_of) that guards revenue must also
+        guard the brand-new equity series -- a separate un-filtered fetch for the new concept
+        would silently reopen the exact leak pin 1 closes, one field over."""
+        equity = [
+            row(None, "2022-12-31", 1000, accn="e1", filed="2023-02-01"),
+            row(None, "2023-12-31", 1100, accn="e2", filed="2024-02-01"),  # filed after as_of
+        ]
+        mock = facts({"StockholdersEquity": usd(equity)})
+        ef._FACTS_CACHE["TEST"] = (time.time(), mock)
+        r = ef.edgar_facts(cik="TEST", as_of="2023-06-01")
+        self.assertEqual([p["end"] for p in r["equity"]], ["2022-12-31"],
+                         "an equity value filed after as_of leaked through")

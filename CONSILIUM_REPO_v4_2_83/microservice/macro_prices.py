@@ -121,6 +121,83 @@ def tiingo_monthly(symbol, errors, years=10):
         return []
 
 
+def price_on_date(ticker, date, errors):
+    """Full Tiingo daily-price row for a SINGLE day (startDate=endDate=date), for the
+    historical-validation stand (issue #14 pt.2). Same address and startDate param already used
+    by tiingo_series/tiingo_monthly above; endDate pins it to exactly one day instead of a range.
+
+    Returns the RAW row unfiltered -- every price and corporate-action field Tiingo sends
+    (unadjusted close, adjClose, splitFactor, divCash, ...), not just adjClose. Deliberately: the
+    basis-reconciliation this feeds (normalize_pe, below) needs BOTH the unadjusted and adjusted
+    close from the SAME row, and picking fields here would silently decide, on this caller's
+    behalf, which ones a later consumer is allowed to see.
+    """
+    token = os.environ.get("TIINGO_TOKEN")
+    if not token:
+        errors["tiingo_price_on_date"] = "TIINGO_TOKEN not set on this service"
+        return None
+    try:
+        rows = _get_json("https://api.tiingo.com/tiingo/daily/%s/prices?startDate=%s&endDate=%s&token=%s"
+                         % (ticker, date, date, token))
+        if not isinstance(rows, list) or not rows:
+            errors["tiingo_price_on_date_%s" % ticker] = "no price data for %s on %s" % (ticker, date)
+            return None
+        return rows[0]
+    except Exception as e:
+        errors["tiingo_price_on_date_%s" % ticker] = str(e)[:140]
+        return None
+
+
+def normalize_pe(price_row, eps_asof, errors, key="normalize_pe"):
+    """Reconcile a historical EPS (as-of basis) against Tiingo's split-adjusted close (today's
+    basis) so price and EPS land on ONE share-count basis before they are divided (issue #14
+    pt.3 -- "the main thing in this task"). Un-reconciled, the ratio is wrong by exactly the
+    split multiple: a 10:1 split after the as-of date understates P/E tenfold and the system
+    confidently recommends a buy on a phantom cheapness.
+
+    BASIS CHOSEN: today's (adjClose). Every other price series this service returns
+    (tiingo_series, tiingo_monthly above) is adjClose-only, so a P/E computed here stays
+    comparable to anything else in the pipeline built from those series. The alternative --
+    unadjusted `close`, already in the as-of basis, needing no conversion at all -- is locally
+    simpler but would silently mix bases the moment this number sits next to an adjClose-based
+    one computed anywhere else. That silent mix is the defect class this task exists to close,
+    not a shortcut worth taking to avoid one division.
+
+    THE CONVERSION: `close` is what actually traded that day (as-of basis); `adjClose` is that
+    same trade restated into today's basis by Tiingo. Their ratio close/adjClose IS the
+    cumulative basis-conversion factor since as-of, however many splits (and dividend
+    adjustments) produced it -- and both values arrive in the ONE row price_on_date already
+    fetched, so this needs no separate walk over confirmed_splits/SEC restatements.
+    eps_today_basis = eps_asof / (close/adjClose) = eps_asof * adjClose/close.
+
+    Refuses (returns None, records `errors[key]`) rather than defaulting the factor to 1 when
+    close/adjClose cannot be read -- a silent 1.0 here is indistinguishable from "no split
+    happened" and is exactly the confident-wrong-number failure mode this function exists to
+    prevent.
+    """
+    if not isinstance(price_row, dict):
+        errors[key] = "no price row to normalize against"
+        return None
+    close = price_row.get("close")
+    adj_close = price_row.get("adjClose")
+    if not isinstance(close, (int, float)) or close <= 0 or \
+       not isinstance(adj_close, (int, float)) or adj_close <= 0:
+        errors[key] = "split factor not determinable: close/adjClose missing or non-positive"
+        return None
+    if not isinstance(eps_asof, (int, float)):
+        errors[key] = "eps_asof missing or not numeric"
+        return None
+    split_factor = close / adj_close
+    eps_today_basis = eps_asof / split_factor
+    if eps_today_basis == 0:
+        errors[key] = "normalized EPS is zero — P/E undefined"
+        return None
+    return {"pe": adj_close / eps_today_basis,
+           "price_used": adj_close, "price_basis": "adjClose_today",
+           "eps_asof": eps_asof, "eps_today_basis": eps_today_basis,
+           "split_factor_since_as_of": split_factor}
+
+
 def macro_prices(ticker, benchmark="SPY", start="2023-01-01"):
     out = {"_errors": {}}
     out["risk_free"] = fred_risk_free(out["_errors"])

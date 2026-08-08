@@ -108,6 +108,14 @@ DEBT_FULL_LT = ["LongTermDebt"]
 DEBT_NONCURRENT = ["LongTermDebtNoncurrent"]
 DEBT_CUR = ["LongTermDebtCurrent", "DebtCurrent"]
 DEBT_COMBINED = ["DebtLongtermAndShorttermCombinedAmount"]
+# v4.2.84: equity, for roe_median_5y (mandate: historical-validation stand, issue #14, PREREG
+# §8's terminal-multiplier formula needs ROE_terminal and edgar_facts produced neither field
+# before this). Base tag first; the combined (incl. noncontrolling interest) tag is a fallback
+# for the WHOLE series, used only when the base tag has no data at all -- never mixed per-year
+# with the base tag, so a reader always knows which basis a given series is in (flagged when it
+# is the combined one).
+EQUITY_BASE = ["StockholdersEquity"]
+EQUITY_COMBINED = ["StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]
 
 
 def _throttle():
@@ -211,6 +219,47 @@ def _days(start, end):
         return (_dt.date.fromisoformat(end) - _dt.date.fromisoformat(start)).days
     except Exception:
         return 999
+
+
+# --- v4.2.84: "as of" filter (mandate: historical-validation stand, issue #14) -------------------
+# The whole filter is ONE choke point: strip every raw fact whose FILING date is later than as_of
+# BEFORE it reaches any of the existing extraction code (_annual_merged, _latest_instant,
+# _detect_confirmed_splits, _shares_current). Nothing downstream needs to know as_of exists. This
+# is deliberate -- filtering by FILED date (not by period end) is exactly what "known to the public
+# on that day" means: it drops both later restatements of an old period AND periods not yet
+# reported, using the field SEC itself stamps on every fact for that purpose.
+def _filter_units_as_of(units, as_of):
+    """Drop every row whose 'filed' is missing or later than as_of. A row with NO filed date
+    cannot be proven to predate as_of, so it is dropped too -- honest exclusion, not a guess."""
+    if not units or not as_of:
+        return units
+    out = {}
+    for unit, rows in units.items():
+        kept = [r for r in (rows or []) if r.get("filed") and r.get("filed") <= as_of]
+        if kept:
+            out[unit] = kept
+    return out or None
+
+
+def _filter_facts_as_of(facts, as_of):
+    """Return a copy of a companyfacts payload with every fact filed after as_of removed.
+    Non-'facts' keys (entityName, cik, ...) pass through untouched -- they are metadata, not
+    dated facts."""
+    if not as_of or not isinstance(facts, dict):
+        return facts
+    out = {k: v for k, v in facts.items() if k != "facts"}
+    new_block = {}
+    for taxonomy, tags in (facts.get("facts") or {}).items():
+        new_tags = {}
+        for tag, tagval in (tags or {}).items():
+            units = _filter_units_as_of((tagval or {}).get("units"), as_of)
+            if units:
+                nv = dict(tagval)
+                nv["units"] = units
+                new_tags[tag] = nv
+        new_block[taxonomy] = new_tags
+    out["facts"] = new_block
+    return out
 
 
 def _annual_merged(facts, tags, taxonomy="us-gaap", drop_zero=False):
@@ -413,7 +462,7 @@ def _flag_stale(series):
 _CLEAN_SPLIT_FACTORS = [2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20]
 
 
-def _detect_confirmed_splits(facts, tags, taxonomy="us-gaap", cik=None):
+def _detect_confirmed_splits(facts, tags, taxonomy="us-gaap", cik=None, as_of=None):
     """Scan ALL filings (not deduped-to-latest) for a fiscal year-end reported with two
     MATERIALLY DIFFERENT values across different accessions -- i.e. a later filing retroactively
     restated an earlier year's share count. This only happens for genuine stock splits (never for
@@ -433,7 +482,10 @@ def _detect_confirmed_splits(facts, tags, taxonomy="us-gaap", cik=None):
         # same tag and union the two; the restatement lives in whichever one kept it.
         if cik:
             try:
-                units = _merge_units(units, _companyconcept(cik, taxonomy, tag))
+                cc = _companyconcept(cik, taxonomy, tag)
+                if as_of:  # companyconcept bypasses `facts`, so it needs its own as_of filter
+                    cc = _filter_units_as_of(cc, as_of)
+                units = _merge_units(units, cc)
             except Exception:
                 pass
         if not units:
@@ -502,18 +554,87 @@ def _latest_instant(facts_or_units, tags=None, taxonomy="us-gaap", any_form=Fals
     return None, None
 
 
-def _shares_current(facts, cik):
+def _shares_current(facts, cik, as_of=None):
     """Cascade: companyfacts(dei) -> companyconcept(dei) -> companyfacts(us-gaap) -> companyconcept(us-gaap)."""
     for tax, tag in SHARES_CURRENT:
         v, _ = _latest_instant(facts, [tag], taxonomy=tax, any_form=True)
         if v:
             return v, tax + ":" + tag + " (companyfacts)"
         units = _companyconcept(cik, tax, tag)
+        if as_of:  # companyconcept bypasses `facts`, so it needs its own as_of filter
+            units = _filter_units_as_of(units, as_of)
         if units:
             r = _latest_instant(None, tags=tag, any_form=True, units_direct=units)
             if r and r[0]:
                 return r[0], tax + ":" + tag + " (companyconcept)"
     return None, None
+
+
+def _annual_instant_merged(facts, tag, taxonomy="us-gaap"):
+    """One point per fiscal-year-end (10-K only) for an INSTANT concept (e.g. period-end equity),
+    latest 'filed' wins on a restated end-date. Single tag, no gap-fill/stitching — mirrors the
+    "combined tag is a whole-series fallback, never a per-year mix" rule at the caller."""
+    units = _concept(facts, taxonomy, tag)
+    if not units:
+        return []
+    key = _pick_unit(units)
+    if not key:
+        return []
+    by_end = {}
+    for f in units[key]:
+        if not f.get("form", "").startswith("10-K"):
+            continue
+        end = f.get("end")
+        if end is None:
+            continue
+        filed = f.get("filed", "")
+        if end not in by_end or filed > by_end[end]["filed"]:
+            by_end[end] = {"end": end, "val": f.get("val"), "accn": f.get("accn"),
+                           "filed": filed, "tag": tag}
+    return [by_end[k] for k in sorted(by_end)]
+
+
+def _equity_annual_series(facts):
+    """Returns (series, used_combined_tag). Base tag (StockholdersEquity) first; if it has NO
+    data at all, fall back to the combined tag WHOLESALE (never per-year) and say so."""
+    ser = _annual_instant_merged(facts, EQUITY_BASE[0])
+    if ser:
+        return ser, False
+    ser = _annual_instant_merged(facts, EQUITY_COMBINED[0])
+    if ser:
+        return ser, True
+    return [], None
+
+
+def _roe_median_5y(equity_series, net_income_series):
+    """Median ROE (net income / period-end equity) over the most recent up-to-5 fiscal years that
+    report BOTH figures.
+
+    Refuses rather than guesses, on two distinct grounds (PREREG §8, issue #14 pt.4):
+      insufficient_history — fewer than 3 overlapping annual points;
+      negative_equity       — any of those points has equity <= 0. ROE is undefined there (a
+                               buyback-driven negative book value is real and not rare), and
+                               silently dropping just that one point would be exactly the
+                               "plausible number instead of a measurement" defect this project
+                               already burned itself on once (see CLAUDE.md).
+    Returns (value_or_None, error_reason_or_None, points_used).
+    """
+    ni_by_end = {p["end"]: p["val"] for p in (net_income_series or []) if p.get("val") is not None}
+    pairs = []
+    for r in sorted(equity_series or [], key=lambda r: r["end"], reverse=True):
+        end = r.get("end")
+        if end in ni_by_end and r.get("val") is not None:
+            pairs.append((end, r["val"], ni_by_end[end]))
+        if len(pairs) >= 5:
+            break
+    if len(pairs) < 3:
+        return None, "insufficient_history", pairs
+    if any(eq <= 0 for _, eq, _ in pairs):
+        return None, "negative_equity", pairs
+    roes = sorted(ni / eq for _, eq, ni in pairs)
+    n = len(roes)
+    median = roes[n // 2] if n % 2 else (roes[n // 2 - 1] + roes[n // 2]) / 2
+    return median, None, pairs
 
 
 def raw_tags(ticker=None, cik=None, tags=None, taxonomy="us-gaap"):
@@ -571,8 +692,20 @@ def raw_tags(ticker=None, cik=None, tags=None, taxonomy="us-gaap"):
     return out
 
 
-def edgar_facts(ticker=None, cik=None):
+def edgar_facts(ticker=None, cik=None, as_of=None):
+    """as_of (optional, 'YYYY-MM-DD'): when set, only facts FILED on or before that date are used
+    -- i.e. exactly what was publicly known that day (see _filter_facts_as_of). Unset -> behavior
+    is byte-identical to before this parameter existed; every call site that never passes as_of is
+    unaffected (v4.2.84, mandate: historical-validation stand, issue #14)."""
     out = {"_source": "sec_edgar", "_ticker": ticker, "_missing": [], "_flags": {}, "_errors": {}}
+    if as_of is not None:
+        try:
+            import datetime as _dt
+            _dt.date.fromisoformat(as_of)
+        except Exception:
+            out["_errors"]["as_of"] = "invalid as_of, expected YYYY-MM-DD: %r" % (as_of,)
+            return out
+        out["_as_of"] = as_of
     if not cik:
         cik = _resolve_cik(ticker)
     if not cik:
@@ -584,6 +717,8 @@ def edgar_facts(ticker=None, cik=None):
     except Exception as e:
         out["_errors"]["companyfacts"] = str(e)[:160]
         return out
+    if as_of:
+        facts = _filter_facts_as_of(facts, as_of)
 
     # v4.2.57: surface the FILER'S OWN NAME. SEC returns it in companyfacts and the pipeline threw
     # it away, so Stage 1 was handed the bare string "MA" and had to guess which "MA" was meant.
@@ -659,7 +794,7 @@ def edgar_facts(ticker=None, cik=None):
                 out["_missing"].append(field)
 
     # C: shares_current cascade (companyfacts dei absent for ASTS -> companyconcept) + proxy fallback
-    sc, sc_src = _shares_current(facts, cik)
+    sc, sc_src = _shares_current(facts, cik, as_of=as_of)
     if sc:
         out["shares_current"] = sc["val"]; out["shares_current_audit"] = sc; src["shares_current"] = sc_src
     elif out.get("shares_diluted"):
@@ -783,7 +918,7 @@ def edgar_facts(ticker=None, cik=None):
         out["_flags"]["cash_note"] = "cash excludes restricted_cash; scenario_f treats restricted separately"
 
     # v4: confirmed-split detection (restatement-based) for shares_diluted
-    conf_splits = _detect_confirmed_splits(facts, DURATION_TAGS["shares_diluted"], cik=cik)
+    conf_splits = _detect_confirmed_splits(facts, DURATION_TAGS["shares_diluted"], cik=cik, as_of=as_of)
     if conf_splits:
         out["_flags"]["confirmed_splits"] = conf_splits
     else:
@@ -816,6 +951,34 @@ def edgar_facts(ticker=None, cik=None):
         out["_flags"]["dps_series_absent"] = (
             "no CommonStockDividendsPerShare* facts in companyfacts; the filer may pay no "
             "dividend, or may tag it under a name not in DURATION_TAGS['dps']")
+
+    # v4.2.84 (mandate: historical-validation stand, issue #14 pt.4): equity + roe_median_5y.
+    # Not produced anywhere in this module before -- PREREG §8's terminal-multiplier formula needs
+    # a terminal ROE input, and "the stand will not start" without it.
+    eq_ser, eq_combined = _equity_annual_series(facts)
+    if eq_ser:
+        out["equity"] = [{"end": r["end"], "val": r["val"]} for r in eq_ser]
+        out["equity_audit"] = eq_ser
+        src["equity"] = EQUITY_COMBINED[0] if eq_combined else EQUITY_BASE[0]
+        if eq_combined:
+            out["_flags"]["equity_basis_combined"] = (
+                "StockholdersEquity had no data; using "
+                "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest instead")
+    else:
+        out["equity"] = None
+        out["_missing"].append("equity")
+    roe, roe_reason, roe_points = _roe_median_5y(eq_ser, out.get("net_income"))
+    out["roe_annual"] = [{"end": e, "equity": eq, "net_income": ni,
+                          "roe": (ni / eq if eq else None)} for e, eq, ni in roe_points]
+    if roe_reason is not None:
+        # Honest refusal, not a number and not a silent skip: the roe_not_computable vocabulary
+        # (issue #14 pt.4) -- a plausible-looking 0.0 here would be exactly the defect class
+        # CLAUDE.md already burned itself on ("unknown needs a vocabulary, or it gets spelled 0").
+        out["roe_median_5y"] = {"error": "roe_not_computable", "reason": roe_reason}
+        out["_flags"]["roe_not_computable"] = roe_reason
+    else:
+        out["roe_median_5y"] = roe
+        src["roe_median_5y"] = "computed: median(net_income/equity) over last %d overlapping years" % len(roe_points)
 
     out["_field_sources"] = src
     return out

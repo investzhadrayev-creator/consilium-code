@@ -624,6 +624,37 @@ CASES = [
      "    if False:\n        _dd = _dd_nested",
      "test_harness.TestDebtZeroIsUnknownORCLCase.test_the_divergence_is_read_where_the_producer_writes_it",
      "the debt divergence is read where the producer writes it"),
+    # ---- v4.2.84: historical-validation stand (issue #14) — as_of filter, split-basis P/E,
+    # equity/ROE. Two cases per the mandate's explicit minimum (date-filter removal, split
+    # coefficient defaulted to 1), plus the negative-equity refusal and the equity-series variant
+    # of the as_of case, since the equity series is a brand-new fetch path that could silently
+    # bypass the same filter revenue already goes through.
+    ("asof-01", "microservice/edgar_facts.py",
+     "    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)",
+     "    if False:\n        facts = _filter_facts_as_of(facts, as_of)",
+     "test_edgar_facts.TestAsOfFilter.test_as_of_excludes_facts_filed_after_the_date",
+     "as_of drops every fact filed after it"),
+    ("asof-02", "microservice/edgar_facts.py",
+     "    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)",
+     "    if False:\n        facts = _filter_facts_as_of(facts, as_of)",
+     "test_edgar_facts.TestEquityAndROE.test_equity_series_respects_as_of_filter",
+     "the equity series obeys as_of too, not only revenue"),
+    ("pe-01", "microservice/macro_prices.py",
+     "    split_factor = close / adj_close",
+     "    split_factor = 1.0",
+     "test_macro_prices.TestNormalizePe.test_matches_manual_calc_for_a_ticker_split_after_the_as_of_date",
+     "the split coefficient actually reconciles price and EPS to one basis"),
+    ("pe-02", "microservice/macro_prices.py",
+     "    if not isinstance(close, (int, float)) or close <= 0 or \\\n"
+     "       not isinstance(adj_close, (int, float)) or adj_close <= 0:",
+     "    if False:",
+     "test_macro_prices.TestNormalizePe.test_refuses_when_split_factor_is_not_determinable",
+     "an undeterminable split factor refuses, never defaults to 1"),
+    ("roe-01", "microservice/edgar_facts.py",
+     "    if any(eq <= 0 for _, eq, _ in pairs):",
+     "    if False:",
+     "test_edgar_facts.TestEquityAndROE.test_roe_negative_equity_is_refused_with_a_reason_not_a_number",
+     "negative equity refuses roe_median_5y with a reason, not a number"),
 ]
 
 
