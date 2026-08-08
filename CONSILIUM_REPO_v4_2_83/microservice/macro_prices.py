@@ -121,9 +121,6 @@ def tiingo_monthly(symbol, errors, years=10):
         return []
 
 
-_CLEAN_SPLIT_FACTORS = (2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
-
-
 def tiingo_price_on_date(symbol, date, errors):
     """Full Tiingo daily record for exactly ONE trading day -- issue #14 pt.2, the historical-
     reconstruction stand. Same endpoint and the same startDate param `tiingo_series` already
@@ -153,23 +150,65 @@ def tiingo_price_on_date(symbol, date, errors):
         return None
 
 
-def split_factor_since(price_record):
+def tiingo_daily_rows_since(symbol, start, errors):
+    """Full daily Tiingo rows (close, adjClose, splitFactor, ...) from `start` through today --
+    issue #24. SAME endpoint and SAME startDate-only query `tiingo_series` already uses; the only
+    difference is that rows are returned whole instead of projected down to adjClose, because
+    `split_factor_since`'s primary signal (below) needs every row's `splitFactor` field.
+
+    [] on any failure -- callers treat an empty list as split-factor-undeterminable, never as
+    'no split happened'.
+    """
+    token = os.environ.get("TIINGO_TOKEN")
+    if not token:
+        errors["tiingo_daily_rows_%s" % symbol] = "TIINGO_TOKEN not set on this service"
+        return []
+    try:
+        rows = _get_json("https://api.tiingo.com/tiingo/daily/%s/prices?startDate=%s&token=%s"
+                         % (symbol, start, token))
+        if not isinstance(rows, list):
+            errors["tiingo_daily_rows_%s" % symbol] = "unexpected shape: %s" % str(rows)[:80]
+            return []
+        return rows
+    except Exception as e:
+        errors["tiingo_daily_rows_%s" % symbol] = str(e)[:140]
+        return []
+
+
+# Issue #24: NVDA 2020-03-23 lived at close/adjClose = 40.2006 -- two real splits (4:1, 10:1)
+# compound to EXACTLY 40, and the leftover 0.2006 is accumulated-dividend admixture folded into
+# Tiingo's adjustment, not a third split. A tolerance is needed to tell "the same event, seen
+# through a noisier lens" from "the two signals disagree about what actually happened". 5% is
+# chosen because it comfortably covers multi-year dividend drag for the low-to-moderate-yield
+# growth names this pipeline evaluates (NVDA's own case above lands at ~0.5%, an order of
+# magnitude inside it) while staying far below the smallest possible real split: any split at
+# all -- 2:1, or a reverse 1:2 -- moves the ratio by at least 100% (2x or 1/2x), so a genuine
+# extra or missing split can never hide inside this margin.
+_SPLIT_RATIO_TOLERANCE = 0.05
+
+
+def split_factor_since(price_record, daily_rows):
     """Cumulative share-split multiplier between a historical Tiingo daily record's OWN date and
-    TODAY -- derived from the SAME response the price came from (mandate: 'коэффициент сплита
-    приходит от Tiingo в том же ответе, что и цена').
+    TODAY -- issue #24 (composite splits + dividend admixture broke the single-day ratio test).
 
-    `close` is the raw price as it actually traded that day -- in THAT DAY's share basis.
-    `adjClose` is rebased to TODAY's share count. Their ratio close/adjClose is therefore the
-    cumulative split multiplier between then and now: a 10:1 split since that date makes today's
-    share count 10x larger, so adjClose reads 10x smaller than close for that same day.
+    PRIMARY signal: the PRODUCT of `splitFactor` across every daily row from that date through
+    today (`daily_rows`, from `tiingo_daily_rows_since`) -- Tiingo reports 1.0 on every day
+    without a split and the exact multiple on a split day, so the product is the exact cumulative
+    multiplier, free of dividend admixture, and needs no list of "clean" multiples: a 4:1 then a
+    10:1 split simply multiply to 40, whatever "40" is.
 
-    Tiingo's adjustment also folds in cash dividends, so the raw ratio is not a pure split
-    factor by construction. It is only TRUSTED when it lands within 1% of one of the clean
-    multiples an actual split produces (the same list edgar_facts.py's confirmed-split detector
-    uses) or reads as effectively 1 (no split since that date). Anything else is REFUSED, never
-    rounded to the nearest clean factor and never defaulted to 1 -- mandate: 'отсутствие данных
-    для приведения — отказ, а не подстановка коэффициента 1'; a silent 1 here is the exact
-    class of confident-looking wrong answer the whole stand exists to catch.
+    SECONDARY check: `close` is the raw price as it actually traded that day -- in THAT DAY's
+    share basis. `adjClose` is rebased to TODAY's share count. Their ratio close/adjClose is
+    therefore ALSO the cumulative split multiplier, but Tiingo's adjustment folds in cash
+    dividends too, so this ratio is contaminated by however much has been paid out since. The two
+    signals must agree within `_SPLIT_RATIO_TOLERANCE`; if they don't, something neither signal
+    alone would catch is wrong (a bad row, a data gap, a corporate action this model doesn't
+    know), and the mandate is a refusal quoting BOTH numbers, not a guess at which one to trust.
+
+    Undeterminable -- missing rows, missing fields, or a disagreement beyond tolerance -- is
+    ALWAYS a refusal, never defaulted to 1.0: mandate 'отсутствие данных для приведения — отказ,
+    а не подстановка коэффициента 1'; a silent 1 here is the exact class of confident-looking
+    wrong answer the whole stand exists to catch.
 
     Returns (factor, None) on success, (None, reason) on refusal.
     """
@@ -181,16 +220,24 @@ def split_factor_since(price_record):
             or close <= 0 or adj <= 0):
         return None, "split_factor_undeterminable: missing close/adjClose in price record"
     ratio = close / adj
-    if abs(ratio - 1.0) <= 0.01:
-        return 1.0, None
-    for f in _CLEAN_SPLIT_FACTORS:
-        if abs(ratio - f) / f <= 0.01:
-            return float(f), None
-    return None, ("split_factor_undeterminable: close/adjClose ratio %.4f matches no clean "
-                  "split multiple and is not ~1.0" % ratio)
+
+    if not isinstance(daily_rows, list) or not daily_rows:
+        return None, "split_factor_undeterminable: no daily rows to compute the splitFactor product"
+    product = 1.0
+    for row in daily_rows:
+        sf = (row or {}).get("splitFactor")
+        if not isinstance(sf, (int, float)) or sf <= 0:
+            return None, "split_factor_undeterminable: a daily row is missing a usable splitFactor"
+        product *= sf
+
+    if abs(ratio - product) / product > _SPLIT_RATIO_TOLERANCE:
+        return None, ("split_factor_undeterminable: splitFactor product %.4f and close/adjClose "
+                      "ratio %.4f disagree by more than the %.0f%% dividend-drag tolerance"
+                      % (product, ratio, _SPLIT_RATIO_TOLERANCE * 100))
+    return product, None
 
 
-def pe_same_share_basis(price_record, eps_as_filed, errors, symbol=""):
+def pe_same_share_basis(price_record, eps_as_filed, errors, symbol="", daily_rows=None):
     """Price / EPS with BOTH legs forced onto the SAME share-count basis -- issue #14 pt.3, "the
     most important part of the task".
 
@@ -204,12 +251,15 @@ def pe_same_share_basis(price_record, eps_as_filed, errors, symbol=""):
     series reads a split as a crash), so EPS is the leg that moves --
     eps_today_basis = eps_as_filed / split_factor_since(...).
 
+    `daily_rows` (issue #24): daily Tiingo rows from the record's date through today, needed by
+    split_factor_since's product signal -- see `tiingo_daily_rows_since`.
+
     Refuses (never silently assumes factor=1) when the factor cannot be pinned down.
     """
     if eps_as_filed is None:
         errors["pe_same_share_basis_%s" % symbol] = "no EPS supplied"
         return None
-    factor, reason = split_factor_since(price_record)
+    factor, reason = split_factor_since(price_record, daily_rows)
     if factor is None:
         errors["pe_same_share_basis_%s" % symbol] = reason
         return None

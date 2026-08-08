@@ -55,7 +55,8 @@ from edgar_facts import edgar_facts, raw_tags  # v1.8 facts + v4.2.44 raw-tag di
 from edgar_form4 import edgar_form4    # v2.8: SEC EDGAR Form 4 insider transactions (phase 2)
 from market_facts import market_facts  # v3.9: second-source forward data + in-house peer P/E
 from macro_prices import macro_prices  # v4.2: FRED risk-free + Tiingo series (keys stay server-side)
-from macro_prices import tiingo_price_on_date, split_factor_since, pe_same_share_basis
+from macro_prices import (tiingo_price_on_date, tiingo_daily_rows_since, split_factor_since,
+                          pe_same_share_basis)
                                         # v4.2.84: issue #20, historical-reconstruction stand pt.2
 
 app = Flask(__name__)
@@ -1465,7 +1466,13 @@ def _price_on_date():
     string eps (a caller sending "50.0" instead of 50.0, an easy JSON-body mistake) throws a raw
     TypeError there that pe_same_share_basis's own None-check never catches -- it only guards
     the missing case. Checked here, at the boundary, same fix as as_of above: a wrong-typed eps
-    is dropped (price_record/split_factor still returned) and the reason is a named refusal."""
+    is dropped (price_record/split_factor still returned) and the reason is a named refusal.
+
+    v4.2.83 (issue #24): split_factor is now the PRODUCT of `splitFactor` across every daily row
+    from `date` through today (`tiingo_daily_rows_since`, a second Tiingo call over the same
+    range), cross-checked against this same day's close/adjClose ratio. A single-day ratio alone
+    (the pre-#24 method) refused every composite split and every dividend payer -- see
+    macro_prices.split_factor_since's docstring for why."""
     b = request.get_json(force=True, silent=True) or {}
     ticker, date = b.get("ticker"), b.get("date")
     errors = {}
@@ -1478,10 +1485,11 @@ def _price_on_date():
         errors["eps_%s" % ticker] = "eps must be a number, got %s" % type(eps).__name__
         eps = None
     price_record = tiingo_price_on_date(ticker, date, errors)
-    split_factor, split_reason = split_factor_since(price_record)
+    daily_rows = tiingo_daily_rows_since(ticker, date, errors)
+    split_factor, split_reason = split_factor_since(price_record, daily_rows)
     if split_reason:
         errors["split_factor_%s" % ticker] = split_reason
-    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker)
+    pe = pe_same_share_basis(price_record, eps, errors, symbol=ticker, daily_rows=daily_rows)
     return jsonify({"ticker": ticker, "date": date, "price_record": price_record,
                     "split_factor": split_factor, "pe_same_share_basis": pe,
                     "_errors": errors}), 200

@@ -95,8 +95,11 @@ class TestPriceOnDateRoute(unittest.TestCase):
 
     def test_route_returns_price_split_factor_and_same_basis_pe_for_a_confirmed_split(self):
         """Mirrors test_historical_stand.TestSameShareBasisPE's main pin, at the HTTP layer:
-        10:1 split, close=1000/adjClose=100 -> factor 10, eps_today_basis=5, pe=20."""
-        raw_row = {"close": 1000.0, "adjClose": 100.0, "splitFactor": 1.0}
+        10:1 split, close=1000/adjClose=100 -> factor 10, eps_today_basis=5, pe=20. The route
+        (issue #24) fetches BOTH the single-day record and the daily-rows-since range through
+        the same mocked _get_json, so splitFactor here doubles as that range's product (10.0),
+        matching the close/adjClose ratio it is cross-checked against."""
+        raw_row = {"close": 1000.0, "adjClose": 100.0, "splitFactor": 10.0}
         with mock.patch.dict(os.environ, {"TIINGO_TOKEN": "t"}), \
              mock.patch.object(mp, "_get_json", return_value=[raw_row]):
             resp = self.client.post("/price_on_date",
@@ -131,7 +134,7 @@ class TestPriceOnDateRoute(unittest.TestCase):
         app.py before writing this test) -- pe_same_share_basis's own guard only catches
         eps_as_filed is None, never the wrong-type case. Deleting the isinstance guard in
         app.py's _price_on_date reproduces the 500 -- that is the mutation this test kills."""
-        raw_row = {"close": 1000.0, "adjClose": 100.0, "splitFactor": 1.0}
+        raw_row = {"close": 1000.0, "adjClose": 100.0, "splitFactor": 10.0}
         with mock.patch.dict(os.environ, {"TIINGO_TOKEN": "t"}), \
              mock.patch.object(mp, "_get_json", return_value=[raw_row]):
             resp = self.client.post("/price_on_date",
