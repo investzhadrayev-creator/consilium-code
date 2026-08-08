@@ -1624,6 +1624,56 @@ class TestPeAnchorHasOneInput(unittest.TestCase):
                                               "peer_median_pe_basis": "trailing"}))
 
 
+class TestPeSectorMedianAbsentFlag(unittest.TestCase):
+    """Issue #12. ivc_lib's SECONDARY multiplier cap is min(pe_hist_median, 1.5*pe_sector_median).
+    The value that reaches it under the "pe_sector_median" key is _pe_anchor_fwd(data) (see
+    TestPeAnchorHasOneInput above: the literal `pe_sector_median` field is a ghost the workflow
+    never produces). When _pe_anchor_fwd(data) is None, that half of the secondary cap is absent
+    and the cap silently collapses to the historical median alone -- correct arithmetic, but a
+    reader of the report has no way to know it happened. The flag makes the absence loud without
+    touching the arithmetic at all."""
+
+    def test_flag_present_and_names_the_cause_when_sector_anchor_is_absent(self):
+        d = mature_data()
+        d["peer_median_pe"] = None   # the only input _pe_anchor_fwd can ever return
+        r = analyze(d, mature_spec())
+        hits = [f for f in r["flags"] if f.startswith("pe_sector_median_absent")]
+        self.assertEqual(len(hits), 1, "flag missing or duplicated: %s" % r["flags"])
+        self.assertIn("historical median", hits[0],
+                      "the flag must name WHY the secondary cap is one-legged")
+        self.assertIn("pipeline", hits[0],
+                      "the flag must name the cause: the pipeline never produces this field")
+
+    def test_flag_reaches_RESULT_not_just_the_internals_of_the_anchor_function(self):
+        """The requirement is explicit: the flag must reach RESULT, not stay inside
+        _pe_anchor_fwd. It must be visible both in the top-level flags trail and in the pe_cap
+        block a reader would actually open to understand the multiplier cap."""
+        d = mature_data()
+        d["peer_median_pe"] = None
+        r = analyze(d, mature_spec())
+        self.assertTrue(any(f.startswith("pe_sector_median_absent") for f in r["flags"]))
+        self.assertTrue(any(f.startswith("pe_sector_median_absent") for f in r["pe_cap"]["flags"]))
+
+    def test_no_flag_when_sector_median_is_present(self):
+        """Positive control: mature_data() carries a forward-basis peer_median_pe (30, no
+        'trailing' tag), so _pe_anchor_fwd resolves it and the absence flag must NOT fire."""
+        d = mature_data()
+        self.assertEqual(app._pe_anchor_fwd(d), 30.0, "fixture drifted: no longer a live anchor")
+        r = analyze(d, mature_spec())
+        self.assertFalse(any(f.startswith("pe_sector_median_absent") for f in r["flags"]))
+
+    def test_the_secondary_cap_arithmetic_is_unchanged(self):
+        """Negative control at the ivc_lib level (untouched by this change): feeding ivc() the
+        same pe_sector_median a present-anchor run produces still trips the pinned secondary cap
+        exactly as before -- proof this change added a flag and moved no arithmetic."""
+        from ivc_lib import ivc
+        inp = {"price": 100, "eps_normalized": 5, "growth_rate": 0.1, "future_pe": 50,
+               "pe_hist_median": 45, "pe_sector_median": 20}   # 1.5*20=30 < 45 -> sector leg binds
+        out = ivc(inp)
+        self.assertTrue(any("future_pe_above_cap_30.0" in f for f in out["flags"]),
+                        "the secondary cap no longer uses the sector leg: %s" % out["flags"])
+
+
 class TestPeerMultipleBlockMatchesBases(unittest.TestCase):
     """v4.2.77 (g).4. The peer median and the company multiple must be published on ONE basis or
     the comparison must be refused. The in-house peer median is TRAILING; the forward company

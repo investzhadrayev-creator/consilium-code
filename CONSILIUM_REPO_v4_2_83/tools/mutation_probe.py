@@ -624,6 +624,12 @@ CASES = [
      "    if False:\n        _dd = _dd_nested",
      "test_harness.TestDebtZeroIsUnknownORCLCase.test_the_divergence_is_read_where_the_producer_writes_it",
      "the debt divergence is read where the producer writes it"),
+    # ---- Issue #12 restored onto v4.2.83 (Issue #15): pe_sector_median_absent flag ----
+    ("secmed-01", "microservice/app.py",
+     "    if _pe_anchor_fwd(data) is None:",
+     "    if False:",
+     "test_harness.TestPeSectorMedianAbsentFlag.test_flag_present_and_names_the_cause_when_sector_anchor_is_absent",
+     "the sector-median-absent flag fires when the anchor cannot be built"),
     # ---- issue #14: the historical-reconstruction stand (as_of filter, ROE, same-basis P/E) ----
     ("asof-01", "microservice/edgar_facts.py",
      '    if as_of:\n        facts = _filter_facts_as_of(facts, as_of)\n        out["_as_of"] = as_of',
