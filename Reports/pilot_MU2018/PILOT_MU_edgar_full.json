@@ -1,0 +1,2368 @@
+﻿{
+    "_cik":  "0000723125",
+    "_entity_name":  "Micron Technology, Inc.",
+    "_errors":  {
+
+                },
+    "_field_sources":  {
+                           "capex":  [
+                                         "PaymentsToAcquirePropertyPlantAndEquipment"
+                                     ],
+                           "cash":  "CashAndCashEquivalentsAtCarryingValue",
+                           "dividends_paid":  [
+                                                  "PaymentsOfDividendsCommonStock"
+                                              ],
+                           "dps":  [
+                                       "CommonStockDividendsPerShareDeclared"
+                                   ],
+                           "gross_profit":  [
+                                                "GrossProfit"
+                                            ],
+                           "net_income":  [
+                                              "NetIncomeLoss"
+                                          ],
+                           "ocf":  [
+                                       "NetCashProvidedByUsedInOperatingActivities"
+                                   ],
+                           "operating_income":  [
+                                                    "OperatingIncomeLoss"
+                                                ],
+                           "restricted_cash":  "RestrictedCashAndCashEquivalents",
+                           "revenue":  [
+                                           "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                       ],
+                           "rpo":  "RevenueRemainingPerformanceObligation",
+                           "sbc":  [
+                                       "ShareBasedCompensation"
+                                   ],
+                           "shares_current":  "dei:EntityCommonStockSharesOutstanding (companyfacts)",
+                           "shares_diluted":  [
+                                                  "WeightedAverageNumberOfDilutedSharesOutstanding"
+                                              ],
+                           "short_term_investments":  "AvailableForSaleSecuritiesDebtSecuritiesCurrent",
+                           "stockholders_equity":  "StockholdersEquity",
+                           "total_debt":  "LongTermDebt"
+                       },
+    "_flags":  {
+                   "cash_note":  "cash excludes restricted_cash; scenario_f treats restricted separately",
+                   "confirmed_splits_none":  "no retroactive share-count restatement found in companyfacts+companyconcept 10-K history; a clean ratio jump downstream is UNCONFIRMED, not proven dilution",
+                   "long_term_debt_full_vs_noncurrent":  "using full LongTermDebt LongTermDebt; noncurrent-only LongTermDebtNoncurrent would understate",
+                   "margin_step_business_event":  [
+                                                      {
+                                                          "cosignal_changed":  [
+                                                                                   "accession"
+                                                                               ],
+                                                          "end":  "2018-08-30",
+                                                          "in_cagr_window_3y":  false,
+                                                          "in_cagr_window_5y":  false,
+                                                          "jump_pct":  70.9,
+                                                          "prev_end":  "2017-08-31",
+                                                          "prev_ratio":  0.2888,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.4934,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      },
+                                                      {
+                                                          "cosignal_changed":  [
+                                                                                   "accession"
+                                                                               ],
+                                                          "end":  "2019-08-29",
+                                                          "in_cagr_window_3y":  false,
+                                                          "in_cagr_window_5y":  false,
+                                                          "jump_pct":  36.1,
+                                                          "prev_end":  "2018-08-30",
+                                                          "prev_ratio":  0.4934,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.3151,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      },
+                                                      {
+                                                          "cosignal_changed":  [
+                                                                                   "accession"
+                                                                               ],
+                                                          "end":  "2020-09-03",
+                                                          "in_cagr_window_3y":  false,
+                                                          "in_cagr_window_5y":  false,
+                                                          "jump_pct":  55.5,
+                                                          "prev_end":  "2019-08-29",
+                                                          "prev_ratio":  0.3151,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.1401,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      },
+                                                      {
+                                                          "cosignal_changed":  [
+                                                                                   "accession"
+                                                                               ],
+                                                          "end":  "2021-09-02",
+                                                          "in_cagr_window_3y":  false,
+                                                          "in_cagr_window_5y":  true,
+                                                          "jump_pct":  61.9,
+                                                          "prev_end":  "2020-09-03",
+                                                          "prev_ratio":  0.1401,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.2268,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      },
+                                                      {
+                                                          "cosignal_changed":  [
+                                                                                   "accession"
+                                                                               ],
+                                                          "end":  "2022-09-01",
+                                                          "in_cagr_window_3y":  false,
+                                                          "in_cagr_window_5y":  true,
+                                                          "jump_pct":  39.1,
+                                                          "prev_end":  "2021-09-02",
+                                                          "prev_ratio":  0.2268,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.3154,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      },
+                                                      {
+                                                          "cosignal_changed":  [
+
+                                                                               ],
+                                                          "end":  "2025-08-28",
+                                                          "in_cagr_window_3y":  true,
+                                                          "in_cagr_window_5y":  true,
+                                                          "jump_pct":  403.3,
+                                                          "prev_end":  "2024-08-29",
+                                                          "prev_ratio":  0.0519,
+                                                          "prev_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                          "provenance_changed":  [
+
+                                                                                 ],
+                                                          "provenance_uncomparable":  [
+
+                                                                                      ],
+                                                          "ratio":  0.2614,
+                                                          "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax"
+                                                      }
+                                                  ],
+                   "tag_conflict":  {
+                                        "net_income":  [
+                                                           {
+                                                               "end":  "2011-09-01",
+                                                               "spread_pct":  12.1,
+                                                               "values":  {
+                                                                              "NetIncomeLoss":  167000000,
+                                                                              "ProfitLoss":  190000000
+                                                                          }
+                                                           }
+                                                       ],
+                                        "ocf":  [
+                                                    {
+                                                        "absent_years":  [
+                                                                             "2013",
+                                                                             "2014"
+                                                                         ],
+                                                        "chosen_tag":  "NetCashProvidedByUsedInOperatingActivities",
+                                                        "note":  "single-tag series chosen on window coverage; years outside the anchor windows are absent by construction"
+                                                    }
+                                                ],
+                                        "revenue":  [
+                                                        {
+                                                            "absent_years":  [
+                                                                                 "2009",
+                                                                                 "2010",
+                                                                                 "2011",
+                                                                                 "2012",
+                                                                                 "2013",
+                                                                                 "2014",
+                                                                                 "2015",
+                                                                                 "2016"
+                                                                             ],
+                                                            "chosen_tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                                                            "note":  "single-tag series chosen on window coverage; years outside the anchor windows are absent by construction"
+                                                        }
+                                                    ],
+                                        "sbc":  [
+                                                    {
+                                                        "end":  "2023-08-31",
+                                                        "spread_pct":  6.5,
+                                                        "values":  {
+                                                                       "AllocatedShareBasedCompensationExpense":  557000000,
+                                                                       "ShareBasedCompensation":  596000000
+                                                                   }
+                                                    }
+                                                ],
+                                        "shares_diluted":  [
+                                                               {
+                                                                   "end":  "2010-09-02",
+                                                                   "spread_pct":  15.5,
+                                                                   "values":  {
+                                                                                  "WeightedAverageNumberOfDilutedSharesOutstanding":  1050700000,
+                                                                                  "WeightedAverageNumberOfSharesOutstandingBasic":  887500000
+                                                                              }
+                                                               },
+                                                               {
+                                                                   "end":  "2014-08-28",
+                                                                   "spread_pct":  11.5,
+                                                                   "values":  {
+                                                                                  "WeightedAverageNumberOfDilutedSharesOutstanding":  1198000000,
+                                                                                  "WeightedAverageNumberOfSharesOutstandingBasic":  1060000000
+                                                                              }
+                                                               },
+                                                               {
+                                                                   "end":  "2015-09-03",
+                                                                   "spread_pct":  8.5,
+                                                                   "values":  {
+                                                                                  "WeightedAverageNumberOfDilutedSharesOutstanding":  1170000000,
+                                                                                  "WeightedAverageNumberOfSharesOutstandingBasic":  1070000000
+                                                                              }
+                                                               },
+                                                               {
+                                                                   "end":  "2017-08-31",
+                                                                   "spread_pct":  5.6,
+                                                                   "values":  {
+                                                                                  "WeightedAverageNumberOfDilutedSharesOutstanding":  1154000000,
+                                                                                  "WeightedAverageNumberOfSharesOutstandingBasic":  1089000000
+                                                                              }
+                                                               },
+                                                               {
+                                                                   "end":  "2018-08-30",
+                                                                   "spread_pct":  6.3,
+                                                                   "values":  {
+                                                                                  "WeightedAverageNumberOfDilutedSharesOutstanding":  1229000000,
+                                                                                  "WeightedAverageNumberOfSharesOutstandingBasic":  1152000000
+                                                                              }
+                                                               }
+                                                           ]
+                                    },
+                   "total_debt_computed":  "LongTermDebt",
+                   "total_debt_divergence":  true
+               },
+    "_missing":  [
+
+                 ],
+    "_source":  "sec_edgar",
+    "_ticker":  "MU",
+    "capex":  [
+                  {
+                      "end":  "2009-09-03",
+                      "val":  488000000
+                  },
+                  {
+                      "end":  "2010-09-02",
+                      "val":  616000000
+                  },
+                  {
+                      "end":  "2011-09-01",
+                      "val":  2550000000
+                  },
+                  {
+                      "end":  "2012-08-30",
+                      "val":  1699000000
+                  },
+                  {
+                      "end":  "2013-08-29",
+                      "val":  1442000000
+                  },
+                  {
+                      "end":  "2014-08-28",
+                      "val":  3107000000
+                  },
+                  {
+                      "end":  "2015-09-03",
+                      "val":  4021000000
+                  },
+                  {
+                      "end":  "2016-09-01",
+                      "val":  5817000000
+                  },
+                  {
+                      "end":  "2017-08-31",
+                      "val":  4734000000
+                  },
+                  {
+                      "end":  "2018-08-30",
+                      "val":  8879000000
+                  },
+                  {
+                      "end":  "2019-08-29",
+                      "val":  9780000000
+                  },
+                  {
+                      "end":  "2020-09-03",
+                      "val":  8223000000
+                  },
+                  {
+                      "end":  "2021-09-02",
+                      "val":  10030000000
+                  },
+                  {
+                      "end":  "2022-09-01",
+                      "val":  12067000000
+                  },
+                  {
+                      "end":  "2023-08-31",
+                      "val":  7676000000
+                  },
+                  {
+                      "end":  "2024-08-29",
+                      "val":  8386000000
+                  },
+                  {
+                      "end":  "2025-08-28",
+                      "val":  15857000000
+                  }
+              ],
+    "capex_audit":  [
+                        {
+                            "accn":  "0000723125-11-000189",
+                            "end":  "2009-09-03",
+                            "filed":  "2011-10-25",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  488000000
+                        },
+                        {
+                            "accn":  "0000723125-12-000156",
+                            "end":  "2010-09-02",
+                            "filed":  "2012-10-29",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  616000000
+                        },
+                        {
+                            "accn":  "0000723125-13-000228",
+                            "end":  "2011-09-01",
+                            "filed":  "2013-10-28",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  2550000000
+                        },
+                        {
+                            "accn":  "0000723125-14-000195",
+                            "end":  "2012-08-30",
+                            "filed":  "2014-10-27",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  1699000000
+                        },
+                        {
+                            "accn":  "0000723125-15-000112",
+                            "end":  "2013-08-29",
+                            "filed":  "2015-10-27",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  1442000000
+                        },
+                        {
+                            "accn":  "0000723125-16-000269",
+                            "end":  "2014-08-28",
+                            "filed":  "2016-10-28",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  3107000000
+                        },
+                        {
+                            "accn":  "0000723125-17-000131",
+                            "end":  "2015-09-03",
+                            "filed":  "2017-10-26",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  4021000000
+                        },
+                        {
+                            "accn":  "0000723125-18-000092",
+                            "end":  "2016-09-01",
+                            "filed":  "2018-10-15",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  5817000000
+                        },
+                        {
+                            "accn":  "0000723125-19-000094",
+                            "end":  "2017-08-31",
+                            "filed":  "2019-10-17",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  4734000000
+                        },
+                        {
+                            "accn":  "0000723125-20-000082",
+                            "end":  "2018-08-30",
+                            "filed":  "2020-10-19",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  8879000000
+                        },
+                        {
+                            "accn":  "0000723125-21-000065",
+                            "end":  "2019-08-29",
+                            "filed":  "2021-10-08",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  9780000000
+                        },
+                        {
+                            "accn":  "0000723125-22-000048",
+                            "end":  "2020-09-03",
+                            "filed":  "2022-10-07",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  8223000000
+                        },
+                        {
+                            "accn":  "0000723125-23-000054",
+                            "end":  "2021-09-02",
+                            "filed":  "2023-10-06",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  10030000000
+                        },
+                        {
+                            "accn":  "0000723125-24-000027",
+                            "end":  "2022-09-01",
+                            "filed":  "2024-10-04",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  12067000000
+                        },
+                        {
+                            "accn":  "0000723125-25-000028",
+                            "end":  "2023-08-31",
+                            "filed":  "2025-10-03",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  7676000000
+                        },
+                        {
+                            "accn":  "0000723125-25-000028",
+                            "end":  "2024-08-29",
+                            "filed":  "2025-10-03",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  8386000000
+                        },
+                        {
+                            "accn":  "0000723125-25-000028",
+                            "end":  "2025-08-28",
+                            "filed":  "2025-10-03",
+                            "form":  "10-K",
+                            "tag":  "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "unit":  "USD",
+                            "val":  15857000000
+                        }
+                    ],
+    "cash":  24995000000,
+    "cash_audit":  {
+                       "accn":  "0000723125-26-000015",
+                       "end":  "2026-05-28",
+                       "filed":  "2026-06-25",
+                       "val":  24995000000
+                   },
+    "current_portion_debt":  357000000,
+    "current_portion_debt_audit":  {
+                                       "accn":  "0000723125-13-000108",
+                                       "end":  "2013-05-30",
+                                       "filed":  "2013-07-08",
+                                       "val":  357000000
+                                   },
+    "debt_components_tags":  {
+                                 "components_complete":  true,
+                                 "current_maturities":  "LongTermDebtCurrent",
+                                 "full_long_term_debt":  "LongTermDebt",
+                                 "noncurrent":  "LongTermDebtNoncurrent"
+                             },
+    "dividends_paid":  [
+                           {
+                               "end":  "2020-09-03",
+                               "val":  0
+                           },
+                           {
+                               "end":  "2021-09-02",
+                               "val":  0
+                           },
+                           {
+                               "end":  "2022-09-01",
+                               "val":  461000000
+                           },
+                           {
+                               "end":  "2023-08-31",
+                               "val":  504000000
+                           },
+                           {
+                               "end":  "2024-08-29",
+                               "val":  513000000
+                           },
+                           {
+                               "end":  "2025-08-28",
+                               "val":  522000000
+                           }
+                       ],
+    "dividends_paid_audit":  [
+                                 {
+                                     "accn":  "0000723125-22-000048",
+                                     "end":  "2020-09-03",
+                                     "filed":  "2022-10-07",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  0
+                                 },
+                                 {
+                                     "accn":  "0000723125-23-000054",
+                                     "end":  "2021-09-02",
+                                     "filed":  "2023-10-06",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  0
+                                 },
+                                 {
+                                     "accn":  "0000723125-24-000027",
+                                     "end":  "2022-09-01",
+                                     "filed":  "2024-10-04",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  461000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2023-08-31",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  504000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2024-08-29",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  513000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2025-08-28",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "PaymentsOfDividendsCommonStock",
+                                     "unit":  "USD",
+                                     "val":  522000000
+                                 }
+                             ],
+    "dps":  [
+                {
+                    "end":  "2021-08-02",
+                    "val":  0.1
+                },
+                {
+                    "end":  "2021-09-02",
+                    "val":  0.1
+                },
+                {
+                    "end":  "2022-09-01",
+                    "val":  0.315
+                },
+                {
+                    "end":  "2023-08-31",
+                    "val":  0.46
+                },
+                {
+                    "end":  "2024-08-29",
+                    "val":  0.46
+                },
+                {
+                    "end":  "2025-08-28",
+                    "val":  0.46
+                }
+            ],
+    "dps_audit":  [
+                      {
+                          "accn":  "0000723125-21-000065",
+                          "end":  "2021-08-02",
+                          "filed":  "2021-10-08",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.1
+                      },
+                      {
+                          "accn":  "0000723125-23-000054",
+                          "end":  "2021-09-02",
+                          "filed":  "2023-10-06",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.1
+                      },
+                      {
+                          "accn":  "0000723125-24-000027",
+                          "end":  "2022-09-01",
+                          "filed":  "2024-10-04",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.315
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2023-08-31",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.46
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2024-08-29",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.46
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2025-08-28",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "CommonStockDividendsPerShareDeclared",
+                          "unit":  "USD/shares",
+                          "val":  0.46
+                      }
+                  ],
+    "dps_series":  [
+                       {
+                           "end":  "2021-08-02",
+                           "val":  0.1
+                       },
+                       {
+                           "end":  "2021-09-02",
+                           "val":  0.1
+                       },
+                       {
+                           "end":  "2022-09-01",
+                           "val":  0.315
+                       },
+                       {
+                           "end":  "2023-08-31",
+                           "val":  0.46
+                       },
+                       {
+                           "end":  "2024-08-29",
+                           "val":  0.46
+                       },
+                       {
+                           "end":  "2025-08-28",
+                           "val":  0.46
+                       }
+                   ],
+    "gross_profit":  [
+                         {
+                             "end":  "2009-09-03",
+                             "val":  -440000000
+                         },
+                         {
+                             "end":  "2010-09-02",
+                             "val":  2714000000
+                         },
+                         {
+                             "end":  "2011-09-01",
+                             "val":  1758000000
+                         },
+                         {
+                             "end":  "2012-08-30",
+                             "val":  968000000
+                         },
+                         {
+                             "end":  "2013-08-29",
+                             "val":  1847000000
+                         },
+                         {
+                             "end":  "2014-08-28",
+                             "val":  5437000000
+                         },
+                         {
+                             "end":  "2015-09-03",
+                             "val":  5215000000
+                         },
+                         {
+                             "end":  "2016-09-01",
+                             "val":  2505000000
+                         },
+                         {
+                             "end":  "2017-08-31",
+                             "val":  8436000000
+                         },
+                         {
+                             "end":  "2018-08-30",
+                             "val":  17891000000
+                         },
+                         {
+                             "end":  "2019-08-29",
+                             "val":  10702000000
+                         },
+                         {
+                             "end":  "2020-09-03",
+                             "val":  6552000000
+                         },
+                         {
+                             "end":  "2021-09-02",
+                             "val":  10423000000
+                         },
+                         {
+                             "end":  "2022-09-01",
+                             "val":  13898000000
+                         },
+                         {
+                             "end":  "2023-08-31",
+                             "val":  -1416000000
+                         },
+                         {
+                             "end":  "2024-08-29",
+                             "val":  5613000000
+                         },
+                         {
+                             "end":  "2025-08-28",
+                             "val":  14873000000
+                         }
+                     ],
+    "gross_profit_audit":  [
+                               {
+                                   "accn":  "0000723125-11-000189",
+                                   "end":  "2009-09-03",
+                                   "filed":  "2011-10-25",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  -440000000
+                               },
+                               {
+                                   "accn":  "0000723125-12-000156",
+                                   "end":  "2010-09-02",
+                                   "filed":  "2012-10-29",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  2714000000
+                               },
+                               {
+                                   "accn":  "0000723125-13-000228",
+                                   "end":  "2011-09-01",
+                                   "filed":  "2013-10-28",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  1758000000
+                               },
+                               {
+                                   "accn":  "0000723125-14-000195",
+                                   "end":  "2012-08-30",
+                                   "filed":  "2014-10-27",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  968000000
+                               },
+                               {
+                                   "accn":  "0000723125-15-000112",
+                                   "end":  "2013-08-29",
+                                   "filed":  "2015-10-27",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  1847000000
+                               },
+                               {
+                                   "accn":  "0000723125-16-000269",
+                                   "end":  "2014-08-28",
+                                   "filed":  "2016-10-28",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  5437000000
+                               },
+                               {
+                                   "accn":  "0000723125-17-000131",
+                                   "end":  "2015-09-03",
+                                   "filed":  "2017-10-26",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  5215000000
+                               },
+                               {
+                                   "accn":  "0000723125-18-000092",
+                                   "end":  "2016-09-01",
+                                   "filed":  "2018-10-15",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  2505000000
+                               },
+                               {
+                                   "accn":  "0000723125-19-000094",
+                                   "end":  "2017-08-31",
+                                   "filed":  "2019-10-17",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  8436000000
+                               },
+                               {
+                                   "accn":  "0000723125-20-000082",
+                                   "end":  "2018-08-30",
+                                   "filed":  "2020-10-19",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  17891000000
+                               },
+                               {
+                                   "accn":  "0000723125-21-000065",
+                                   "end":  "2019-08-29",
+                                   "filed":  "2021-10-08",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  10702000000
+                               },
+                               {
+                                   "accn":  "0000723125-22-000048",
+                                   "end":  "2020-09-03",
+                                   "filed":  "2022-10-07",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  6552000000
+                               },
+                               {
+                                   "accn":  "0000723125-23-000054",
+                                   "end":  "2021-09-02",
+                                   "filed":  "2023-10-06",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  10423000000
+                               },
+                               {
+                                   "accn":  "0000723125-24-000027",
+                                   "end":  "2022-09-01",
+                                   "filed":  "2024-10-04",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  13898000000
+                               },
+                               {
+                                   "accn":  "0000723125-25-000028",
+                                   "end":  "2023-08-31",
+                                   "filed":  "2025-10-03",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  -1416000000
+                               },
+                               {
+                                   "accn":  "0000723125-25-000028",
+                                   "end":  "2024-08-29",
+                                   "filed":  "2025-10-03",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  5613000000
+                               },
+                               {
+                                   "accn":  "0000723125-25-000028",
+                                   "end":  "2025-08-28",
+                                   "filed":  "2025-10-03",
+                                   "form":  "10-K",
+                                   "tag":  "GrossProfit",
+                                   "unit":  "USD",
+                                   "val":  14873000000
+                               }
+                           ],
+    "long_term_debt":  8844000000,
+    "long_term_debt_audit":  {
+                                 "accn":  "0000723125-25-000046",
+                                 "end":  "2025-11-27",
+                                 "filed":  "2025-12-18",
+                                 "val":  8844000000
+                             },
+    "net_income":  [
+                       {
+                           "end":  "2009-09-03",
+                           "val":  -1882000000
+                       },
+                       {
+                           "end":  "2010-09-02",
+                           "val":  1850000000
+                       },
+                       {
+                           "end":  "2011-09-01",
+                           "val":  167000000
+                       },
+                       {
+                           "end":  "2012-08-30",
+                           "val":  -1032000000
+                       },
+                       {
+                           "end":  "2013-08-29",
+                           "val":  1190000000
+                       },
+                       {
+                           "end":  "2014-08-28",
+                           "val":  3045000000
+                       },
+                       {
+                           "end":  "2015-09-03",
+                           "val":  2899000000
+                       },
+                       {
+                           "end":  "2016-09-01",
+                           "val":  -276000000
+                       },
+                       {
+                           "end":  "2017-08-31",
+                           "val":  5089000000
+                       },
+                       {
+                           "end":  "2018-08-30",
+                           "val":  14135000000
+                       },
+                       {
+                           "end":  "2019-08-29",
+                           "val":  6313000000
+                       },
+                       {
+                           "end":  "2020-09-03",
+                           "val":  2687000000
+                       },
+                       {
+                           "end":  "2021-09-02",
+                           "val":  5861000000
+                       },
+                       {
+                           "end":  "2022-09-01",
+                           "val":  8687000000
+                       },
+                       {
+                           "end":  "2023-08-31",
+                           "val":  -5833000000
+                       },
+                       {
+                           "end":  "2024-08-29",
+                           "val":  778000000
+                       },
+                       {
+                           "end":  "2025-08-28",
+                           "val":  8539000000
+                       }
+                   ],
+    "net_income_audit":  [
+                             {
+                                 "accn":  "0000723125-11-000189",
+                                 "end":  "2009-09-03",
+                                 "filed":  "2011-10-25",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  -1882000000
+                             },
+                             {
+                                 "accn":  "0000723125-12-000156",
+                                 "end":  "2010-09-02",
+                                 "filed":  "2012-10-29",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  1850000000
+                             },
+                             {
+                                 "accn":  "0000723125-13-000228",
+                                 "end":  "2011-09-01",
+                                 "filed":  "2013-10-28",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  167000000
+                             },
+                             {
+                                 "accn":  "0000723125-14-000195",
+                                 "end":  "2012-08-30",
+                                 "filed":  "2014-10-27",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  -1032000000
+                             },
+                             {
+                                 "accn":  "0000723125-15-000112",
+                                 "end":  "2013-08-29",
+                                 "filed":  "2015-10-27",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  1190000000
+                             },
+                             {
+                                 "accn":  "0000723125-16-000269",
+                                 "end":  "2014-08-28",
+                                 "filed":  "2016-10-28",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  3045000000
+                             },
+                             {
+                                 "accn":  "0000723125-17-000131",
+                                 "end":  "2015-09-03",
+                                 "filed":  "2017-10-26",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  2899000000
+                             },
+                             {
+                                 "accn":  "0000723125-18-000092",
+                                 "end":  "2016-09-01",
+                                 "filed":  "2018-10-15",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  -276000000
+                             },
+                             {
+                                 "accn":  "0000723125-19-000094",
+                                 "end":  "2017-08-31",
+                                 "filed":  "2019-10-17",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  5089000000
+                             },
+                             {
+                                 "accn":  "0000723125-20-000082",
+                                 "end":  "2018-08-30",
+                                 "filed":  "2020-10-19",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  14135000000
+                             },
+                             {
+                                 "accn":  "0000723125-21-000065",
+                                 "end":  "2019-08-29",
+                                 "filed":  "2021-10-08",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  6313000000
+                             },
+                             {
+                                 "accn":  "0000723125-22-000048",
+                                 "end":  "2020-09-03",
+                                 "filed":  "2022-10-07",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  2687000000
+                             },
+                             {
+                                 "accn":  "0000723125-23-000054",
+                                 "end":  "2021-09-02",
+                                 "filed":  "2023-10-06",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  5861000000
+                             },
+                             {
+                                 "accn":  "0000723125-24-000027",
+                                 "end":  "2022-09-01",
+                                 "filed":  "2024-10-04",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  8687000000
+                             },
+                             {
+                                 "accn":  "0000723125-25-000028",
+                                 "end":  "2023-08-31",
+                                 "filed":  "2025-10-03",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  -5833000000
+                             },
+                             {
+                                 "accn":  "0000723125-25-000028",
+                                 "end":  "2024-08-29",
+                                 "filed":  "2025-10-03",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  778000000
+                             },
+                             {
+                                 "accn":  "0000723125-25-000028",
+                                 "end":  "2025-08-28",
+                                 "filed":  "2025-10-03",
+                                 "form":  "10-K",
+                                 "tag":  "NetIncomeLoss",
+                                 "unit":  "USD",
+                                 "val":  8539000000
+                             }
+                         ],
+    "ocf":  [
+                {
+                    "end":  "2009-09-03",
+                    "val":  1206000000
+                },
+                {
+                    "end":  "2010-09-02",
+                    "val":  3096000000
+                },
+                {
+                    "end":  "2011-09-01",
+                    "val":  2484000000
+                },
+                {
+                    "end":  "2012-08-30",
+                    "val":  2114000000
+                },
+                {
+                    "end":  "2015-09-03",
+                    "val":  5208000000
+                },
+                {
+                    "end":  "2016-09-01",
+                    "val":  3168000000
+                },
+                {
+                    "end":  "2017-08-31",
+                    "val":  8153000000
+                },
+                {
+                    "end":  "2018-08-30",
+                    "val":  17400000000
+                },
+                {
+                    "end":  "2019-08-29",
+                    "val":  13189000000
+                },
+                {
+                    "end":  "2020-09-03",
+                    "val":  8306000000
+                },
+                {
+                    "end":  "2021-09-02",
+                    "val":  12468000000
+                },
+                {
+                    "end":  "2022-09-01",
+                    "val":  15181000000
+                },
+                {
+                    "end":  "2023-08-31",
+                    "val":  1559000000
+                },
+                {
+                    "end":  "2024-08-29",
+                    "val":  8507000000
+                },
+                {
+                    "end":  "2025-08-28",
+                    "val":  17525000000
+                }
+            ],
+    "ocf_audit":  [
+                      {
+                          "accn":  "0000723125-11-000189",
+                          "end":  "2009-09-03",
+                          "filed":  "2011-10-25",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  1206000000
+                      },
+                      {
+                          "accn":  "0000723125-12-000156",
+                          "end":  "2010-09-02",
+                          "filed":  "2012-10-29",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  3096000000
+                      },
+                      {
+                          "accn":  "0000723125-12-000156",
+                          "end":  "2011-09-01",
+                          "filed":  "2012-10-29",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  2484000000
+                      },
+                      {
+                          "accn":  "0000723125-12-000156",
+                          "end":  "2012-08-30",
+                          "filed":  "2012-10-29",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  2114000000
+                      },
+                      {
+                          "accn":  "0000723125-17-000131",
+                          "end":  "2015-09-03",
+                          "filed":  "2017-10-26",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  5208000000
+                      },
+                      {
+                          "accn":  "0000723125-18-000092",
+                          "end":  "2016-09-01",
+                          "filed":  "2018-10-15",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  3168000000
+                      },
+                      {
+                          "accn":  "0000723125-19-000094",
+                          "end":  "2017-08-31",
+                          "filed":  "2019-10-17",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  8153000000
+                      },
+                      {
+                          "accn":  "0000723125-20-000082",
+                          "end":  "2018-08-30",
+                          "filed":  "2020-10-19",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  17400000000
+                      },
+                      {
+                          "accn":  "0000723125-21-000065",
+                          "end":  "2019-08-29",
+                          "filed":  "2021-10-08",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  13189000000
+                      },
+                      {
+                          "accn":  "0000723125-22-000048",
+                          "end":  "2020-09-03",
+                          "filed":  "2022-10-07",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  8306000000
+                      },
+                      {
+                          "accn":  "0000723125-23-000054",
+                          "end":  "2021-09-02",
+                          "filed":  "2023-10-06",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  12468000000
+                      },
+                      {
+                          "accn":  "0000723125-24-000027",
+                          "end":  "2022-09-01",
+                          "filed":  "2024-10-04",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  15181000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2023-08-31",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  1559000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2024-08-29",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  8507000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2025-08-28",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "NetCashProvidedByUsedInOperatingActivities",
+                          "unit":  "USD",
+                          "val":  17525000000
+                      }
+                  ],
+    "operating_income":  [
+                             {
+                                 "end":  "2009-09-03",
+                                 "val":  -1676000000
+                             },
+                             {
+                                 "end":  "2010-09-02",
+                                 "val":  1589000000
+                             },
+                             {
+                                 "end":  "2011-09-01",
+                                 "val":  761000000
+                             },
+                             {
+                                 "end":  "2012-08-30",
+                                 "val":  -612000000
+                             },
+                             {
+                                 "end":  "2013-08-29",
+                                 "val":  236000000
+                             },
+                             {
+                                 "end":  "2014-08-28",
+                                 "val":  3087000000
+                             },
+                             {
+                                 "end":  "2015-09-03",
+                                 "val":  2998000000
+                             },
+                             {
+                                 "end":  "2016-09-01",
+                                 "val":  168000000
+                             },
+                             {
+                                 "end":  "2017-08-31",
+                                 "val":  5868000000
+                             },
+                             {
+                                 "end":  "2018-08-30",
+                                 "val":  14994000000
+                             },
+                             {
+                                 "end":  "2019-08-29",
+                                 "val":  7376000000
+                             },
+                             {
+                                 "end":  "2020-09-03",
+                                 "val":  3003000000
+                             },
+                             {
+                                 "end":  "2021-09-02",
+                                 "val":  6283000000
+                             },
+                             {
+                                 "end":  "2022-09-01",
+                                 "val":  9702000000
+                             },
+                             {
+                                 "end":  "2023-08-31",
+                                 "val":  -5745000000
+                             },
+                             {
+                                 "end":  "2024-08-29",
+                                 "val":  1304000000
+                             },
+                             {
+                                 "end":  "2025-08-28",
+                                 "val":  9770000000
+                             }
+                         ],
+    "operating_income_audit":  [
+                                   {
+                                       "accn":  "0000723125-11-000189",
+                                       "end":  "2009-09-03",
+                                       "filed":  "2011-10-25",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  -1676000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-12-000156",
+                                       "end":  "2010-09-02",
+                                       "filed":  "2012-10-29",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  1589000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-13-000228",
+                                       "end":  "2011-09-01",
+                                       "filed":  "2013-10-28",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  761000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-14-000195",
+                                       "end":  "2012-08-30",
+                                       "filed":  "2014-10-27",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  -612000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-15-000112",
+                                       "end":  "2013-08-29",
+                                       "filed":  "2015-10-27",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  236000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-16-000269",
+                                       "end":  "2014-08-28",
+                                       "filed":  "2016-10-28",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  3087000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-17-000131",
+                                       "end":  "2015-09-03",
+                                       "filed":  "2017-10-26",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  2998000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-18-000092",
+                                       "end":  "2016-09-01",
+                                       "filed":  "2018-10-15",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  168000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-19-000094",
+                                       "end":  "2017-08-31",
+                                       "filed":  "2019-10-17",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  5868000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-20-000082",
+                                       "end":  "2018-08-30",
+                                       "filed":  "2020-10-19",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  14994000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-21-000065",
+                                       "end":  "2019-08-29",
+                                       "filed":  "2021-10-08",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  7376000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-22-000048",
+                                       "end":  "2020-09-03",
+                                       "filed":  "2022-10-07",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  3003000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-23-000054",
+                                       "end":  "2021-09-02",
+                                       "filed":  "2023-10-06",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  6283000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-24-000027",
+                                       "end":  "2022-09-01",
+                                       "filed":  "2024-10-04",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  9702000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-25-000028",
+                                       "end":  "2023-08-31",
+                                       "filed":  "2025-10-03",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  -5745000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-25-000028",
+                                       "end":  "2024-08-29",
+                                       "filed":  "2025-10-03",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  1304000000
+                                   },
+                                   {
+                                       "accn":  "0000723125-25-000028",
+                                       "end":  "2025-08-28",
+                                       "filed":  "2025-10-03",
+                                       "form":  "10-K",
+                                       "tag":  "OperatingIncomeLoss",
+                                       "unit":  "USD",
+                                       "val":  9770000000
+                                   }
+                               ],
+    "restricted_cash":  250000000,
+    "restricted_cash_audit":  {
+                                  "accn":  "0000723125-11-000189",
+                                  "end":  "2010-05-07",
+                                  "filed":  "2011-10-25",
+                                  "val":  250000000
+                              },
+    "revenue":  [
+                    {
+                        "end":  "2017-08-31",
+                        "val":  20322000000
+                    },
+                    {
+                        "end":  "2018-08-30",
+                        "val":  30391000000
+                    },
+                    {
+                        "end":  "2019-08-29",
+                        "val":  23406000000
+                    },
+                    {
+                        "end":  "2020-09-03",
+                        "val":  21435000000
+                    },
+                    {
+                        "end":  "2021-09-02",
+                        "val":  27705000000
+                    },
+                    {
+                        "end":  "2022-09-01",
+                        "val":  30758000000
+                    },
+                    {
+                        "end":  "2023-08-31",
+                        "val":  15540000000
+                    },
+                    {
+                        "end":  "2024-08-29",
+                        "val":  25111000000
+                    },
+                    {
+                        "end":  "2025-08-28",
+                        "val":  37378000000
+                    }
+                ],
+    "revenue_audit":  [
+                          {
+                              "accn":  "0000723125-19-000094",
+                              "end":  "2017-08-31",
+                              "filed":  "2019-10-17",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  20322000000
+                          },
+                          {
+                              "accn":  "0000723125-20-000082",
+                              "end":  "2018-08-30",
+                              "filed":  "2020-10-19",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  30391000000
+                          },
+                          {
+                              "accn":  "0000723125-21-000065",
+                              "end":  "2019-08-29",
+                              "filed":  "2021-10-08",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  23406000000
+                          },
+                          {
+                              "accn":  "0000723125-22-000048",
+                              "end":  "2020-09-03",
+                              "filed":  "2022-10-07",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  21435000000
+                          },
+                          {
+                              "accn":  "0000723125-23-000054",
+                              "end":  "2021-09-02",
+                              "filed":  "2023-10-06",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  27705000000
+                          },
+                          {
+                              "accn":  "0000723125-24-000027",
+                              "end":  "2022-09-01",
+                              "filed":  "2024-10-04",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  30758000000
+                          },
+                          {
+                              "accn":  "0000723125-25-000028",
+                              "end":  "2023-08-31",
+                              "filed":  "2025-10-03",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  15540000000
+                          },
+                          {
+                              "accn":  "0000723125-25-000028",
+                              "end":  "2024-08-29",
+                              "filed":  "2025-10-03",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  25111000000
+                          },
+                          {
+                              "accn":  "0000723125-25-000028",
+                              "end":  "2025-08-28",
+                              "filed":  "2025-10-03",
+                              "form":  "10-K",
+                              "tag":  "RevenueFromContractWithCustomerExcludingAssessedTax",
+                              "unit":  "USD",
+                              "val":  37378000000
+                          }
+                      ],
+    "roe_basis":  "net_income / year_end_equity",
+    "roe_median_5y":  0.13340768898094826,
+    "rpo":  5000000000,
+    "rpo_audit":  {
+                      "accn":  "0000723125-26-000015",
+                      "end":  "2026-05-28",
+                      "filed":  "2026-06-25",
+                      "val":  5000000000
+                  },
+    "sbc":  [
+                {
+                    "end":  "2009-09-03",
+                    "val":  44000000
+                },
+                {
+                    "end":  "2010-09-02",
+                    "val":  93000000
+                },
+                {
+                    "end":  "2011-09-01",
+                    "val":  76000000
+                },
+                {
+                    "end":  "2012-08-30",
+                    "val":  87000000
+                },
+                {
+                    "end":  "2013-08-29",
+                    "val":  91000000
+                },
+                {
+                    "end":  "2014-08-28",
+                    "val":  115000000
+                },
+                {
+                    "end":  "2015-09-03",
+                    "val":  168000000
+                },
+                {
+                    "end":  "2016-09-01",
+                    "val":  191000000
+                },
+                {
+                    "end":  "2017-08-31",
+                    "val":  215000000
+                },
+                {
+                    "end":  "2018-08-30",
+                    "val":  198000000
+                },
+                {
+                    "end":  "2019-08-29",
+                    "val":  243000000
+                },
+                {
+                    "end":  "2020-09-03",
+                    "val":  328000000
+                },
+                {
+                    "end":  "2021-09-02",
+                    "val":  378000000
+                },
+                {
+                    "end":  "2022-09-01",
+                    "val":  514000000
+                },
+                {
+                    "end":  "2023-08-31",
+                    "val":  596000000
+                },
+                {
+                    "end":  "2024-08-29",
+                    "val":  833000000
+                },
+                {
+                    "end":  "2025-08-28",
+                    "val":  972000000
+                }
+            ],
+    "sbc_audit":  [
+                      {
+                          "accn":  "0000723125-11-000189",
+                          "end":  "2009-09-03",
+                          "filed":  "2011-10-25",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  44000000
+                      },
+                      {
+                          "accn":  "0000723125-12-000156",
+                          "end":  "2010-09-02",
+                          "filed":  "2012-10-29",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  93000000
+                      },
+                      {
+                          "accn":  "0000723125-13-000228",
+                          "end":  "2011-09-01",
+                          "filed":  "2013-10-28",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  76000000
+                      },
+                      {
+                          "accn":  "0000723125-14-000195",
+                          "end":  "2012-08-30",
+                          "filed":  "2014-10-27",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  87000000
+                      },
+                      {
+                          "accn":  "0000723125-15-000112",
+                          "end":  "2013-08-29",
+                          "filed":  "2015-10-27",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  91000000
+                      },
+                      {
+                          "accn":  "0000723125-16-000269",
+                          "end":  "2014-08-28",
+                          "filed":  "2016-10-28",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  115000000
+                      },
+                      {
+                          "accn":  "0000723125-17-000131",
+                          "end":  "2015-09-03",
+                          "filed":  "2017-10-26",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  168000000
+                      },
+                      {
+                          "accn":  "0000723125-18-000092",
+                          "end":  "2016-09-01",
+                          "filed":  "2018-10-15",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  191000000
+                      },
+                      {
+                          "accn":  "0000723125-19-000094",
+                          "end":  "2017-08-31",
+                          "filed":  "2019-10-17",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  215000000
+                      },
+                      {
+                          "accn":  "0000723125-20-000082",
+                          "end":  "2018-08-30",
+                          "filed":  "2020-10-19",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  198000000
+                      },
+                      {
+                          "accn":  "0000723125-21-000065",
+                          "end":  "2019-08-29",
+                          "filed":  "2021-10-08",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  243000000
+                      },
+                      {
+                          "accn":  "0000723125-22-000048",
+                          "end":  "2020-09-03",
+                          "filed":  "2022-10-07",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  328000000
+                      },
+                      {
+                          "accn":  "0000723125-23-000054",
+                          "end":  "2021-09-02",
+                          "filed":  "2023-10-06",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  378000000
+                      },
+                      {
+                          "accn":  "0000723125-24-000027",
+                          "end":  "2022-09-01",
+                          "filed":  "2024-10-04",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  514000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2023-08-31",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  596000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2024-08-29",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  833000000
+                      },
+                      {
+                          "accn":  "0000723125-25-000028",
+                          "end":  "2025-08-28",
+                          "filed":  "2025-10-03",
+                          "form":  "10-K",
+                          "tag":  "ShareBasedCompensation",
+                          "unit":  "USD",
+                          "val":  972000000
+                      }
+                  ],
+    "shares_current":  1129393151,
+    "shares_current_audit":  {
+                                 "accn":  "0000723125-26-000015",
+                                 "end":  "2026-06-17",
+                                 "filed":  "2026-06-25",
+                                 "val":  1129393151
+                             },
+    "shares_diluted":  [
+                           {
+                               "end":  "2009-09-03",
+                               "val":  800700000
+                           },
+                           {
+                               "end":  "2010-09-02",
+                               "val":  1050700000
+                           },
+                           {
+                               "end":  "2011-09-01",
+                               "val":  1007500000
+                           },
+                           {
+                               "end":  "2012-08-30",
+                               "val":  991000000
+                           },
+                           {
+                               "end":  "2013-08-29",
+                               "val":  1057000000
+                           },
+                           {
+                               "end":  "2014-08-28",
+                               "val":  1198000000
+                           },
+                           {
+                               "end":  "2015-09-03",
+                               "val":  1170000000
+                           },
+                           {
+                               "end":  "2016-09-01",
+                               "val":  1036000000
+                           },
+                           {
+                               "end":  "2017-08-31",
+                               "val":  1154000000
+                           },
+                           {
+                               "end":  "2018-08-30",
+                               "val":  1229000000
+                           },
+                           {
+                               "end":  "2019-08-29",
+                               "val":  1143000000
+                           },
+                           {
+                               "end":  "2020-09-03",
+                               "val":  1131000000
+                           },
+                           {
+                               "end":  "2021-09-02",
+                               "val":  1141000000
+                           },
+                           {
+                               "end":  "2022-09-01",
+                               "val":  1122000000
+                           },
+                           {
+                               "end":  "2023-08-31",
+                               "val":  1093000000
+                           },
+                           {
+                               "end":  "2024-08-29",
+                               "val":  1118000000
+                           },
+                           {
+                               "end":  "2025-08-28",
+                               "val":  1125000000
+                           }
+                       ],
+    "shares_diluted_audit":  [
+                                 {
+                                     "accn":  "0000723125-11-000189",
+                                     "end":  "2009-09-03",
+                                     "filed":  "2011-10-25",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  800700000
+                                 },
+                                 {
+                                     "accn":  "0000723125-12-000156",
+                                     "end":  "2010-09-02",
+                                     "filed":  "2012-10-29",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1050700000
+                                 },
+                                 {
+                                     "accn":  "0000723125-13-000228",
+                                     "end":  "2011-09-01",
+                                     "filed":  "2013-10-28",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1007500000
+                                 },
+                                 {
+                                     "accn":  "0000723125-14-000195",
+                                     "end":  "2012-08-30",
+                                     "filed":  "2014-10-27",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  991000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-15-000112",
+                                     "end":  "2013-08-29",
+                                     "filed":  "2015-10-27",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1057000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-16-000269",
+                                     "end":  "2014-08-28",
+                                     "filed":  "2016-10-28",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1198000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-17-000131",
+                                     "end":  "2015-09-03",
+                                     "filed":  "2017-10-26",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1170000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-18-000092",
+                                     "end":  "2016-09-01",
+                                     "filed":  "2018-10-15",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1036000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-19-000094",
+                                     "end":  "2017-08-31",
+                                     "filed":  "2019-10-17",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1154000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-20-000082",
+                                     "end":  "2018-08-30",
+                                     "filed":  "2020-10-19",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1229000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-21-000065",
+                                     "end":  "2019-08-29",
+                                     "filed":  "2021-10-08",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1143000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-22-000048",
+                                     "end":  "2020-09-03",
+                                     "filed":  "2022-10-07",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1131000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-23-000054",
+                                     "end":  "2021-09-02",
+                                     "filed":  "2023-10-06",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1141000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-24-000027",
+                                     "end":  "2022-09-01",
+                                     "filed":  "2024-10-04",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1122000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2023-08-31",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1093000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2024-08-29",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1118000000
+                                 },
+                                 {
+                                     "accn":  "0000723125-25-000028",
+                                     "end":  "2025-08-28",
+                                     "filed":  "2025-10-03",
+                                     "form":  "10-K",
+                                     "tag":  "WeightedAverageNumberOfDilutedSharesOutstanding",
+                                     "unit":  "shares",
+                                     "val":  1125000000
+                                 }
+                             ],
+    "short_term_investments":  1027000000,
+    "short_term_investments_audit":  {
+                                         "accn":  "0000723125-26-000015",
+                                         "end":  "2026-05-28",
+                                         "filed":  "2026-06-25",
+                                         "val":  1027000000
+                                     },
+    "stockholders_equity":  [
+                                {
+                                    "end":  "2010-09-02",
+                                    "val":  8020000000
+                                },
+                                {
+                                    "end":  "2011-09-01",
+                                    "val":  8470000000
+                                },
+                                {
+                                    "end":  "2012-08-30",
+                                    "val":  7700000000
+                                },
+                                {
+                                    "end":  "2013-08-29",
+                                    "val":  9142000000
+                                },
+                                {
+                                    "end":  "2014-08-28",
+                                    "val":  10760000000
+                                },
+                                {
+                                    "end":  "2015-09-03",
+                                    "val":  12302000000
+                                },
+                                {
+                                    "end":  "2016-09-01",
+                                    "val":  12080000000
+                                },
+                                {
+                                    "end":  "2017-08-31",
+                                    "val":  18621000000
+                                },
+                                {
+                                    "end":  "2018-08-30",
+                                    "val":  32294000000
+                                },
+                                {
+                                    "end":  "2019-08-29",
+                                    "val":  35881000000
+                                },
+                                {
+                                    "end":  "2020-09-03",
+                                    "val":  38996000000
+                                },
+                                {
+                                    "end":  "2021-09-02",
+                                    "val":  43933000000
+                                },
+                                {
+                                    "end":  "2022-09-01",
+                                    "val":  49907000000
+                                },
+                                {
+                                    "end":  "2023-08-31",
+                                    "val":  44120000000
+                                },
+                                {
+                                    "end":  "2024-08-29",
+                                    "val":  45131000000
+                                },
+                                {
+                                    "end":  "2025-08-28",
+                                    "val":  54165000000
+                                }
+                            ],
+    "stockholders_equity_audit":  [
+                                      {
+                                          "accn":  "0000723125-11-000189",
+                                          "end":  "2010-09-02",
+                                          "filed":  "2011-10-25",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  8020000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-12-000156",
+                                          "end":  "2011-09-01",
+                                          "filed":  "2012-10-29",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  8470000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-13-000228",
+                                          "end":  "2012-08-30",
+                                          "filed":  "2013-10-28",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  7700000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-14-000195",
+                                          "end":  "2013-08-29",
+                                          "filed":  "2014-10-27",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  9142000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-15-000112",
+                                          "end":  "2014-08-28",
+                                          "filed":  "2015-10-27",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  10760000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-16-000269",
+                                          "end":  "2015-09-03",
+                                          "filed":  "2016-10-28",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  12302000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-17-000131",
+                                          "end":  "2016-09-01",
+                                          "filed":  "2017-10-26",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  12080000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-18-000092",
+                                          "end":  "2017-08-31",
+                                          "filed":  "2018-10-15",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  18621000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-19-000094",
+                                          "end":  "2018-08-30",
+                                          "filed":  "2019-10-17",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  32294000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-20-000082",
+                                          "end":  "2019-08-29",
+                                          "filed":  "2020-10-19",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  35881000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-23-000054",
+                                          "end":  "2020-09-03",
+                                          "filed":  "2023-10-06",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  38996000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-24-000027",
+                                          "end":  "2021-09-02",
+                                          "filed":  "2024-10-04",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  43933000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-25-000028",
+                                          "end":  "2022-09-01",
+                                          "filed":  "2025-10-03",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  49907000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-25-000028",
+                                          "end":  "2023-08-31",
+                                          "filed":  "2025-10-03",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  44120000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-25-000028",
+                                          "end":  "2024-08-29",
+                                          "filed":  "2025-10-03",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  45131000000
+                                      },
+                                      {
+                                          "accn":  "0000723125-25-000028",
+                                          "end":  "2025-08-28",
+                                          "filed":  "2025-10-03",
+                                          "tag":  "StockholdersEquity",
+                                          "val":  54165000000
+                                      }
+                                  ],
+    "total_debt":  8844000000
+}
