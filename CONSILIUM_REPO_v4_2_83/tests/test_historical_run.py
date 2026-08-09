@@ -359,6 +359,42 @@ class TestRunArchiveMissingFileStops(unittest.TestCase):
         self.assertIn("archive not found", err)
 
 
+class TestSensitivityBoundsArePublished(HistoricalRunTestBase):
+    """score_pair() already computes the full k_exit grid (0.08/0.09/0.10) into row['sensitivity']
+    (see PREREG §8); this pins that the 8% and 10% bounds actually reach the CSV and the report
+    table, not just the in-memory row -- a field computed but never written is not a result."""
+
+    def test_csv_and_report_carry_both_sensitivity_bounds(self):
+        import csv
+        import tempfile
+        row_out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price())
+        self.assertEqual(row_out["status"], "SCORED", row_out.get("reason"))
+        # hand-computed: payout = 1 - 0.04/0.20 = 0.8
+        #   k_exit=8%: 0.8/(0.08-0.04) = 20.0    k_exit=10%: 0.8/(0.10-0.04) = 13.333...
+        self.assertAlmostEqual(row_out["sensitivity"]["0.08"], 20.0, places=6)
+        self.assertAlmostEqual(row_out["sensitivity"]["0.1"], 13.333333, places=5)
+
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "out.csv")
+            md_path = os.path.join(d, "out.md")
+            hr.write_csv([row_out], csv_path)
+            hr.write_report([row_out], md_path)
+
+            with open(csv_path, encoding="utf-8") as f:
+                csv_row = next(csv.DictReader(f))
+            self.assertIn("sensitivity_pe_k8", csv_row)
+            self.assertIn("sensitivity_pe_k10", csv_row)
+            self.assertAlmostEqual(float(csv_row["sensitivity_pe_k8"]), 20.0, places=6)
+            self.assertAlmostEqual(float(csv_row["sensitivity_pe_k10"]), 13.333333, places=5)
+
+            with open(md_path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("future_pe(8%)", text)
+            self.assertIn("future_pe(10%)", text)
+            self.assertIn("20.00", text)
+            self.assertIn("13.33", text)
+
+
 class TestReportAndCsvSmoke(unittest.TestCase):
     """Not a golden-arithmetic pin -- just proves write_csv/write_report execute cleanly over a
     mixed SCORED/REFUSED row set, so a real archive run cannot crash at the reporting step."""

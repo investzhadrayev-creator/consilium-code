@@ -426,7 +426,8 @@ def run_archive(archive_path):
 
 CSV_FIELDS = ["ticker", "date", "status", "reason", "verdict_leg", "verdict_leg_note",
               "growth_rate", "rev_cagr_3y", "rev_cagr_5y", "terminal_growth", "roe_median_5y",
-              "future_pe_k9", "future_pe_source", "pe_hist_median", "intrinsic_value",
+              "future_pe_k9", "future_pe_source", "sensitivity_pe_k8", "sensitivity_pe_k10",
+              "pe_hist_median", "intrinsic_value",
               "implied_cagr_pct", "hurdle_gate", "buy_A_no_discount", "buy_B_10pct_discount",
               "split_factor_eps", "split_factor_fcf", "shadow_dcf_iv", "shadow_dcf_delta",
               "shadow_dcf_delta_pct"]
@@ -438,6 +439,9 @@ def write_csv(rows, path):
         w.writeheader()
         for r in rows:
             flat = dict(r)
+            sens = r.get("sensitivity") or {}
+            flat["sensitivity_pe_k8"] = sens.get(str(K_EXIT_GRID[0]))
+            flat["sensitivity_pe_k10"] = sens.get(str(K_EXIT_GRID[-1]))
             sd = r.get("shadow_dcf") or {}
             flat["shadow_dcf_iv"] = sd.get("intrinsic_value")
             flat["shadow_dcf_delta"] = sd.get("delta_to_official")
@@ -553,14 +557,21 @@ def write_report(rows, path):
     lines.append("## Посчитанные пары")
     lines.append("")
     if scored:
-        lines.append("| Тикер | Дата | Leg | g | terminal_g | future_pe(9%) | IV | "
-                     "implied_CAGR% | A | Б | Shadow IV (EXPLORATORY) | Δ vs official |")
-        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+        lines.append("| Тикер | Дата | Leg | g | terminal_g | future_pe(8%) | future_pe(9%) | "
+                     "future_pe(10%) | IV | implied_CAGR% | A | Б | Shadow IV (EXPLORATORY) | "
+                     "Δ vs official |")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for r in scored:
             sd = r.get("shadow_dcf") or {}
-            lines.append("| %s | %s | %s | %.4f | %.4f | %.2f | %.2f | %.2f | %s | %s | %s | %s |" % (
+            sens = r.get("sensitivity") or {}
+            sens_k8 = sens.get(str(K_EXIT_GRID[0]))
+            sens_k10 = sens.get(str(K_EXIT_GRID[-1]))
+            lines.append("| %s | %s | %s | %.4f | %.4f | %s | %.2f | %s | %.2f | %.2f | %s | %s | %s | %s |" % (
                 r["ticker"], r["date"], r["verdict_leg"], r["growth_rate"], r["terminal_growth"],
-                r["future_pe_k9"], r["intrinsic_value"], r["implied_cagr_pct"],
+                ("%.2f" % sens_k8) if sens_k8 is not None else "n/a",
+                r["future_pe_k9"],
+                ("%.2f" % sens_k10) if sens_k10 is not None else "n/a",
+                r["intrinsic_value"], r["implied_cagr_pct"],
                 "BUY" if r["buy_A_no_discount"] else "-",
                 "BUY" if r["buy_B_10pct_discount"] else "-",
                 ("%.2f" % sd["intrinsic_value"]) if sd.get("intrinsic_value") is not None else "n/a",
