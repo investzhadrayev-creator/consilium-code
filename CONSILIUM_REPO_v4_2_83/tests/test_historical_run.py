@@ -163,6 +163,42 @@ def _gold2_price():
             "divCash": 0.0}]
 
 
+def _gold3_edgar():
+    """Same growth/ROE/split shape as GOLD2, but NetIncomeLoss/StockholdersEquity STOP at FY2018
+    -- FY2019 (the year shares_diluted/ocf/capex report) has no net_income point, so the EPS
+    leg's own common-FY-end search (net_income & shares_diluted) finds none and refuses by name,
+    while roe_median_5y (computed from the SEPARATE 2015-2018 net_income/equity overlap, still
+    4 points >= the 3-point floor) is unaffected -- so the pair still SCORES, single-leg, on the
+    FCF leg alone. Built for issue #28 audit round 2: item 2 (single_leg must name which leg and
+    why) and mutation case histrun-basis-bypass-02 (the FCF leg's basis_adjust is the only thing
+    standing between the published IV and a ~4x-inflated as-filed number)."""
+    years = [2014, 2015, 2016, 2017, 2018, 2019]
+    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
+    revenue = [100.0, 115.0, 132.25, 152.0875, 174.900625, 201.13571875]
+    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
+                for y, v, f in zip(years, revenue, filed)]
+    ni_years = [2015, 2016, 2017, 2018]      # NOTE: no 2019 point -- the EPS-leg trap
+    ni_filed = filed[1:5]
+    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 440.0, filed=f)
+              for y, f in zip(ni_years, ni_filed)]
+    eq_rows = [row(None, "%d-12-31" % y, 800.0, filed=f) for y, f in zip(ni_years, ni_filed)]
+    sh_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
+    ocf_rows = [row("2019-01-01", "2019-12-31", 560.0, filed="2020-02-15")]
+    capex_rows = [row("2019-01-01", "2019-12-31", 60.0, filed="2020-02-15")]
+    return facts({
+        "Revenues": usd(rev_rows),
+        "NetIncomeLoss": usd(ni_rows),
+        "StockholdersEquity": usd(eq_rows),
+        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
+        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
+        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
+    }, cik=3000003)
+
+
+def _gold3_price():
+    return _gold2_price()
+
+
 class TestGoldenCase1CleanNoSplitNoBuy(HistoricalRunTestBase):
 
     def test_full_pipeline_matches_hand_computed_arithmetic(self):
@@ -348,6 +384,114 @@ class TestShadowDcfNeverFeedsTheOfficialVerdict(unittest.TestCase):
         self.assertIn("EXPLORATORY", out["shadow_dcf"]["label"])
         # official verdict is UNCHANGED by the shadow leg being unavailable
         self.assertAlmostEqual(out["intrinsic_value"], 22.61, places=2)
+
+
+class TestSingleLegSurfacesMissingLegReason(HistoricalRunTestBase):
+    """Issue #28 audit round 2, item 2: a single_leg row must publish WHY the other leg is
+    missing (eps_reason/fcf_reason), on the row, in the CSV, and in the report table -- not
+    just the fact that it's single_leg. GOLD3 (see its fixture docstring) refuses the EPS leg
+    by name (no common FY end -- FY2019 has no net_income point) while the FCF leg scores
+    normally through the split adjustment; numbers below are from the tool's own output
+    (`hr.score_pair`), not hand-derived, since the arithmetic is identical to GOLD2's already
+    hand-verified FCF leg (fcf_today = (560-60)/50 / 4.0 = 2.50)."""
+
+    def test_row_names_the_missing_leg_reason(self):
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["verdict_leg_note"], "single_leg")
+        self.assertEqual(out["verdict_leg"], "fcf_per_share")
+        self.assertIsNone(out["fcf_reason"])
+        self.assertIsNotNone(out["eps_reason"])
+        self.assertIn("no common FY end", out["eps_reason"])
+        self.assertAlmostEqual(out["intrinsic_value"], 43.53, places=2)
+        self.assertAlmostEqual(out["implied_cagr_pct"], 24.59, places=2)
+
+    def test_csv_and_report_carry_the_missing_leg_reason(self):
+        import csv
+        import tempfile
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "out.csv")
+            md_path = os.path.join(d, "out.md")
+            hr.write_csv([out], csv_path)
+            hr.write_report([out], md_path)
+
+            with open(csv_path, encoding="utf-8") as f:
+                csv_row = next(csv.DictReader(f))
+            self.assertIn("eps_reason", csv_row)
+            self.assertIn("fcf_reason", csv_row)
+            self.assertIn("no common FY end", csv_row["eps_reason"])
+            self.assertEqual(csv_row["fcf_reason"], "")
+
+            with open(md_path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("Причина недоступности второй ноги", text)
+            self.assertIn("no common FY end", text)
+
+
+class TestPeHistMedianNoteIsPublished(HistoricalRunTestBase):
+    """Issue #28 audit round 2, item 1: pe_hist_median_note (already computed in score_pair)
+    must reach the CSV column and the report's notes column, and the cell is never empty when
+    the median is ABSENT from the archive (the mandate's own wording)."""
+
+    def test_absent_median_note_is_non_empty_on_both_surfaces(self):
+        import csv
+        import tempfile
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertIsNone(out["pe_hist_median"])
+        self.assertTrue(out["pe_hist_median_note"])   # non-empty string, not None/""
+
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "out.csv")
+            md_path = os.path.join(d, "out.md")
+            hr.write_csv([out], csv_path)
+            hr.write_report([out], md_path)
+
+            with open(csv_path, encoding="utf-8") as f:
+                csv_row = next(csv.DictReader(f))
+            self.assertIn("pe_hist_median_note", csv_row)
+            self.assertTrue(csv_row["pe_hist_median_note"])
+
+            with open(md_path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("PE-hist медиана (примечание)", text)
+            self.assertIn(out["pe_hist_median_note"], text)
+
+    def test_present_median_gives_no_reason_but_report_cell_still_not_blank(self):
+        price = _gold1_price()
+        price[0] = dict(price[0], pe_hist_median=14.0)
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), price)
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["pe_hist_median"], 14.0)
+        self.assertIsNone(out["pe_hist_median_note"])   # nothing to explain -- median was found
+
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            md_path = os.path.join(d, "out.md")
+            hr.write_report([out], md_path)
+            with open(md_path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            data_row = next(l for l in lines if l.startswith("| GOLD1 |"))
+            cells = [c.strip() for c in data_row.strip("|").split("|")]
+            # last two columns are PE-hist note and missing-leg reason (see write_report header)
+            self.assertEqual(cells[-2], "-")
+            self.assertNotEqual(cells[-2], "")
+
+
+class TestFcfBasisAdjustAppliedToPublishedIv(HistoricalRunTestBase):
+    """Guards mutation case histrun-basis-bypass-02: on a single_leg-FCF row, the published IV
+    and split_factor_fcf must come from the split-ADJUSTED fcf/share (2.50), never the as-filed
+    one (10.00) -- see GOLD3's fixture docstring for why the EPS leg is unavailable here, which
+    makes the FCF leg's own basis_adjust the ONLY thing standing between the officially
+    published number and a ~4x-inflated one."""
+
+    def test_published_iv_and_split_factor_use_the_adjusted_fcf(self):
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["verdict_leg"], "fcf_per_share")
+        self.assertEqual(out["split_factor_fcf"], 4.0)
+        self.assertAlmostEqual(out["intrinsic_value"], 43.53, places=2)
 
 
 class TestRunArchiveMissingFileStops(unittest.TestCase):

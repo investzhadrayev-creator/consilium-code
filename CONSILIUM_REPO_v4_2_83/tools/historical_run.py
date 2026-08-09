@@ -302,13 +302,19 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
         row.update(status="REFUSED", reason="no usable adjClose in the archived price record")
         return row
 
-    eps_af, eps_end, eps_reason = compute_eps_leg(gt)
-    fcf_af, fcf_end, fcf_reason = compute_fcf_leg(gt)
+    eps_af, eps_end, eps_leg_err = compute_eps_leg(gt)
+    fcf_af, fcf_end, fcf_leg_err = compute_fcf_leg(gt)
     perrors = {}
     eps_today, eps_factor = basis_adjust(eps_af, price_record, price_rows, perrors, ticker + "_eps")
     fcf_today, fcf_factor = basis_adjust(fcf_af, price_record, price_rows, perrors, ticker + "_fcf")
+    # Причина недоступности КАЖДОЙ ноги, published on every SCORED row (None when the leg is
+    # usable) -- covers both compute-leg refusals AND a basis_adjust (split-factor) failure that
+    # leaves the leg itself computed but unusable. Needed to explain single_leg rows by name,
+    # not just by omission (issue #28 audit round 2, item 2).
+    eps_reason = (eps_leg_err or perrors.get(ticker + "_eps")) if eps_today is None else None
+    fcf_reason = (fcf_leg_err or perrors.get(ticker + "_fcf")) if fcf_today is None else None
     if eps_today is None and fcf_today is None:
-        reasons = [r for r in [eps_reason, fcf_reason] if r] + list(perrors.values())
+        reasons = [r for r in [eps_leg_err, fcf_leg_err] if r] + list(perrors.values())
         row.update(status="REFUSED",
                    reason="no usable base leg: " + "; ".join(reasons) if reasons else
                           "no usable base (EPS/FCF) leg, or share-basis undeterminable")
@@ -386,6 +392,7 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
         buy_A_no_discount=ladder.get(0.0, {}).get("reached"),
         buy_B_10pct_discount=ladder.get(10.0, {}).get("reached"),
         sensitivity={str(k): grid[k].get("future_pe") for k in K_EXIT_GRID},
+        eps_reason=eps_reason, fcf_reason=fcf_reason,
         _grid=grid, _gt_flags=gt.get("_flags"), shadow_dcf=shadow,
     )
     return row
@@ -425,9 +432,10 @@ def run_archive(archive_path):
 
 
 CSV_FIELDS = ["ticker", "date", "status", "reason", "verdict_leg", "verdict_leg_note",
+              "eps_reason", "fcf_reason",
               "growth_rate", "rev_cagr_3y", "rev_cagr_5y", "terminal_growth", "roe_median_5y",
               "future_pe_k9", "future_pe_source", "sensitivity_pe_k8", "sensitivity_pe_k10",
-              "pe_hist_median", "intrinsic_value",
+              "pe_hist_median", "pe_hist_median_note", "intrinsic_value",
               "implied_cagr_pct", "hurdle_gate", "buy_A_no_discount", "buy_B_10pct_discount",
               "split_factor_eps", "split_factor_fcf", "shadow_dcf_iv", "shadow_dcf_delta",
               "shadow_dcf_delta_pct"]
@@ -559,14 +567,22 @@ def write_report(rows, path):
     if scored:
         lines.append("| Тикер | Дата | Leg | g | terminal_g | future_pe(8%) | future_pe(9%) | "
                      "future_pe(10%) | IV | implied_CAGR% | A | Б | Shadow IV (EXPLORATORY) | "
-                     "Δ vs official |")
-        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+                     "Δ vs official | PE-hist медиана (примечание) | "
+                     "Причина недоступности второй ноги |")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for r in scored:
             sd = r.get("shadow_dcf") or {}
             sens = r.get("sensitivity") or {}
             sens_k8 = sens.get(str(K_EXIT_GRID[0]))
             sens_k10 = sens.get(str(K_EXIT_GRID[-1]))
-            lines.append("| %s | %s | %s | %.4f | %.4f | %s | %.2f | %s | %.2f | %.2f | %s | %s | %s | %s |" % (
+            # never blank: absence of the historical median always carries a reason (see
+            # score_pair's pe_hist_median_note); presence is marked "-", not left empty (issue
+            # #28 audit round 2, item 1).
+            pe_note_cell = (r.get("pe_hist_median_note") or "-").replace("|", "/")
+            # populated only for single_leg rows -- the one leg that's None on a dual_basis row
+            # carries no reason, so this is "-" there by construction (item 2).
+            leg_reason_cell = (r.get("eps_reason") or r.get("fcf_reason") or "-").replace("|", "/")
+            lines.append("| %s | %s | %s | %.4f | %.4f | %s | %.2f | %s | %.2f | %.2f | %s | %s | %s | %s | %s | %s |" % (
                 r["ticker"], r["date"], r["verdict_leg"], r["growth_rate"], r["terminal_growth"],
                 ("%.2f" % sens_k8) if sens_k8 is not None else "n/a",
                 r["future_pe_k9"],
@@ -575,7 +591,8 @@ def write_report(rows, path):
                 "BUY" if r["buy_A_no_discount"] else "-",
                 "BUY" if r["buy_B_10pct_discount"] else "-",
                 ("%.2f" % sd["intrinsic_value"]) if sd.get("intrinsic_value") is not None else "n/a",
-                ("%.2f" % sd["delta_to_official"]) if sd.get("delta_to_official") is not None else "n/a"))
+                ("%.2f" % sd["delta_to_official"]) if sd.get("delta_to_official") is not None else "n/a",
+                pe_note_cell, leg_reason_cell))
     else:
         lines.append("(нет — архив недоступен или отказал каждой паре)")
     lines.append("")

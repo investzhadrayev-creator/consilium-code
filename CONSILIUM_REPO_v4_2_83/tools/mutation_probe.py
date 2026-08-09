@@ -772,6 +772,17 @@ CASES = [
      "    eps_today, eps_factor = eps_af, 1.0",
      "test_historical_run.TestGoldenCase2SplitAndRoeCapBuy.test_full_pipeline_matches_hand_computed_arithmetic",
      "PREREG §7's stand-health check: the EPS leg is never fed to ivc() on its as-filed share basis"),
+    # ---- issue #28 audit round 2: two more mandate-required mutation cases ----
+    ("histrun-basis-bypass-02", "tools/historical_run.py",
+     '    fcf_today, fcf_factor = basis_adjust(fcf_af, price_record, price_rows, perrors, ticker + "_fcf")',
+     "    fcf_today, fcf_factor = fcf_af, 1.0",
+     "test_historical_run.TestFcfBasisAdjustAppliedToPublishedIv.test_published_iv_and_split_factor_use_the_adjusted_fcf",
+     "PREREG §7's stand-health check applies to the FCF leg too: it is never fed to ivc() on its as-filed share basis"),
+    ("histrun-histmedian-flip-01", "tools/historical_run.py",
+     "    if pe_hist_median is not None and pe_hist_median < multiple:",
+     "    if pe_hist_median is not None and pe_hist_median > multiple:",
+     "test_historical_run.TestTerminalMultiple.test_historical_median_wins_when_below_the_formula_ceiling",
+     "PREREG §8: the historical median only overrides the formula ceiling when it is BELOW it, never above"),
 ]
 
 
