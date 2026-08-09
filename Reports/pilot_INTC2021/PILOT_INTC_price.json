@@ -1,0 +1,24 @@
+﻿{
+    "_errors":  {
+                    "pe_same_share_basis_INTC":  "no EPS supplied"
+                },
+    "date":  "2022-01-28",
+    "pe_same_share_basis":  null,
+    "price_record":  {
+                         "adjClose":  44.2479126284,
+                         "adjHigh":  44.6836243178,
+                         "adjLow":  42.9222366372,
+                         "adjOpen":  44.2293717054,
+                         "adjVolume":  61945408,
+                         "close":  47.73,
+                         "date":  "2022-01-28T00:00:00.000Z",
+                         "divCash":  0.0,
+                         "high":  48.2,
+                         "low":  46.3,
+                         "open":  47.71,
+                         "splitFactor":  1.0,
+                         "volume":  61945408
+                     },
+    "split_factor":  1.0,
+    "ticker":  "INTC"
+}
