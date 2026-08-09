@@ -740,6 +740,38 @@ CASES = [
      "    return ratio, None",
      "test_historical_stand.TestSameShareBasisPE.test_compound_split_with_dividend_admixture_gives_the_exact_product_and_a_correct_pe",
      "the splitFactor PRODUCT wins over the dividend-contaminated close/adjClose ratio"),
+    # ---- issue #28: Счёт проверки №1 (tools/historical_run.py) ----
+    # Acceptance mandate: "подмена официального счёта теневым обязана краснеть" — the shadow
+    # (EXPLORATORY, decision В4) DCF bridge must never be able to silently become the published
+    # official number.
+    ("histrun-shadow-swap-01", "tools/historical_run.py",
+     '        intrinsic_value=verdict_leg["intrinsic_value"],   # OFFICIAL — never the shadow leg',
+     '        intrinsic_value=shadow["intrinsic_value"],   # OFFICIAL — never the shadow leg',
+     "test_historical_run.TestGoldenCase1CleanNoSplitNoBuy.test_full_pipeline_matches_hand_computed_arithmetic",
+     "the official IV is never silently replaced by the shadow (EXPLORATORY) DCF leg"),
+    # Acceptance mandate: "отключение отказа (подстановка вместо отказа) обязано краснеть" —
+    # a pair with no trading-day record on the archived date must refuse, never guess a nearby
+    # day or fall through to a bogus computation.
+    ("histrun-standref-disabled-01", "tools/historical_run.py",
+     "    if price_record is None:",
+     "    if False:",
+     "test_historical_run.TestNegativeControlsRefuseByName.test_no_trading_day_on_record_refuses_not_a_guess_at_the_nearest_day",
+     "a missing trading-day record is refused by name, never silently passed through"),
+    ("histrun-growth-refusal-disabled-01", "tools/historical_run.py",
+     "    if rc3 is None or rc5 is None:",
+     "    if False:",
+     "test_historical_run.TestGrowthAnchor.test_refuses_by_name_when_history_too_short_for_either_window",
+     "insufficient revenue history for the growth anchor is refused by name, not computed anyway"),
+    ("histrun-roe-refusal-disabled-01", "tools/historical_run.py",
+     "    if roe_capped <= g:",
+     "    if False:",
+     "test_historical_run.TestTerminalMultiple.test_refuses_by_name_when_capped_roe_at_or_below_terminal_growth",
+     "a terminal ROE at/below terminal growth (undefined payout) is refused, not saturated to a negative multiple"),
+    ("histrun-basis-bypass-01", "tools/historical_run.py",
+     '    eps_today, eps_factor = basis_adjust(eps_af, price_record, price_rows, perrors, ticker + "_eps")',
+     "    eps_today, eps_factor = eps_af, 1.0",
+     "test_historical_run.TestGoldenCase2SplitAndRoeCapBuy.test_full_pipeline_matches_hand_computed_arithmetic",
+     "PREREG §7's stand-health check: the EPS leg is never fed to ivc() on its as-filed share basis"),
 ]
 
 
