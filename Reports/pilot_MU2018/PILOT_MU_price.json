@@ -1,0 +1,24 @@
+﻿{
+    "_errors":  {
+                    "pe_same_share_basis_MU":  "no EPS supplied"
+                },
+    "date":  "2018-10-16",
+    "pe_same_share_basis":  null,
+    "price_record":  {
+                         "adjClose":  42.1286425153,
+                         "adjHigh":  42.2651389271,
+                         "adjLow":  41.2414158389,
+                         "adjOpen":  41.6314055868,
+                         "adjVolume":  28827416,
+                         "close":  43.21,
+                         "date":  "2018-10-16T00:00:00.000Z",
+                         "divCash":  0.0,
+                         "high":  43.35,
+                         "low":  42.3,
+                         "open":  42.7,
+                         "splitFactor":  1.0,
+                         "volume":  28827416
+                     },
+    "split_factor":  1.0,
+    "ticker":  "MU"
+}
