@@ -9,9 +9,11 @@ mailbox/DECISION_2026-08-09_ARBITRATION.md, пункты В1 ("счёт пров
 протокола, замороженного до событий, — не стройка") и В4 (теневой FCFF/DCF мост, EXPLORATORY).
 
 Это НЕ стройка новой методики. Каждая формула ниже либо переиспользует существующий
-код микросервиса как библиотеку (microservice/ivc_lib.py — ivc(); microservice/edgar_facts.py —
-as_of-фильтрация, roe_median_5y, серии; microservice/macro_prices.py — split_factor_since,
-same-share-basis логика), либо реализует буквально то, что PREREG §8 определяет как формулу.
+код микросервиса как библиотеку — ivc_lib.py (ivc()) вызывается ЖИВЬЁМ отсюда; edgar_facts.py
+(as_of-фильтрация, roe_median_5y, серии) и macro_prices.py (split_factor_since, same-share-basis
+логика) были вызваны ЖИВЬЁМ один раз, ОФЛАЙН от этого скрипта, при сборке самого архива — их
+готовый вывод и есть содержимое *_edgar.json / *_price.json, см. ФОРМАТ АРХИВА ниже — либо
+реализует буквально то, что PREREG §8 определяет как формулу.
 ivc_lib.py / edgar_facts.py / macro_prices.py / app.py НЕ модифицируются этим изменением.
 
 ЧТО НЕ ВХОДИТ (по мандату карточки issue #28):
@@ -22,17 +24,34 @@ ivc_lib.py / edgar_facts.py / macro_prices.py / app.py НЕ модифициру
 ФОРМАТ АРХИВА (Reports/histrun_2026-08-08/histrun_raw_v3.zip, читается через zipfile, никогда
 не распаковывается на диск): пары файлов `<TICKER>_<YYYYMMDD>_edgar.json` /
 `<TICKER>_<YYYYMMDD>_price.json` на каждое наблюдение.
-  ДОКУМЕНТИРОВАННОЕ ДОПУЩЕНИЕ (issue #28 не описывает внутреннюю форму этих файлов, только
-  имена — молчание протокола, вынесено сюда, а не угадано внутри кода):
-    *_edgar.json  — RAW payload SEC companyfacts (та же форма, что возвращает
-                    https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json и что
-                    edgar_facts._companyfacts() кладёт в _FACTS_CACHE). Должен содержать "cik".
-    *_price.json  — список RAW дневных записей Tiingo (close/adjClose/splitFactor/divCash/date),
-                    от проверяемой даты минимум до даты сборки архива — тот же формат, что
-                    macro_prices.tiingo_daily_rows_since() возвращает и что
-                    macro_prices.split_factor_since()/pe_same_share_basis() уже тестируют.
-                    Опциональное поле "pe_hist_median" на записи, совпадающей с проверяемой
-                    датой, если архив его несёт — см. PROTOCOL_GAPS ниже.
+  issue #30: первый реальный прогон (175/175 REFUSED на "cik") показал, что первоначальное
+  допущение ниже было угадано неверно; форма исправлена по факту реального архива, не по новой
+  догадке — сверено построчно по образцу NVDA_20200323 (та же пара теперь лежит в
+  tests/fixtures/ как обязательный пин, см. TestRealArchiveFixtureNVDA):
+    *_edgar.json  — уже ГОТОВЫЙ ВЫВОД microservice/edgar_facts.py:edgar_facts(ticker, cik, as_of)
+                    (as_of-отфильтрованный на дату проверки), НЕ RAW SEC companyfacts. Служебные
+                    поля несут подчёркивание ровно как их пишет сама edgar_facts(): _cik, _as_of,
+                    _entity_name, _errors, _field_sources, _flags, _missing, _source, _ticker.
+                    Числовые ряды (revenue/net_income/ocf/capex/shares_diluted/...) уже лежат как
+                    [{"end":..., "val":...}, ...]; roe_median_5y — уже посчитанное число или null.
+                    cik (без подчёркивания, на верхнем уровне) — запасное имя, только для старых
+                    синтетических фикстур этого теста; реальный архив несёт _cik.
+    *_price.json  — ОБЪЕКТ (не список!) {date, ticker, price_record, split_factor,
+                    pe_same_share_basis, _errors}. price_record — ОДНА дневная запись Tiingo
+                    (close/adjClose/splitFactor/divCash/date) на проверяемую дату, или null,
+                    если торгов в этот день не было (тикер ещё не торговался). split_factor —
+                    УЖЕ посчитанный кумулятивный множитель сплита (тот самый вывод
+                    macro_prices.split_factor_since(), посчитанный при сборке архива по полной
+                    истории дневных строк, которую этот скрипт никогда не видит), не список
+                    сырых строк для пересчёта на лету. _errors — словарь по ключам
+                    "tiingo_price_on_date_<TICKER>" / "split_factor_<TICKER>" /
+                    "pe_same_share_basis_<TICKER>", ровно как их пишут одноимённые функции
+                    macro_prices.py — используется как ГОТОВАЯ причина отказа, а не
+                    перевычисляется. Поле "pe_hist_median" (см. PROTOCOL_GAPS) — ни разу не
+                    встречено ни в одной из 175 реальных записей архива v3; если оператор его
+                    когда-нибудь добавит, ищем НА ВЕРХНЕМ уровне *_price.json (рядом с
+                    split_factor), не внутри price_record — задокументированное допущение
+                    по аналогии с остальными вычисленными полями объекта, не угаданное вслепую.
   Если операторский архив несёт другую форму — каждая пара откажет по имени (KeyError/типовая
   ошибка ловится и публикуется как REFUSED с причиной), а не молча даёт неверное число.
 
@@ -46,7 +65,6 @@ import json
 import os
 import re
 import sys
-import time
 import zipfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,9 +73,11 @@ _MICROSERVICE = os.path.join(_REPO, "microservice")
 if _MICROSERVICE not in sys.path:
     sys.path.insert(0, _MICROSERVICE)
 
-import edgar_facts as ef          # noqa: E402  (path insert must precede this)
+# issue #30: the archive's *_edgar.json / *_price.json already ARE the live output of
+# edgar_facts.edgar_facts() / macro_prices.split_factor_since() (see module docstring's ФОРМАТ
+# АРХИВА) -- score_pair() below reads those computed fields directly and never re-invokes either
+# module, so neither is imported here anymore (no cache to preseed, no network path to guard).
 import ivc_lib                    # noqa: E402
-import macro_prices as mp         # noqa: E402
 
 # ---- PREREG §2 / §8 constants — the frozen protocol, not a tunable ----------------------------
 HURDLE = 0.12
@@ -73,8 +93,11 @@ FILENAME_RE = re.compile(r"^([A-Z][A-Z0-9.\-]*)_(\d{8})_(edgar|price)\.json$")
 
 # ---- Именованные пробелы протокола (см. модульный docstring и текст PR) -----------------------
 PROTOCOL_GAPS = [
-    "Внутренняя форма *_edgar.json/*_price.json не описана нигде в PREREG или в карточке — "
-    "принята форма RAW SEC companyfacts / RAW Tiingo daily rows (см. docstring файла).",
+    "Внутренняя форма *_edgar.json/*_price.json не описана нигде в PREREG или в карточке — issue "
+    "#30 сверил с первым реальным архивом и заменил первоначальную (неверную) догадку: "
+    "*_edgar.json — готовый вывод edgar_facts.edgar_facts(), *_price.json — объект с ОДНОЙ "
+    "дневной записью и уже посчитанным split_factor, а не списки сырых записей (см. docstring "
+    "файла, раздел ФОРМАТ АРХИВА).",
     "Формула нога денежного потока (levered FCF/share) не определена в PREREG буквально — "
     "использовано стандартное отраслевое определение (OCF - capex) / shares_diluted, то же, что "
     "упоминает CLAUDE.md ('Owner-earnings third leg'); сама формула в проекте живёт в JS-ноде "
@@ -86,6 +109,11 @@ PROTOCOL_GAPS = [
     "'историческая медиана — necessary только когда есть' (её роль уже понижена до проверки "
     "разумности §8), формульный потолок используется один, факт недоступности медианы отмечен "
     "флагом на строке, пара не отказывает по этой причине одной.",
+    "pe_hist_median ни разу не встречен ни в одной из 175 записей реального архива v3 (issue "
+    "#30) -- где именно в *_price.json оператор положил бы его, если когда-нибудь положит, "
+    "нигде не задокументировано; читается с ВЕРХНЕГО уровня объекта (рядом с split_factor), по "
+    "аналогии с остальными вычисленными полями того же объекта, а не изнутри price_record "
+    "(которое по всем 175 образцам — сырая Tiingo-строка без места для добавленных полей).",
     "Рост (growth_rate) не имеет пола (floor) по тексту PREREG — отрицательный рост не "
     "обрезается нулём, только потолок 20% применяется, как написано.",
     "Универсум 34 имён нигде не перечислен (ни в PREREG, ни в карточке) — тикер×дата пары "
@@ -95,11 +123,11 @@ PROTOCOL_GAPS = [
     "реализован тем же пинованным движком ivc_lib.ivc(), но с Gordon-growth терминальным "
     "мультипликатором (1+tg)/(hurdle-tg) вместо мультипликатора-как-в-официальном счёте; это "
     "самостоятельный дизайн-выбор для EXPLORATORY-моста, не значение из документа.",
-    "confirmed_splits в этом перепрогоне определяется только по companyfacts-плечу "
-    "_detect_confirmed_splits: companyconcept-плечо (тот же приём, что и у SHARES_CURRENT) "
-    "заранее засеяно значением (None), чтобы перепрогон оставался офлайн и детерминированным. "
-    "Возможное следствие — сплит, чей restatement виден ТОЛЬКО через companyconcept и "
-    "отсутствует в самом архивном companyfacts-снимке, этим стендом подтверждён не будет.",
+    "confirmed_splits наследуется этим перепрогоном как есть из архивного gt['_flags'] -- "
+    "историческая проверка больше не вызывает edgar_facts() сама (issue #30: архив уже несёт её "
+    "готовый вывод) и поэтому не управляет тем, каким плечом (companyfacts vs companyconcept) "
+    "confirmed_splits был вычислен при сборке архива; чем бы он ни был на момент сборки, тем и "
+    "остаётся на момент перепрогона.",
 ]
 
 
@@ -231,24 +259,19 @@ def official_future_pe(roe_median_5y, g, k_exit, pe_hist_median):
     return multiple, meta
 
 
-def find_price_record(price_rows, date_iso):
-    for row in price_rows or []:
-        if (row.get("date") or "")[:10] == date_iso:
-            return row
-    return None
-
-
-def basis_adjust(value_as_filed, price_record, price_rows, errors, symbol):
-    """AS-FILED basis -> TODAY's basis, reusing macro_prices.split_factor_since() verbatim
-    (issue #14/#24's already-tested mechanism) — PREREG §7, the technical trap this whole stand
-    exists to catch."""
+def basis_adjust(value_as_filed, split_factor, split_factor_reason, errors, symbol):
+    """AS-FILED basis -> TODAY's basis — PREREG §7, the technical trap this whole stand exists to
+    catch. issue #30: the archive ships split_factor ALREADY computed (macro_prices.
+    split_factor_since()'s own output, from the full daily-row history at archive-build time,
+    which this offline replay never sees — see module docstring's ФОРМАТ АРХИВА), so this divides
+    by that precomputed number rather than recomputing it from raw daily rows."""
     if value_as_filed is None:
         return None, None
-    factor, reason = mp.split_factor_since(price_record, price_rows)
-    if factor is None:
-        errors["split_factor_%s" % symbol] = reason
+    if not isinstance(split_factor, (int, float)) or split_factor <= 0:
+        errors["split_factor_%s" % symbol] = (
+            split_factor_reason or "split_factor missing/invalid in the archived price record")
         return None, None
-    return value_as_filed / factor, factor
+    return value_as_filed / split_factor, split_factor
 
 
 def shadow_fcff_dcf(fcf_today, price, g, tg, official_iv):
@@ -276,39 +299,43 @@ def shadow_fcff_dcf(fcf_today, price, g, tg, official_iv):
             "delta_to_official_pct": delta_pct}
 
 
-def score_pair(ticker, date_iso, edgar_json, price_rows):
+def score_pair(ticker, date_iso, gt, price_json):
     """The official score for ONE (ticker, date) pair, strictly per PREREG_2026-08-06, plus the
     parallel EXPLORATORY shadow DCF (decision В4). Returns a dict; status is SCORED or REFUSED —
-    never a number in place of a refusal (mandate: 'никаких подстановок')."""
+    never a number in place of a refusal (mandate: 'никаких подстановок').
+
+    `gt` is the archived *_edgar.json record itself — issue #30: that record already IS
+    edgar_facts.edgar_facts()'s own output (as-of filtered, series as [{end,val}], roe_median_5y
+    already computed — see module docstring's ФОРМАТ АРХИВА), so this reads gt's fields directly
+    and never re-invokes edgar_facts() or touches the network. `price_json` is the archived
+    *_price.json record — a dict carrying price_record (one Tiingo daily row) and split_factor
+    (already computed), not a list of raw daily rows."""
     row = {"ticker": ticker, "date": date_iso}
-    cik = edgar_json.get("cik") if isinstance(edgar_json, dict) else None
+    if not isinstance(gt, dict):
+        row.update(status="REFUSED", reason="edgar archive record is not a JSON object")
+        return row
+    cik = gt.get("_cik") or gt.get("cik")
     if not cik:
-        row.update(status="REFUSED", reason="edgar archive record has no usable 'cik' field")
+        row.update(status="REFUSED",
+                   reason="edgar archive record has no usable '_cik' (or legacy 'cik') field")
         return row
     cik_str = str(cik).zfill(10)
-
-    ef._FACTS_CACHE[cik_str] = (time.time(), edgar_json)
-    for tax, tag in ef.SHARES_CURRENT:
-        ef._CONCEPT_CACHE[(cik_str, tax, tag)] = (time.time(), None)
-    # issue #28 audit round 3, item 1: edgar_facts() calls _detect_confirmed_splits() for
-    # shares_diluted, which does its OWN companyconcept fetch per tag -- the same network
-    # mechanism as SHARES_CURRENT above, just not preseeded. Left alone, every score_pair() call
-    # quietly reached data.sec.gov even though this run is documented as offline. Preseed with
-    # (time, None), same trick as SHARES_CURRENT, so the detector works from the archived
-    # companyfacts leg alone -- see PROTOCOL_GAPS for the resulting documented limitation.
-    for tag in ef.DURATION_TAGS["shares_diluted"]:
-        ef._CONCEPT_CACHE[(cik_str, "us-gaap", tag)] = (time.time(), None)
-
-    gt = ef.edgar_facts(ticker=ticker, cik=cik_str, as_of=date_iso)
     if gt.get("_errors"):
         row.update(status="REFUSED", reason="edgar_facts errors: %s" % gt["_errors"])
         return row
 
-    price_record = find_price_record(price_rows, date_iso)
-    if price_record is None:
+    if not isinstance(price_json, dict):
         row.update(status="REFUSED",
-                   reason="no trading record for %s on %s in the archive (stand refusal, not "
-                          "a guess at the nearest day)" % (ticker, date_iso))
+                   reason="price archive record is not the expected object shape (need a dict "
+                          "with 'price_record'/'split_factor', see module docstring)")
+        return row
+    price_record = price_json.get("price_record")
+    if price_record is None:
+        arch_errors = price_json.get("_errors") or {}
+        reason = arch_errors.get("tiingo_price_on_date_%s" % ticker) or (
+            "no trading record for %s on %s in the archive (stand refusal, not "
+            "a guess at the nearest day)" % (ticker, date_iso))
+        row.update(status="REFUSED", reason=reason)
         return row
     price = price_record.get("adjClose")
     if not isinstance(price, (int, float)) or price <= 0:
@@ -318,8 +345,11 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
     eps_af, eps_end, eps_leg_err = compute_eps_leg(gt)
     fcf_af, fcf_end, fcf_leg_err = compute_fcf_leg(gt)
     perrors = {}
-    eps_today, eps_factor = basis_adjust(eps_af, price_record, price_rows, perrors, ticker + "_eps")
-    fcf_today, fcf_factor = basis_adjust(fcf_af, price_record, price_rows, perrors, ticker + "_fcf")
+    split_factor = price_json.get("split_factor")
+    arch_errors = price_json.get("_errors") or {}
+    split_factor_reason = arch_errors.get("split_factor_%s" % ticker)
+    eps_today, eps_factor = basis_adjust(eps_af, split_factor, split_factor_reason, perrors, ticker + "_eps")
+    fcf_today, fcf_factor = basis_adjust(fcf_af, split_factor, split_factor_reason, perrors, ticker + "_fcf")
     # Причина недоступности КАЖДОЙ ноги, published on every SCORED row (None when the leg is
     # usable) -- covers both compute-leg refusals AND a basis_adjust (split-factor) failure that
     # leaves the leg itself computed but unusable. Needed to explain single_leg rows by name,
@@ -342,8 +372,10 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
     pe_hist_median = None
     pe_hist_note = ("not present in the archive record -- treated as absent per PREREG §8 "
                     "(the historical median is a sanity check, not a required input)")
-    if isinstance(price_record.get("pe_hist_median"), (int, float)):
-        pe_hist_median = price_record["pe_hist_median"]
+    # issue #30 / PROTOCOL_GAPS: read from the TOP level of price_json (alongside split_factor),
+    # never seen in any of the 175 real archive records -- see module docstring.
+    if isinstance(price_json.get("pe_hist_median"), (int, float)):
+        pe_hist_median = price_json["pe_hist_median"]
         pe_hist_note = None
 
     grid = {}
@@ -413,12 +445,10 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
 
 def load_pair(zf, edgar_name, price_name):
     with zf.open(edgar_name) as f:
-        edgar_json = json.load(f)
+        gt = json.load(f)
     with zf.open(price_name) as f:
-        price_rows = json.load(f)
-    if not isinstance(price_rows, list):
-        price_rows = []
-    return edgar_json, price_rows
+        price_json = json.load(f)
+    return gt, price_json
 
 
 def run_archive(archive_path):
@@ -434,8 +464,8 @@ def run_archive(archive_path):
         for ticker, ymd, edgar_name, price_name in pairs:
             date_iso = _fmt_date(ymd)
             try:
-                edgar_json, price_rows = load_pair(zf, edgar_name, price_name)
-                row = score_pair(ticker, date_iso, edgar_json, price_rows)
+                gt, price_json = load_pair(zf, edgar_name, price_name)
+                row = score_pair(ticker, date_iso, gt, price_json)
             except Exception as e:
                 row = {"ticker": ticker, "date": date_iso, "status": "REFUSED",
                       "reason": "unhandled exception while scoring: %s: %s" %

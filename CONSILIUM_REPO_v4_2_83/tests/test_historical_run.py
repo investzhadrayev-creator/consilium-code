@@ -3,21 +3,32 @@ Regression tests for tools/historical_run.py — Счёт проверки №1 
 mailbox/PREREG_2026-08-06_HISTORICAL_VALIDATION.md, executed under
 mailbox/DECISION_2026-08-09_ARBITRATION.md В1/В4).
 
-All tests are OFFLINE and use synthetic fixtures (no real archive exists yet -- the operator
-uploads Reports/histrun_2026-08-08/histrun_raw_v3.zip separately; see tools/historical_run.py's
-own module docstring for the exact command to run against it).
+issue #30: the first real run against Reports/histrun_2026-08-08/histrun_raw_v3.zip scored
+0/175 — the tool's documented assumption about the archive's internal JSON shape (RAW SEC
+companyfacts / a raw list of Tiingo daily rows) was wrong. The real archive's *_edgar.json IS
+edgar_facts.edgar_facts()'s own OUTPUT (already as-of filtered, series as [{end,val}],
+roe_median_5y a plain float, service fields underscored: _cik/_as_of/_errors/...), and
+*_price.json is a DICT carrying one price_record plus an already-computed split_factor, not a
+list. Every synthetic fixture below is now built in that real shape (see the `gt()`/`price_pkg()`
+helpers) and one PAIR OF REAL ARCHIVE FILES is embedded as tests/fixtures/NVDA_20200323_*.json
+(TestRealArchiveFixtureNVDA) so "fixture shaped like a guess, not like real data" cannot recur
+undetected — see tools/historical_run.py's own module docstring, ФОРМАТ АРХИВА, for the full
+field-by-field account.
 
 Two GOLDEN CASES are hand-computed and asserted byte-for-byte; both are ALSO reproduced in the
 pull request description with the arithmetic shown step by step, per the mandate's acceptance
-rule ("минимум два золотых кейса, посчитанных вручную").
+rule ("минимум два золотых кейса, посчитанных вручную"). The arithmetic is UNCHANGED by issue
+#30 — only how the same inputs are encoded into a fixture changed (roe_median_5y is now supplied
+directly, exactly as edgar_facts() itself would compute and the archive would carry it, instead
+of being re-derived from a synthetic equity/net_income series).
 
   GOLDEN CASE 1 -- clean, no split, price above intrinsic value (no BUY):
     revenue 2014..2019 = 100 * 1.10^n (6 points)      -> rev_cagr_3y = rev_cagr_5y = 0.10 exactly
     growth_rate = min(0.10, 0.10) capped at 20%        = 0.10
     terminal_growth = min(0.04, 0.10)                  = 0.04
-    net_income = 200/yr, equity = 1000/yr (2015..2019) -> roe_median_5y = 0.20 (no cap bites)
+    roe_median_5y = 0.20 (supplied directly, as edgar_facts() would compute it -- no cap bites)
     payout = 1 - 0.04/0.20 = 0.8; k_exit=9%: formula_cap = 0.8/(0.09-0.04) = 16.0 (no pe_hist_median)
-    eps_as_filed = net_income[2019]/shares[2019] = 200/100 = 2.00; no split -> eps_today = 2.00
+    eps_as_filed = net_income[2019]/shares[2019] = 200/100 = 2.00; split_factor=1.0 -> eps_today = 2.00
     fcf_as_filed = (ocf-capex)/shares = (300-50)/100 = 2.50; fcf_today = 2.50
     ivc_lib.ivc(price=40, eps=2.00, g=0.10, future_pe=16.0, hurdle=12%, tg=0.04)
       -> intrinsic_value = 22.61, implied_cagr_pct = 5.79, hurdle_gate = FAIL
@@ -25,16 +36,18 @@ rule ("минимум два золотых кейса, посчитанных �
     conservative leg = gaap_eps (5.79 <= 8.18) -> published IV = 22.61, ic% = 5.79
     price 40.00 > threshold 22.61 -> variant A NOT reached; > 20.56 -> variant Б NOT reached.
 
-  GOLDEN CASE 2 -- confirmed 4:1 split since the test date + ROE above the 40% cap (BUY):
+  GOLDEN CASE 2 -- archive-supplied 4:1 split_factor since the test date + ROE above the 40% cap
+  (BUY):
     revenue 2014..2019 = 100 * 1.15^n (6 points)       -> rev_cagr_3y = rev_cagr_5y = 0.15 exactly
     growth_rate = 0.15 (cap 20% not binding); terminal_growth = min(0.04, 0.15) = 0.04
-    net_income = 440/yr, equity = 800/yr               -> roe_median_5y = 440/800 = 0.55
+    roe_median_5y = 0.55 (supplied directly)
     roe_terminal capped at 40% -> 0.40 (0.15 discarded, named)
     payout = 1 - 0.04/0.40 = 0.9; k_exit=9%: formula_cap = 0.9/(0.09-0.04) = 18.0
       (PREREG §8's own worked check: at g=4%, k_exit=9%, the formula cannot exceed 20.0x at any
        ROE -- 18.0 < 20.0, consistent)
-    price_record: close=60.0, adjClose=15.0 (ratio 4.0); daily splitFactor product = 4.0 exactly
-      -> split_factor_since = 4.0 (macro_prices.split_factor_since, reused verbatim, unmodified)
+    price_record: close=60.0, adjClose=15.0 (ratio 4.0); archive's own split_factor = 4.0 (the
+      PRECOMPUTED output of macro_prices.split_factor_since() at archive-build time -- see
+      tools/historical_run.py's ФОРМАТ АРХИВА; this test supplies that same number directly)
     eps_as_filed = net_income[2019]/shares[2019] = 440/50 = 8.80 -> eps_today = 8.80/4 = 2.20
     fcf_as_filed = (560-60)/50 = 10.00 -> fcf_today = 10.00/4 = 2.50
     ivc_lib.ivc(price=15, eps=2.20, g=0.15, future_pe=18.0, hurdle=12%, tg=0.04)
@@ -47,159 +60,117 @@ rule ("минимум два золотых кейса, посчитанных �
     two methods must not coincide, or a mutation swapping one for the other could hide in a run
     where they happen to agree).
 """
-import time
-import unittest
-
-from _support import load_microservice_module
-
-ef = load_microservice_module("edgar_facts")
-mp = load_microservice_module("macro_prices")
-
+import csv
 import os
 import sys
+import tempfile
+import unittest
+
 _TOOLS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 import historical_run as hr
 
+_FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
-def facts(us_gaap=None, dei=None, cik=1234567):
-    out = {"facts": {}, "cik": cik}
-    if us_gaap:
-        out["facts"]["us-gaap"] = us_gaap
-    if dei:
-        out["facts"]["dei"] = dei
+
+def series(pairs):
+    """pairs: [(end_date_iso, val), ...] -> [{"end":..., "val":...}, ...] -- the exact shape
+    edgar_facts.edgar_facts() (and therefore the real archive) puts revenue/net_income/ocf/
+    capex/shares_diluted in."""
+    return [{"end": end, "val": val} for end, val in pairs]
+
+
+def gt(ticker="GOLD", cik=1234567, cik_field="_cik", revenue=None, net_income=None,
+      shares_diluted=None, ocf=None, capex=None, roe_median_5y=None, errors=None):
+    """Build a synthetic *_edgar.json record in the REAL archive shape (issue #30): this IS
+    edgar_facts.edgar_facts()'s own output shape, not raw SEC companyfacts -- see
+    tools/historical_run.py's ФОРМАТ АРХИВА. `cik_field` defaults to the real archive's own
+    "_cik"; pass "cik" to exercise the legacy-fixture fallback historical_run.py also accepts."""
+    out = {"_source": "sec_edgar", "_ticker": ticker, "_entity_name": ticker, "_as_of": "2020-03-23",
+          "_missing": [], "_flags": {}, "_errors": errors or {},
+          "revenue": revenue or [], "net_income": net_income or [],
+          "shares_diluted": shares_diluted or [], "ocf": ocf or [], "capex": capex or [],
+          "roe_median_5y": roe_median_5y}
+    out[cik_field] = cik
     return out
 
 
-def usd(rows):
-    return {"units": {"USD": rows}}
-
-
-def shares(rows):
-    return {"units": {"shares": rows}}
-
-
-def row(start, end, val, form="10-K", accn="a1", filed="2025-02-01"):
-    r = {"end": end, "val": val, "form": form, "accn": accn, "filed": filed}
-    if start:
-        r["start"] = start
-    return r
-
-
-def _annual(tag_rows, filed_years):
-    """tag_rows: [(year, val)]; filed_years: [(year, filed_date)] parallel list."""
-    out = []
-    for (y, v), (_, filed) in zip(tag_rows, filed_years):
-        out.append(row("%d-01-01" % y, "%d-12-31" % y, v, filed=filed))
+def price_pkg(ticker, date_iso, adj_close=None, close=None, split_factor=1.0,
+             pe_hist_median=None, no_record=False, errors=None):
+    """Build a synthetic *_price.json record in the REAL archive shape (issue #30): a DICT
+    carrying one price_record plus an already-computed split_factor, never a list of raw Tiingo
+    daily rows -- see tools/historical_run.py's ФОРМАТ АРХИВА."""
+    if no_record:
+        return {"ticker": ticker, "date": date_iso, "price_record": None,
+               "split_factor": None, "pe_same_share_basis": None, "_errors": errors or {}}
+    pr = {"date": date_iso, "close": close if close is not None else adj_close,
+         "adjClose": adj_close, "splitFactor": split_factor if split_factor is not None else 1.0,
+         "divCash": 0.0}
+    out = {"ticker": ticker, "date": date_iso, "price_record": pr,
+          "split_factor": split_factor, "pe_same_share_basis": None, "_errors": errors or {}}
+    if pe_hist_median is not None:
+        out["pe_hist_median"] = pe_hist_median
     return out
 
 
-class HistoricalRunTestBase(unittest.TestCase):
-    def setUp(self):
-        ef._FACTS_CACHE.clear()
-        ef._CONCEPT_CACHE.clear()
-
-
-def _gold1_edgar():
+def _gold1_gt():
     years = [2014, 2015, 2016, 2017, 2018, 2019]
-    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
     revenue = [100.0, 110.0, 121.0, 133.1, 146.41, 161.051]
-    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
-                for y, v, f in zip(years, revenue, filed)]
-    ni_years = years[1:]        # 2015..2019
-    ni_filed = filed[1:]
-    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 200.0, filed=f)
-              for y, f in zip(ni_years, ni_filed)]
-    eq_rows = [row(None, "%d-12-31" % y, 1000.0, filed=f) for y, f in zip(ni_years, ni_filed)]
-    sh_rows = [row("2019-01-01", "2019-12-31", 100.0, filed="2020-02-15")]
-    ocf_rows = [row("2019-01-01", "2019-12-31", 300.0, filed="2020-02-15")]
-    capex_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
-    return facts({
-        "Revenues": usd(rev_rows),
-        "NetIncomeLoss": usd(ni_rows),
-        "StockholdersEquity": usd(eq_rows),
-        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
-        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
-        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
-    }, cik=1111111)
+    return gt("GOLD1", cik=1111111,
+             revenue=series([("%d-12-31" % y, v) for y, v in zip(years, revenue)]),
+             net_income=series([("2019-12-31", 200.0)]),
+             shares_diluted=series([("2019-12-31", 100.0)]),
+             ocf=series([("2019-12-31", 300.0)]),
+             capex=series([("2019-12-31", 50.0)]),
+             roe_median_5y=0.20)
 
 
 def _gold1_price():
-    return [{"date": "2020-03-23", "close": 40.0, "adjClose": 40.0, "splitFactor": 1.0,
-            "divCash": 0.0}]
+    return price_pkg("GOLD1", "2020-03-23", adj_close=40.0, split_factor=1.0)
 
 
-def _gold2_edgar():
+def _gold2_gt():
     years = [2014, 2015, 2016, 2017, 2018, 2019]
-    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
     revenue = [100.0, 115.0, 132.25, 152.0875, 174.900625, 201.13571875]
-    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
-                for y, v, f in zip(years, revenue, filed)]
-    ni_years = years[1:]
-    ni_filed = filed[1:]
-    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 440.0, filed=f)
-              for y, f in zip(ni_years, ni_filed)]
-    eq_rows = [row(None, "%d-12-31" % y, 800.0, filed=f) for y, f in zip(ni_years, ni_filed)]
-    sh_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
-    ocf_rows = [row("2019-01-01", "2019-12-31", 560.0, filed="2020-02-15")]
-    capex_rows = [row("2019-01-01", "2019-12-31", 60.0, filed="2020-02-15")]
-    return facts({
-        "Revenues": usd(rev_rows),
-        "NetIncomeLoss": usd(ni_rows),
-        "StockholdersEquity": usd(eq_rows),
-        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
-        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
-        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
-    }, cik=2222222)
+    return gt("GOLD2", cik=2222222,
+             revenue=series([("%d-12-31" % y, v) for y, v in zip(years, revenue)]),
+             net_income=series([("2019-12-31", 440.0)]),
+             shares_diluted=series([("2019-12-31", 50.0)]),
+             ocf=series([("2019-12-31", 560.0)]),
+             capex=series([("2019-12-31", 60.0)]),
+             roe_median_5y=0.55)
 
 
 def _gold2_price():
-    return [{"date": "2020-03-23", "close": 60.0, "adjClose": 15.0, "splitFactor": 1.0,
-            "divCash": 0.0},
-           {"date": "2024-06-01", "close": 61.0, "adjClose": 15.25, "splitFactor": 4.0,
-            "divCash": 0.0},
-           {"date": "2026-08-08", "close": 62.0, "adjClose": 15.5, "splitFactor": 1.0,
-            "divCash": 0.0}]
+    return price_pkg("GOLD2", "2020-03-23", adj_close=15.0, close=60.0, split_factor=4.0)
 
 
-def _gold3_edgar():
-    """Same growth/ROE/split shape as GOLD2, but NetIncomeLoss/StockholdersEquity STOP at FY2018
-    -- FY2019 (the year shares_diluted/ocf/capex report) has no net_income point, so the EPS
-    leg's own common-FY-end search (net_income & shares_diluted) finds none and refuses by name,
-    while roe_median_5y (computed from the SEPARATE 2015-2018 net_income/equity overlap, still
-    4 points >= the 3-point floor) is unaffected -- so the pair still SCORES, single-leg, on the
-    FCF leg alone. Built for issue #28 audit round 2: item 2 (single_leg must name which leg and
-    why) and mutation case histrun-basis-bypass-02 (the FCF leg's basis_adjust is the only thing
-    standing between the published IV and a ~4x-inflated as-filed number)."""
+def _gold3_gt():
+    """Same growth/ROE/split shape as GOLD2, but net_income carries ONLY a 2018 point while
+    shares_diluted carries ONLY 2019 -- the two series share no common 'end', so the EPS leg's
+    own common-FY-end search refuses by name, while roe_median_5y (a directly-supplied field in
+    the real archive shape, independent of the net_income series entirely) is unaffected -- so
+    the pair still SCORES, single-leg, on the FCF leg alone. Built for issue #28 audit round 2:
+    item 2 (single_leg must name which leg and why) and mutation case histrun-basis-bypass-02
+    (the FCF leg's basis_adjust is the only thing standing between the published IV and a
+    ~4x-inflated as-filed number)."""
     years = [2014, 2015, 2016, 2017, 2018, 2019]
-    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
     revenue = [100.0, 115.0, 132.25, 152.0875, 174.900625, 201.13571875]
-    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
-                for y, v, f in zip(years, revenue, filed)]
-    ni_years = [2015, 2016, 2017, 2018]      # NOTE: no 2019 point -- the EPS-leg trap
-    ni_filed = filed[1:5]
-    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 440.0, filed=f)
-              for y, f in zip(ni_years, ni_filed)]
-    eq_rows = [row(None, "%d-12-31" % y, 800.0, filed=f) for y, f in zip(ni_years, ni_filed)]
-    sh_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
-    ocf_rows = [row("2019-01-01", "2019-12-31", 560.0, filed="2020-02-15")]
-    capex_rows = [row("2019-01-01", "2019-12-31", 60.0, filed="2020-02-15")]
-    return facts({
-        "Revenues": usd(rev_rows),
-        "NetIncomeLoss": usd(ni_rows),
-        "StockholdersEquity": usd(eq_rows),
-        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
-        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
-        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
-    }, cik=3000003)
+    return gt("GOLD3", cik=3000003,
+             revenue=series([("%d-12-31" % y, v) for y, v in zip(years, revenue)]),
+             net_income=series([("2018-12-31", 440.0)]),      # NOTE: no 2019 point -- the trap
+             shares_diluted=series([("2019-12-31", 50.0)]),
+             ocf=series([("2019-12-31", 560.0)]),
+             capex=series([("2019-12-31", 60.0)]),
+             roe_median_5y=0.55)
 
 
 def _gold3_price():
-    return _gold2_price()
+    return price_pkg("GOLD3", "2020-03-23", adj_close=15.0, close=60.0, split_factor=4.0)
 
 
-def _gold4_edgar():
+def _gold4_gt():
     """Built for issue #28 audit round 3, item 4 (mutation histrun-conservative-flip-01). Same
     shape as GOLD1 (10% growth, ROE 20%, no split) EXCEPT ocf/capex are set so the FCF leg's
     as-filed value (170/100 = 1.70) is BELOW the EPS leg's (200/100 = 2.00) -- the reverse of
@@ -210,38 +181,25 @@ def _gold4_edgar():
     leg) instead, and this fixture is what makes that flip observable (GOLD1/GOLD2 cannot: both
     happen to pick gaap_eps regardless of which way the comparison points)."""
     years = [2014, 2015, 2016, 2017, 2018, 2019]
-    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
     revenue = [100.0, 110.0, 121.0, 133.1, 146.41, 161.051]
-    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
-                for y, v, f in zip(years, revenue, filed)]
-    ni_years = years[1:]
-    ni_filed = filed[1:]
-    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 200.0, filed=f)
-              for y, f in zip(ni_years, ni_filed)]
-    eq_rows = [row(None, "%d-12-31" % y, 1000.0, filed=f) for y, f in zip(ni_years, ni_filed)]
-    sh_rows = [row("2019-01-01", "2019-12-31", 100.0, filed="2020-02-15")]
-    # ocf - capex = 220 - 50 = 170 -> fcf_af = 1.70, BELOW eps_af = 2.00 (GOLD1 has fcf 2.50 above it)
-    ocf_rows = [row("2019-01-01", "2019-12-31", 220.0, filed="2020-02-15")]
-    capex_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
-    return facts({
-        "Revenues": usd(rev_rows),
-        "NetIncomeLoss": usd(ni_rows),
-        "StockholdersEquity": usd(eq_rows),
-        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
-        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
-        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
-    }, cik=4444444)
+    return gt("GOLD4", cik=4444444,
+             revenue=series([("%d-12-31" % y, v) for y, v in zip(years, revenue)]),
+             net_income=series([("2019-12-31", 200.0)]),
+             shares_diluted=series([("2019-12-31", 100.0)]),
+             # ocf - capex = 220 - 50 = 170 -> fcf_af = 1.70, BELOW eps_af = 2.00
+             ocf=series([("2019-12-31", 220.0)]),
+             capex=series([("2019-12-31", 50.0)]),
+             roe_median_5y=0.20)
 
 
 def _gold4_price():
-    return [{"date": "2020-03-23", "close": 40.0, "adjClose": 40.0, "splitFactor": 1.0,
-            "divCash": 0.0}]
+    return price_pkg("GOLD4", "2020-03-23", adj_close=40.0, split_factor=1.0)
 
 
-class TestGoldenCase1CleanNoSplitNoBuy(HistoricalRunTestBase):
+class TestGoldenCase1CleanNoSplitNoBuy(unittest.TestCase):
 
     def test_full_pipeline_matches_hand_computed_arithmetic(self):
-        row_out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price())
+        row_out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price())
         self.assertEqual(row_out["status"], "SCORED", row_out.get("reason"))
         self.assertAlmostEqual(row_out["rev_cagr_3y"], 0.10, places=6)
         self.assertAlmostEqual(row_out["rev_cagr_5y"], 0.10, places=6)
@@ -261,10 +219,10 @@ class TestGoldenCase1CleanNoSplitNoBuy(HistoricalRunTestBase):
         self.assertIn("EXPLORATORY", row_out["shadow_dcf"]["label"])
 
 
-class TestGoldenCase2SplitAndRoeCapBuy(HistoricalRunTestBase):
+class TestGoldenCase2SplitAndRoeCapBuy(unittest.TestCase):
 
     def test_full_pipeline_matches_hand_computed_arithmetic(self):
-        row_out = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+        row_out = hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price())
         self.assertEqual(row_out["status"], "SCORED", row_out.get("reason"))
         self.assertAlmostEqual(row_out["growth_rate"], 0.15, places=6)
         self.assertAlmostEqual(row_out["terminal_growth"], 0.04, places=6)
@@ -291,7 +249,7 @@ class TestGoldenCase2SplitAndRoeCapBuy(HistoricalRunTestBase):
         (8.80, yesterday's basis) straight into ivc() against today's adjClose (15.00) instead
         of basis-adjusting it first would print a materially different -- and wrong -- IV."""
         naive = self._naive_iv()
-        correct = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+        correct = hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price())
         self.assertNotAlmostEqual(naive, correct["intrinsic_value"], places=0)
 
     @staticmethod
@@ -306,15 +264,15 @@ class TestGoldenCase2SplitAndRoeCapBuy(HistoricalRunTestBase):
 class TestGrowthAnchor(unittest.TestCase):
 
     def test_caps_at_20pct(self):
-        gt = {"revenue": [{"end": "%d-12-31" % y, "val": v} for y, v in
-                          zip(range(2014, 2020), [100 * 1.30 ** n for n in range(6)])]}
-        g, rc3, rc5, reason = hr.compute_growth_anchor(gt)
+        gt_row = {"revenue": [{"end": "%d-12-31" % y, "val": v} for y, v in
+                              zip(range(2014, 2020), [100 * 1.30 ** n for n in range(6)])]}
+        g, rc3, rc5, reason = hr.compute_growth_anchor(gt_row)
         self.assertIsNone(reason)
         self.assertAlmostEqual(g, 0.20, places=6)
 
     def test_refuses_by_name_when_history_too_short_for_either_window(self):
-        gt = {"revenue": [{"end": "2018-12-31", "val": 100}, {"end": "2019-12-31", "val": 110}]}
-        g, rc3, rc5, reason = hr.compute_growth_anchor(gt)
+        gt_row = {"revenue": [{"end": "2018-12-31", "val": 100}, {"end": "2019-12-31", "val": 110}]}
+        g, rc3, rc5, reason = hr.compute_growth_anchor(gt_row)
         self.assertIsNone(g)
         self.assertIsNone(rc3)
         self.assertIsNone(rc5)
@@ -377,45 +335,73 @@ class TestDiscoverPairs(unittest.TestCase):
         self.assertEqual(incomplete, [])
 
 
-class TestNegativeControlsRefuseByName(HistoricalRunTestBase):
+class TestNegativeControlsRefuseByName(unittest.TestCase):
     """PREREG §5.1: a refusal IS a result, not a defect to paper over. Each of the three
     'непригодна' classes named in issue #28 gets its own named-refusal pin here."""
 
     def test_young_name_insufficient_revenue_history_refuses(self):
-        edgar = facts({"Revenues": usd([
-            row("2018-01-01", "2018-12-31", 100.0, filed="2019-02-15"),
-            row("2019-01-01", "2019-12-31", 110.0, filed="2020-02-15"),
-        ])}, cik=3333333)
-        out = hr.score_pair("YOUNGCO", "2020-03-23", edgar, [{"date": "2020-03-23",
-                            "close": 10.0, "adjClose": 10.0, "splitFactor": 1.0}])
+        edgar = gt("YOUNGCO", cik=3333333,
+                  revenue=series([("2018-12-31", 100.0), ("2019-12-31", 110.0)]))
+        out = hr.score_pair("YOUNGCO", "2020-03-23", edgar,
+                            price_pkg("YOUNGCO", "2020-03-23", adj_close=10.0, split_factor=1.0))
         self.assertEqual(out["status"], "REFUSED")
         self.assertIsNotNone(out["reason"])
 
     def test_no_trading_day_on_record_refuses_not_a_guess_at_the_nearest_day(self):
-        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), [])
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(),
+                            price_pkg("GOLD1", "2020-03-23", no_record=True))
         self.assertEqual(out["status"], "REFUSED")
         self.assertIn("no trading record", out["reason"])
 
     def test_split_factor_undeterminable_refuses(self):
-        """Mirrors test_historical_stand.TestSameShareBasisPE's own undeterminable-factor pin:
-        product 10 vs ratio 12 disagree beyond tolerance."""
-        price_rows = [{"date": "2020-03-23", "close": 1200.0, "adjClose": 100.0}]
-        # note: split_factor_since needs daily_rows AND the single-day record; historical_run
-        # passes the WHOLE price_rows list as daily_rows, so the single matching row also
-        # supplies (a wrong) splitFactor product signal here on purpose.
-        price_rows[0]["splitFactor"] = 10.0
-        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), price_rows)
+        """issue #30: the archive ships split_factor already computed (or, on refusal, None plus
+        a named reason in _errors) -- this mirrors the case where macro_prices.
+        split_factor_since() itself refused at archive-build time (product/ratio disagreement,
+        see test_historical_stand.TestSameShareBasisPE)."""
+        price = price_pkg("GOLD1", "2020-03-23", adj_close=100.0, close=1200.0, split_factor=None,
+                          errors={"split_factor_GOLD1":
+                                  "split_factor_undeterminable: splitFactor product 10.0000 "
+                                  "disagrees with close/adjClose ratio 12.0000 beyond tolerance"})
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), price)
         self.assertEqual(out["status"], "REFUSED")
         self.assertIn("split_factor_undeterminable", out["reason"])
+
+
+class TestCikFieldNaming(unittest.TestCase):
+    """issue #30: the real archive's *_edgar.json carries the CIK as '_cik' (edgar_facts()'s own
+    field name), not the bare 'cik' the tool originally assumed -- the first real run scored
+    0/175 on exactly this. '_cik' is read as primary, bare 'cik' kept as a fallback ONLY for
+    fixtures/tools that predate this fix; absence of both is the same named refusal as before."""
+
+    def test_underscore_cik_is_read(self):
+        edgar = _gold1_gt()
+        self.assertIn("_cik", edgar)
+        self.assertNotIn("cik", edgar)
+        out = hr.score_pair("GOLD1", "2020-03-23", edgar, _gold1_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+
+    def test_bare_cik_fallback_still_works(self):
+        edgar = _gold1_gt()
+        edgar["cik"] = edgar.pop("_cik")
+        self.assertIn("cik", edgar)
+        self.assertNotIn("_cik", edgar)
+        out = hr.score_pair("GOLD1", "2020-03-23", edgar, _gold1_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+
+    def test_neither_cik_field_refuses_by_name(self):
+        edgar = _gold1_gt()
+        del edgar["_cik"]
+        out = hr.score_pair("GOLD1", "2020-03-23", edgar, _gold1_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("cik", out["reason"])
 
 
 class TestShadowDcfNeverFeedsTheOfficialVerdict(unittest.TestCase):
 
     def test_shadow_dcf_absent_when_fcf_leg_unavailable_official_still_scores(self):
-        edgar = _gold1_edgar()
-        # strip the FCF leg's inputs (ocf/capex) -- only the EPS leg remains usable.
-        del edgar["facts"]["us-gaap"]["NetCashProvidedByUsedInOperatingActivities"]
-        del edgar["facts"]["us-gaap"]["PaymentsToAcquirePropertyPlantAndEquipment"]
+        edgar = _gold1_gt()
+        edgar["ocf"] = []       # strip the FCF leg's inputs -- only the EPS leg remains usable
+        edgar["capex"] = []
         out = hr.score_pair("GOLD1", "2020-03-23", edgar, _gold1_price())
         self.assertEqual(out["status"], "SCORED")
         self.assertEqual(out["verdict_leg_note"], "single_leg")
@@ -425,17 +411,17 @@ class TestShadowDcfNeverFeedsTheOfficialVerdict(unittest.TestCase):
         self.assertAlmostEqual(out["intrinsic_value"], 22.61, places=2)
 
 
-class TestSingleLegSurfacesMissingLegReason(HistoricalRunTestBase):
+class TestSingleLegSurfacesMissingLegReason(unittest.TestCase):
     """Issue #28 audit round 2, item 2: a single_leg row must publish WHY the other leg is
     missing (eps_reason/fcf_reason), on the row, in the CSV, and in the report table -- not
     just the fact that it's single_leg. GOLD3 (see its fixture docstring) refuses the EPS leg
-    by name (no common FY end -- FY2019 has no net_income point) while the FCF leg scores
-    normally through the split adjustment; numbers below are from the tool's own output
+    by name (no common FY end -- net_income/shares_diluted share no end) while the FCF leg
+    scores normally through the split adjustment; numbers below are from the tool's own output
     (`hr.score_pair`), not hand-derived, since the arithmetic is identical to GOLD2's already
     hand-verified FCF leg (fcf_today = (560-60)/50 / 4.0 = 2.50)."""
 
     def test_row_names_the_missing_leg_reason(self):
-        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_gt(), _gold3_price())
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["verdict_leg_note"], "single_leg")
         self.assertEqual(out["verdict_leg"], "fcf_per_share")
@@ -446,9 +432,7 @@ class TestSingleLegSurfacesMissingLegReason(HistoricalRunTestBase):
         self.assertAlmostEqual(out["implied_cagr_pct"], 24.59, places=2)
 
     def test_csv_and_report_carry_the_missing_leg_reason(self):
-        import csv
-        import tempfile
-        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_gt(), _gold3_price())
         with tempfile.TemporaryDirectory() as d:
             csv_path = os.path.join(d, "out.csv")
             md_path = os.path.join(d, "out.md")
@@ -468,15 +452,13 @@ class TestSingleLegSurfacesMissingLegReason(HistoricalRunTestBase):
             self.assertIn("no common FY end", text)
 
 
-class TestPeHistMedianNoteIsPublished(HistoricalRunTestBase):
+class TestPeHistMedianNoteIsPublished(unittest.TestCase):
     """Issue #28 audit round 2, item 1: pe_hist_median_note (already computed in score_pair)
     must reach the CSV column and the report's notes column, and the cell is never empty when
     the median is ABSENT from the archive (the mandate's own wording)."""
 
     def test_absent_median_note_is_non_empty_on_both_surfaces(self):
-        import csv
-        import tempfile
-        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price())
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price())
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertIsNone(out["pe_hist_median"])
         self.assertTrue(out["pe_hist_median_note"])   # non-empty string, not None/""
@@ -498,14 +480,15 @@ class TestPeHistMedianNoteIsPublished(HistoricalRunTestBase):
             self.assertIn(out["pe_hist_median_note"], text)
 
     def test_present_median_gives_no_reason_but_report_cell_still_not_blank(self):
-        price = _gold1_price()
-        price[0] = dict(price[0], pe_hist_median=14.0)
-        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), price)
+        # issue #30: pe_hist_median now lives at the TOP level of *_price.json, alongside
+        # split_factor -- see ФОРМАТ АРХИВА / PROTOCOL_GAPS in tools/historical_run.py.
+        price = price_pkg("GOLD1", "2020-03-23", adj_close=40.0, split_factor=1.0,
+                          pe_hist_median=14.0)
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), price)
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["pe_hist_median"], 14.0)
         self.assertIsNone(out["pe_hist_median_note"])   # nothing to explain -- median was found
 
-        import tempfile
         with tempfile.TemporaryDirectory() as d:
             md_path = os.path.join(d, "out.md")
             hr.write_report([out], md_path)
@@ -518,7 +501,7 @@ class TestPeHistMedianNoteIsPublished(HistoricalRunTestBase):
             self.assertNotEqual(cells[-2], "")
 
 
-class TestFcfBasisAdjustAppliedToPublishedIv(HistoricalRunTestBase):
+class TestFcfBasisAdjustAppliedToPublishedIv(unittest.TestCase):
     """Guards mutation case histrun-basis-bypass-02: on a single_leg-FCF row, the published IV
     and split_factor_fcf must come from the split-ADJUSTED fcf/share (2.50), never the as-filed
     one (10.00) -- see GOLD3's fixture docstring for why the EPS leg is unavailable here, which
@@ -526,7 +509,7 @@ class TestFcfBasisAdjustAppliedToPublishedIv(HistoricalRunTestBase):
     published number and a ~4x-inflated one."""
 
     def test_published_iv_and_split_factor_use_the_adjusted_fcf(self):
-        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())
+        out = hr.score_pair("GOLD3", "2020-03-23", _gold3_gt(), _gold3_price())
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["verdict_leg"], "fcf_per_share")
         self.assertEqual(out["split_factor_fcf"], 4.0)
@@ -542,15 +525,13 @@ class TestRunArchiveMissingFileStops(unittest.TestCase):
         self.assertIn("archive not found", err)
 
 
-class TestSensitivityBoundsArePublished(HistoricalRunTestBase):
+class TestSensitivityBoundsArePublished(unittest.TestCase):
     """score_pair() already computes the full k_exit grid (0.08/0.09/0.10) into row['sensitivity']
     (see PREREG §8); this pins that the 8% and 10% bounds actually reach the CSV and the report
     table, not just the in-memory row -- a field computed but never written is not a result."""
 
     def test_csv_and_report_carry_both_sensitivity_bounds(self):
-        import csv
-        import tempfile
-        row_out = hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price())
+        row_out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price())
         self.assertEqual(row_out["status"], "SCORED", row_out.get("reason"))
         # hand-computed: payout = 1 - 0.04/0.20 = 0.8
         #   k_exit=8%: 0.8/(0.08-0.04) = 20.0    k_exit=10%: 0.8/(0.10-0.04) = 13.333...
@@ -583,9 +564,8 @@ class TestReportAndCsvSmoke(unittest.TestCase):
     mixed SCORED/REFUSED row set, so a real archive run cannot crash at the reporting step."""
 
     def test_write_csv_and_report_do_not_raise(self):
-        import tempfile
-        rows = [hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price()),
-               hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price()),
+        rows = [hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price()),
+               hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price()),
                {"ticker": "NOPE", "date": "2020-03-23", "status": "REFUSED",
                 "reason": "synthetic refusal for the smoke test"}]
         with tempfile.TemporaryDirectory() as d:
@@ -599,50 +579,40 @@ class TestReportAndCsvSmoke(unittest.TestCase):
                 self.assertIn(hr.CRITERIA_TEXT[i][:20], text)
 
 
-class TestNoNetworkCallsDuringScorePair(HistoricalRunTestBase):
-    """Issue #28 audit round 3, item 1: score_pair() must never reach the network -- this run is
-    documented (module docstring, PROTOCOL_GAPS) as offline. `_get()` (edgar_facts.py) is the
-    ONE choke point every SEC HTTP call in the module goes through (company_tickers, companyfacts,
-    companyconcept) -- unlike `_companyconcept` itself, which is legitimately CALLED even on a
-    cache hit (that's how the pre-existing SHARES_CURRENT preseed already works: the call happens,
-    the cache satisfies it, `_get` is never reached). `_shares_current()` calls `_companyconcept`
-    for SHARES_CURRENT tags (preseeded already) and `edgar_facts()` calls
-    `_detect_confirmed_splits()` for shares_diluted, which does the exact same companyconcept
-    fetch per tag and was NOT preseeded -- an unnoticed network hole. Proven here by replacing
-    `_get` with a function that fails the test if it is ever called."""
+class TestScorePairIsFullyOffline(unittest.TestCase):
+    """issue #30: score_pair() now reads the archive's OWN already-computed edgar_facts() output
+    and already-computed split_factor directly -- there is no live edgar_facts()/macro_prices()
+    call left to make, so the network-hole class audit round 3 found (an un-preseeded
+    companyconcept fetch inside a live edgar_facts() re-invocation) cannot recur structurally:
+    historical_run.py no longer imports either module at all. Proven at the module level, not by
+    patching a network entry point that no longer exists in this file."""
 
-    def test_score_pair_never_calls_get(self):
-        # NOTE: a self.fail() raised straight out of the substitute would be caught and
-        # swallowed by _companyconcept's own `except Exception: units = None` -- so the probe
-        # records calls in a list instead of relying on the exception propagating, and the
-        # assertion runs AFTER score_pair() returns.
-        calls = []
+    def test_no_edgar_facts_or_macro_prices_module_bound_in_historical_run(self):
+        self.assertFalse(hasattr(hr, "ef"))
+        self.assertFalse(hasattr(hr, "edgar_facts"))
+        self.assertFalse(hasattr(hr, "mp"))
+        self.assertFalse(hasattr(hr, "macro_prices"))
 
-        def _boom(url):
-            calls.append(url)
-            raise RuntimeError("network blocked for test")
-        orig = ef._get
-        ef._get = _boom
+    def test_score_pair_runs_without_sec_user_agent_or_tiingo_token_env(self):
+        env_keys = ("SEC_USER_AGENT", "TIINGO_TOKEN")
+        saved = {k: os.environ.pop(k, None) for k in env_keys}
         try:
-            out = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+            out = hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price())
         finally:
-            ef._get = orig
-        self.assertEqual(calls, [],
-                         "score_pair() reached the network via _get%r -- shares_diluted concept "
-                         "cache was not preseeded" % (calls,))
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
 
 
-class TestBasisEndAndLegNotePublished(HistoricalRunTestBase):
+class TestBasisEndAndLegNotePublished(unittest.TestCase):
     """Issue #28 audit round 3, item 2: eps_basis_end/fcf_basis_end/verdict_leg_note (already
     computed in score_pair()) must reach both the CSV and the report table, not just the
     in-memory row -- the same class of gap audit round 2 found for pe_hist_median_note and
     eps_reason/fcf_reason."""
 
     def test_csv_and_report_carry_basis_ends_and_leg_note(self):
-        import csv
-        import tempfile
-        out = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+        out = hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price())
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["eps_basis_end"], "2019-12-31")
         self.assertEqual(out["fcf_basis_end"], "2019-12-31")
@@ -672,7 +642,7 @@ class TestBasisEndAndLegNotePublished(HistoricalRunTestBase):
             self.assertIn("dual_basis_conservative", text)
 
 
-class TestEveryRowKeyIsPublished(HistoricalRunTestBase):
+class TestEveryRowKeyIsPublished(unittest.TestCase):
     """Issue #28 audit round 3, item 3: every non-underscore key score_pair() puts on a SCORED
     row must reach an output surface -- either verbatim in CSV_FIELDS, or as a documented
     compound field in CSV_COMPOUND_FIELDS (flattened by write_csv). Internal-only fields carry a
@@ -681,9 +651,9 @@ class TestEveryRowKeyIsPublished(HistoricalRunTestBase):
     fcf_reason) -- this pin is the class fix, so the next one is caught by a test, not a re-read."""
 
     def test_scored_row_keys_all_reach_csv_or_are_documented_compound_fields(self):
-        for out in (hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price()),
-                   hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price()),
-                   hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())):
+        for out in (hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price()),
+                   hr.score_pair("GOLD2", "2020-03-23", _gold2_gt(), _gold2_price()),
+                   hr.score_pair("GOLD3", "2020-03-23", _gold3_gt(), _gold3_price())):
             self.assertEqual(out["status"], "SCORED", out.get("reason"))
             unpublished = [k for k in out
                           if not k.startswith("_")
@@ -694,7 +664,7 @@ class TestEveryRowKeyIsPublished(HistoricalRunTestBase):
                              % unpublished)
 
 
-class TestConservativeLegSelectionPicksTheLowerCagr(HistoricalRunTestBase):
+class TestConservativeLegSelectionPicksTheLowerCagr(unittest.TestCase):
     """Issue #28 audit round 3, item 4: guards mutation histrun-conservative-flip-01 (the <=
     comparison choosing the conservative leg in score_pair()'s dual_basis branch flipped to
     >=). GOLD1/GOLD2 both happen to pick gaap_eps, so neither can distinguish a flipped
@@ -703,10 +673,73 @@ class TestConservativeLegSelectionPicksTheLowerCagr(HistoricalRunTestBase):
     gaap_eps (the optimistic leg) instead."""
 
     def test_fcf_leg_wins_when_it_is_the_more_conservative_one(self):
-        out = hr.score_pair("GOLD4", "2020-03-23", _gold4_edgar(), _gold4_price())
+        out = hr.score_pair("GOLD4", "2020-03-23", _gold4_gt(), _gold4_price())
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
         self.assertEqual(out["verdict_leg"], "fcf_per_share")
+
+
+class TestRealArchiveFixtureNVDA(unittest.TestCase):
+    """issue #30's own acceptance mandate: a test on a REAL archive record, driven all the way to
+    status=SCORED with concrete numbers -- not a synthetic fixture that merely LOOKS like the
+    real format. tests/fixtures/NVDA_20200323_edgar.json / _price.json are the two files from
+    Reports/histrun_2026-08-08/histrun_raw_v3.zip's NVDA_20200323 pair, copied byte-for-byte
+    (re-serialized, same content) -- the exact pair that used to REFUSE with "edgar archive
+    record has no usable 'cik' field" before this fix. Numbers below are read from the tool's
+    own output against these files, not hand-derived (NVDA's real EDGAR history -- confirmed
+    4:1 and 10:1 splits since 2020-03-23, compounding to split_factor=40.0 -- is not arithmetic
+    anyone should hand-check; the point of this pin is that the REAL archive reaches SCORED at
+    all, matching PREREG's own machinery, not that these specific digits are independently
+    re-derived)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "NVDA_20200323_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "NVDA_20200323_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_fixture_is_the_real_archive_shape_not_a_guess(self):
+        # the exact discrepancy issue #30 reported: real records carry '_cik', not 'cik'.
+        self.assertIn("_cik", self.edgar)
+        self.assertNotIn("cik", self.edgar)
+        self.assertIsInstance(self.price, dict)
+        self.assertIn("price_record", self.price)
+        self.assertIn("split_factor", self.price)
+
+    def test_nvda_20200323_reaches_scored_with_numbers(self):
+        out = hr.score_pair("NVDA", "2020-03-23", self.edgar, self.price)
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["cik"], "0001045810")
+        self.assertEqual(out["verdict_leg"], "fcf_per_share")
+        self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
+        self.assertAlmostEqual(out["growth_rate"], 0.16472039648286363, places=6)
+        self.assertAlmostEqual(out["terminal_growth"], 0.04, places=6)
+        self.assertAlmostEqual(out["roe_median_5y"], 0.28913571676501215, places=6)
+        self.assertAlmostEqual(out["future_pe_k9"], 17.23313325330132, places=4)
+        self.assertEqual(out["future_pe_source"], "formula_no_median_available")
+        self.assertEqual(out["split_factor_eps"], 40.0)
+        self.assertEqual(out["split_factor_fcf"], 40.0)
+        self.assertAlmostEqual(out["intrinsic_value"], 0.57, places=2)
+        self.assertAlmostEqual(out["implied_cagr_pct"], -10.37, places=2)
+        self.assertEqual(out["hurdle_gate"], "FAIL")
+        self.assertFalse(out["buy_A_no_discount"])
+        self.assertFalse(out["buy_B_10pct_discount"])
+        self.assertIsNone(out["pe_hist_median"])   # not present in this record -- see PROTOCOL_GAPS
+
+    def test_nvda_reaches_csv_and_report_without_raising(self):
+        out = hr.score_pair("NVDA", "2020-03-23", self.edgar, self.price)
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "out.csv")
+            md_path = os.path.join(d, "out.md")
+            hr.write_csv([out], csv_path)
+            hr.write_report([out], md_path)
+            with open(csv_path, encoding="utf-8") as f:
+                csv_row = next(csv.DictReader(f))
+            self.assertEqual(csv_row["ticker"], "NVDA")
+            self.assertEqual(csv_row["status"], "SCORED")
 
 
 if __name__ == "__main__":

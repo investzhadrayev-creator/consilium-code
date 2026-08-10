@@ -768,13 +768,13 @@ CASES = [
      "test_historical_run.TestTerminalMultiple.test_refuses_by_name_when_capped_roe_at_or_below_terminal_growth",
      "a terminal ROE at/below terminal growth (undefined payout) is refused, not saturated to a negative multiple"),
     ("histrun-basis-bypass-01", "tools/historical_run.py",
-     '    eps_today, eps_factor = basis_adjust(eps_af, price_record, price_rows, perrors, ticker + "_eps")',
+     '    eps_today, eps_factor = basis_adjust(eps_af, split_factor, split_factor_reason, perrors, ticker + "_eps")',
      "    eps_today, eps_factor = eps_af, 1.0",
      "test_historical_run.TestGoldenCase2SplitAndRoeCapBuy.test_full_pipeline_matches_hand_computed_arithmetic",
      "PREREG §7's stand-health check: the EPS leg is never fed to ivc() on its as-filed share basis"),
     # ---- issue #28 audit round 2: two more mandate-required mutation cases ----
     ("histrun-basis-bypass-02", "tools/historical_run.py",
-     '    fcf_today, fcf_factor = basis_adjust(fcf_af, price_record, price_rows, perrors, ticker + "_fcf")',
+     '    fcf_today, fcf_factor = basis_adjust(fcf_af, split_factor, split_factor_reason, perrors, ticker + "_fcf")',
      "    fcf_today, fcf_factor = fcf_af, 1.0",
      "test_historical_run.TestFcfBasisAdjustAppliedToPublishedIv.test_published_iv_and_split_factor_use_the_adjusted_fcf",
      "PREREG §7's stand-health check applies to the FCF leg too: it is never fed to ivc() on its as-filed share basis"),
@@ -791,6 +791,20 @@ CASES = [
      '                        usable["fcf_per_share"]["implied_cagr_pct"] else "fcf_per_share")',
      "test_historical_run.TestConservativeLegSelectionPicksTheLowerCagr.test_fcf_leg_wins_when_it_is_the_more_conservative_one",
      "the conservative leg is the one with the LOWER implied CAGR, never the higher one"),
+    # ---- issue #30: first real run scored 0/175 on "edgar archive record has no usable 'cik'
+    # field" -- the archive carries '_cik', not 'cik'. Both mutations below revert score_pair()
+    # to the pre-fix reading and must turn the REAL-archive pin (not a synthetic fixture) red. ----
+    ("histrun-real-cik-underscore-01", "tools/historical_run.py",
+     '    cik = gt.get("_cik") or gt.get("cik")',
+     '    cik = gt.get("cik")',
+     "test_historical_run.TestRealArchiveFixtureNVDA.test_nvda_20200323_reaches_scored_with_numbers",
+     "the REAL archive's own '_cik' field is read, not just the legacy bare 'cik'"),
+    ("histrun-real-price-shape-01", "tools/historical_run.py",
+     '    price_record = price_json.get("price_record")',
+     "    price_record = price_json",
+     "test_historical_run.TestRealArchiveFixtureNVDA.test_nvda_20200323_reaches_scored_with_numbers",
+     "the archived price record is read from price_json['price_record'], never assumed to BE "
+     "the OHLC record itself"),
 ]
 
 
