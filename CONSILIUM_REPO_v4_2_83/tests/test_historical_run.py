@@ -396,6 +396,47 @@ class TestCikFieldNaming(unittest.TestCase):
         self.assertIn("cik", out["reason"])
 
 
+class TestArchiveDateSyncedWithAsOfAndPriceDate(unittest.TestCase):
+    """issue #32: score_pair() took date_iso only from the ARCHIVE FILENAME and never checked it
+    against the two dates the archive's own records carry (gt['_as_of'], price_json['date']) -- a
+    desynced archive (e.g. a file paired under the wrong name) would silently score under a date
+    that isn't the one its own numbers were computed for, instead of refusing. Both real-world
+    shapes get their OWN named refusal so a reader can tell "wrong date" from "no date at all"
+    (the second is the real VOO/ETF case: edgar_facts() found no fiscal-period anchor to stamp,
+    which is not the same defect as a mismatch and must not print 'None' as if it were a date)."""
+
+    def test_matching_as_of_and_price_date_scores_normally(self):
+        # sanity: the two dates agreeing (the common case, and every other fixture in this file)
+        # must not be newly refused by this change.
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), _gold1_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+
+    def test_as_of_mismatch_refuses_with_both_dates_named(self):
+        edgar = _gold1_gt()
+        edgar["_as_of"] = "2020-03-20"
+        out = hr.score_pair("GOLD1", "2020-03-23", edgar, _gold1_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("2020-03-23", out["reason"])
+        self.assertIn("2020-03-20", out["reason"])
+
+    def test_as_of_null_gets_its_own_named_refusal_not_a_mismatch(self):
+        # the real ETF (VOO) case: a valid filename, but _as_of is null in the archived record.
+        edgar = _gold1_gt()
+        edgar["_as_of"] = None
+        out = hr.score_pair("VOO", "2020-03-23", edgar, price_pkg("VOO", "2020-03-23", adj_close=40.0))
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("no _as_of", out["reason"])
+        self.assertNotIn("None", out["reason"])
+
+    def test_price_date_mismatch_refuses_with_both_dates_named(self):
+        price = _gold1_price()
+        price["date"] = "2020-03-20"
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), price)
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("2020-03-23", out["reason"])
+        self.assertIn("2020-03-20", out["reason"])
+
+
 class TestShadowDcfNeverFeedsTheOfficialVerdict(unittest.TestCase):
 
     def test_shadow_dcf_absent_when_fcf_leg_unavailable_official_still_scores(self):
