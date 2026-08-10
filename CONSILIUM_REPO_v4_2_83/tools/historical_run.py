@@ -324,10 +324,37 @@ def score_pair(ticker, date_iso, gt, price_json):
         row.update(status="REFUSED", reason="edgar_facts errors: %s" % gt["_errors"])
         return row
 
+    # issue #32: the filename date drives the whole pair (date_iso above), but nothing checked it
+    # against the two dates the archive itself carries -- a desynced archive (wrong file paired
+    # under a right-looking name) would silently score under the WRONG date's number instead of
+    # refusing. Real case that must NOT be conflated with a mismatch: an ETF/fund record (VOO)
+    # carries a valid filename but _as_of=null (edgar_facts() found no fiscal-period anchor to
+    # stamp) -- that gets its own named refusal, not "date mismatch" with `None` printed as if it
+    # were a date.
+    gt_as_of = gt.get("_as_of")
+    if gt_as_of is None:
+        row.update(status="REFUSED",
+                   reason="archive record carries no _as_of (edgar_facts() found no fiscal-period "
+                          "anchor to stamp -- e.g. an ETF/fund record) even though the filename "
+                          "date is %s" % date_iso)
+        return row
+    if gt_as_of != date_iso:
+        row.update(status="REFUSED",
+                   reason="filename date %s does not match archive record's _as_of %s -- stand "
+                          "refusal, not a guess at which date is right" % (date_iso, gt_as_of))
+        return row
+
     if not isinstance(price_json, dict):
         row.update(status="REFUSED",
                    reason="price archive record is not the expected object shape (need a dict "
                           "with 'price_record'/'split_factor', see module docstring)")
+        return row
+    price_date = price_json.get("date")
+    if isinstance(price_date, str) and price_date[:10] != date_iso:
+        row.update(status="REFUSED",
+                   reason="filename date %s does not match archived price record's date %s -- "
+                          "stand refusal, not a guess at which date is right" %
+                          (date_iso, price_date[:10]))
         return row
     price_record = price_json.get("price_record")
     if price_record is None:

@@ -805,6 +805,24 @@ CASES = [
      "test_historical_run.TestRealArchiveFixtureNVDA.test_nvda_20200323_reaches_scored_with_numbers",
      "the archived price record is read from price_json['price_record'], never assumed to BE "
      "the OHLC record itself"),
+    # ---- issue #32: filename date must be checked against the archive's OWN dates, not trusted
+    # alone -- a desynced archive would otherwise score silently under the wrong date. ----
+    ("histrun-asof-sync-disabled-01", "tools/historical_run.py",
+     '    if gt_as_of != date_iso:',
+     '    if False:',
+     "test_historical_run.TestArchiveDateSyncedWithAsOfAndPriceDate.test_as_of_mismatch_refuses_with_both_dates_named",
+     "the filename date is checked against the archive record's own _as_of, never trusted alone"),
+    ("histrun-asof-null-disabled-01", "tools/historical_run.py",
+     '    if gt_as_of is None:',
+     '    if False:',
+     "test_historical_run.TestArchiveDateSyncedWithAsOfAndPriceDate.test_as_of_null_gets_its_own_named_refusal_not_a_mismatch",
+     "a null _as_of (e.g. VOO/ETF) gets its own named refusal instead of falling through to the "
+     "mismatch check (which would print 'None' as if it were a date) or, worse, to a live score"),
+    ("histrun-price-date-sync-disabled-01", "tools/historical_run.py",
+     '    if isinstance(price_date, str) and price_date[:10] != date_iso:',
+     "    if False:",
+     "test_historical_run.TestArchiveDateSyncedWithAsOfAndPriceDate.test_price_date_mismatch_refuses_with_both_dates_named",
+     "the filename date is checked against the archived price record's own date, never trusted alone"),
 ]
 
 
