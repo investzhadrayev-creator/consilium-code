@@ -35,7 +35,10 @@ ivc_lib.py / edgar_facts.py / macro_prices.py / app.py НЕ модифициру
                     Числовые ряды (revenue/net_income/ocf/capex/shares_diluted/...) уже лежат как
                     [{"end":..., "val":...}, ...]; roe_median_5y — уже посчитанное число или null.
                     cik (без подчёркивания, на верхнем уровне) — запасное имя, только для старых
-                    синтетических фикстур этого теста; реальный архив несёт _cik.
+                    синтетических фикстур этого теста; реальный архив несёт _cik. shares_current —
+                    голое число (edgar_facts._shares_current, с обложки ЛЮБОЙ формы, не только
+                    10-K) — issue #36: единственное поле архива, которым basis_gap_reason()
+                    проверяет разрыв [eps_basis_end/fcf_basis_end, date_iso], см. PROTOCOL_GAPS.
     *_price.json  — ОБЪЕКТ (не список!) {date, ticker, price_record, split_factor,
                     pe_same_share_basis, _errors}. price_record — ОДНА дневная запись Tiingo
                     (close/adjClose/splitFactor/divCash/date) на проверяемую дату, или null,
@@ -128,6 +131,30 @@ PROTOCOL_GAPS = [
     "готовый вывод) и поэтому не управляет тем, каким плечом (companyfacts vs companyconcept) "
     "confirmed_splits был вычислен при сборке архива; чем бы он ни был на момент сборки, тем и "
     "остаётся на момент перепрогона.",
+    "issue #36: split_factor в архиве -- это macro_prices.split_factor_since(), посчитанный "
+    "ОТ ДАТЫ НАБЛЮДЕНИЯ (date_iso) до момента сборки архива; он покрывает [date_iso, today], "
+    "НИКОГДА [eps_basis_end/fcf_basis_end, today]. Множителя для интервала [basis_end, date_iso] "
+    "в архиве буквально нет ни в каком поле -- этот перепрогон никогда не видел сырых дневных "
+    "котировок за тот интервал (см. ФОРМАТ АРХИВА) и не имеет права его пересчитать. Доступно: "
+    "shares_current (edgar_facts._shares_current, читается с обложки ЛЮБОЙ формы, включая 10-Q "
+    "внутри интервала) как единственный архивный сигнал, чувствительный к тому, что случилось "
+    "ВНУТРИ разрыва. Недоступно: точная дата и коэффициент самого сплита -- edgar_facts."
+    "_detect_confirmed_splits подтверждает сплит только РЕТРОАКТИВНЫМ пересчётом в ПОСЛЕДУЮЩЕМ "
+    "10-K, а тот обычно подаётся через несколько месяцев ПОСЛЕ даты наблюдения (реальный кейс: "
+    "сплит AMZN 20:1 в июне 2022, наблюдение 2022-10-12, подтверждающий 10-K за FY2022 подан "
+    "в феврале 2023) -- то есть confirmed_splits почти никогда не в состоянии закрыть разрыв "
+    "именно там, где он опаснее всего. Решение (basis_gap_reason(), не значение из PREREG): "
+    "нога отказывает по имени с обеими датами, когда shares_current/shares_diluted(basis_end) "
+    "даёт чистый коэффициент сплита (тот же список _CLEAN_SPLIT_FACTORS и допуск 1%, что уже "
+    "использует edgar_facts.py) -- положительная улика разрыва. ОТСУТСТВИЕ такой улики -- НЕ "
+    "доказательство пустого разрыва (нераскрытый сплит выглядел бы так же, как компания, "
+    "которая никогда не дробилась) и потому НЕ повод отказывать по умолчанию: иначе отказывала "
+    "бы каждая обычная пара без сплита рядом с окном (см. пин NFLX_20221012 -- сплит ПОСЛЕ даты "
+    "наблюдения целиком лежит внутри [date_iso, today], уже покрытого архивным split_factor, "
+    "и обязан остаться SCORED с прежними числами). Это осознанный дизайн-выбор для закрытия "
+    "разрыва, а не буквальная формула PREREG; остаточный слепой пробел -- неподтверждённый, "
+    "нераскрытый сплит без заметного скачка в shares_current -- по-прежнему проходит НЕзамеченным "
+    "и не именуется этой проверкой.",
 ]
 
 
@@ -264,7 +291,14 @@ def basis_adjust(value_as_filed, split_factor, split_factor_reason, errors, symb
     catch. issue #30: the archive ships split_factor ALREADY computed (macro_prices.
     split_factor_since()'s own output, from the full daily-row history at archive-build time,
     which this offline replay never sees — see module docstring's ФОРМАТ АРХИВА), so this divides
-    by that precomputed number rather than recomputing it from raw daily rows."""
+    by that precomputed number rather than recomputing it from raw daily rows.
+
+    issue #36: that precomputed number is anchored at the OBSERVATION date (macro_prices.
+    split_factor_since(price_record_on_date_iso, ...)), never at the leg's own basis FY end — it
+    covers [date_iso, archive-build "today"], not [basis_end, today]. A split effective BETWEEN
+    basis_end and date_iso is invisible to it. `basis_gap_reason()` below is the gate that must
+    run BEFORE this function on any leg whose basis_end != date_iso; this function itself still
+    trusts split_factor exactly as before once that gate has cleared the leg."""
     if value_as_filed is None:
         return None, None
     if not isinstance(split_factor, (int, float)) or split_factor <= 0:
@@ -272,6 +306,61 @@ def basis_adjust(value_as_filed, split_factor, split_factor_reason, errors, symb
             split_factor_reason or "split_factor missing/invalid in the archived price record")
         return None, None
     return value_as_filed / split_factor, split_factor
+
+
+# Same clean-multiple list edgar_facts._detect_confirmed_splits already trusts for exactly this
+# purpose (a restatement ratio) — reused, not reinvented, per the "не стройка новой методики"
+# mandate for this tool.
+_CLEAN_SPLIT_FACTORS = (2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
+
+
+def basis_gap_reason(gt, basis_end, date_iso, shares_at_basis_end, leg_label):
+    """issue #36: does the archive give any reason to distrust the interval basis_adjust() is
+    about to assume is covered? See basis_adjust()'s own docstring for the gap it closes over
+    — [basis_end, date_iso] — that the archived split_factor structurally cannot see.
+
+    The real case (AMZN, observed 2022-10-12): FY2021 EPS filed Feb 2022, split 20:1 effective
+    June 2022, archived split_factor_eps read 1.0 (no split from the OBSERVATION date onward) —
+    eps stayed on the pre-split share count while price was already post-split, inflating IV
+    ~20x into a false BUY. edgar_facts._detect_confirmed_splits cannot catch this: it only
+    confirms a split once a LATER 10-K restates the affected fiscal year as a comparative, and
+    that 10-K (AMZN's FY2022 filing) lands in Feb 2023 — five months after the observation date,
+    hence outside every as_of-filtered archive built for this date. PREREG names no formula for
+    the missing interval, and the mandate forbids inventing one (rule: 'не выдумывай его') — so
+    the honest move is a NAMED refusal, not silent reuse of the cross-date multiplier.
+
+    `shares_current` (edgar_facts._shares_current) is the one field in the archive that is NOT
+    blind to that gap: unlike the annual net_income/shares_diluted series (10-K-only, see
+    edgar_facts._annual_merged), it is read from the dei cover page of ANY filing, including a
+    10-Q filed between basis_end and date_iso. A CLEAN split-factor-sized jump (the SAME
+    _CLEAN_SPLIT_FACTORS list and 1% tolerance edgar_facts.py's own restatement detector already
+    trusts) between shares_current and the leg's own basis-year share count is the archive
+    positively telling us a split fell inside the gap — refuse, and name it.
+
+    Absence of that jump is NOT proof the gap is empty (an unfiled or not-yet-disclosed split
+    would look identical to an ordinary company that never split) — it is the necessary DEFAULT,
+    or every ordinary pair with no split anywhere near the window would refuse too, which the
+    NFLX_20221012 pin exists to guard against (a split confirmed to be AFTER date_iso sits
+    entirely inside [date_iso, today], the window the archived split_factor already covers, and
+    must stay SCORED with unchanged numbers). This asymmetry — refuse only on POSITIVE evidence,
+    never on mere absence of proof — and its residual blind spot for an unconfirmed, undisclosed
+    split are both named in PROTOCOL_GAPS, not hidden."""
+    if basis_end is None or basis_end == date_iso:
+        return None
+    shares_current = gt.get("shares_current")
+    if (not isinstance(shares_current, (int, float)) or not isinstance(shares_at_basis_end, (int, float))
+            or shares_current <= 0 or shares_at_basis_end <= 0):
+        return None
+    ratio = shares_current / shares_at_basis_end
+    factor = next((c for c in _CLEAN_SPLIT_FACTORS if abs(ratio - c) / c <= 0.01), None)
+    if factor is None:
+        return None
+    return ("%s leg basis gap: shares_current/shares_diluted ratio %.4fx matches a clean %dx "
+            "split signature between the basis FY end %s and the observation date %s -- inside "
+            "the window the archived split_factor does NOT cover ([%s, today], never [%s, "
+            "today]) -- refusing rather than assuming the cross-date multiplier (see "
+            "PROTOCOL_GAPS, issue #36)" % (leg_label, ratio, factor, basis_end, date_iso,
+                                           date_iso, basis_end))
 
 
 def shadow_fcff_dcf(fcf_today, price, g, tg, official_iv):
@@ -350,7 +439,18 @@ def score_pair(ticker, date_iso, gt, price_json):
                           "with 'price_record'/'split_factor', see module docstring)")
         return row
     price_date = price_json.get("date")
-    if isinstance(price_date, str) and price_date[:10] != date_iso:
+    # issue #33 audit tail: a NON-string date (missing field -> None, or a malformed value) fell
+    # through the isinstance guard below and was silently never checked against the filename date
+    # -- an absent field looked identical to "field present and agrees", the exact silent-skip
+    # class the rest of this function refuses by name everywhere else (see gt_as_of above).
+    if not isinstance(price_date, str):
+        row.update(status="REFUSED",
+                   reason="archived price record carries no usable 'date' field (got %r) -- "
+                          "cannot verify it matches the filename date %s; a missing field is a "
+                          "named refusal here, never a silently skipped check" %
+                          (price_date, date_iso))
+        return row
+    if price_date[:10] != date_iso:
         row.update(status="REFUSED",
                    reason="filename date %s does not match archived price record's date %s -- "
                           "stand refusal, not a guess at which date is right" %
@@ -372,6 +472,19 @@ def score_pair(ticker, date_iso, gt, price_json):
     eps_af, eps_end, eps_leg_err = compute_eps_leg(gt)
     fcf_af, fcf_end, fcf_leg_err = compute_fcf_leg(gt)
     perrors = {}
+    # issue #36: the archived split_factor is anchored at date_iso, never at the leg's own basis
+    # FY end -- see basis_gap_reason()'s own docstring. Must run BEFORE basis_adjust(): a leg the
+    # gap check refuses here never reaches the (correctly-behaving, unmodified) division below.
+    if eps_af is not None:
+        gap = basis_gap_reason(gt, eps_end, date_iso, _value_at(gt.get("shares_diluted"), eps_end), "eps")
+        if gap:
+            perrors[ticker + "_eps"] = gap
+            eps_af = None
+    if fcf_af is not None:
+        gap = basis_gap_reason(gt, fcf_end, date_iso, _value_at(gt.get("shares_diluted"), fcf_end), "fcf")
+        if gap:
+            perrors[ticker + "_fcf"] = gap
+            fcf_af = None
     split_factor = price_json.get("split_factor")
     arch_errors = price_json.get("_errors") or {}
     split_factor_reason = arch_errors.get("split_factor_%s" % ticker)
