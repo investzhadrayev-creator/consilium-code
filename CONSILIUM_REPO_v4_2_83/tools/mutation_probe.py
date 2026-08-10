@@ -740,6 +740,57 @@ CASES = [
      "    return ratio, None",
      "test_historical_stand.TestSameShareBasisPE.test_compound_split_with_dividend_admixture_gives_the_exact_product_and_a_correct_pe",
      "the splitFactor PRODUCT wins over the dividend-contaminated close/adjClose ratio"),
+    # ---- issue #28: Счёт проверки №1 (tools/historical_run.py) ----
+    # Acceptance mandate: "подмена официального счёта теневым обязана краснеть" — the shadow
+    # (EXPLORATORY, decision В4) DCF bridge must never be able to silently become the published
+    # official number.
+    ("histrun-shadow-swap-01", "tools/historical_run.py",
+     '        intrinsic_value=verdict_leg["intrinsic_value"],   # OFFICIAL — never the shadow leg',
+     '        intrinsic_value=shadow["intrinsic_value"],   # OFFICIAL — never the shadow leg',
+     "test_historical_run.TestGoldenCase1CleanNoSplitNoBuy.test_full_pipeline_matches_hand_computed_arithmetic",
+     "the official IV is never silently replaced by the shadow (EXPLORATORY) DCF leg"),
+    # Acceptance mandate: "отключение отказа (подстановка вместо отказа) обязано краснеть" —
+    # a pair with no trading-day record on the archived date must refuse, never guess a nearby
+    # day or fall through to a bogus computation.
+    ("histrun-standref-disabled-01", "tools/historical_run.py",
+     "    if price_record is None:",
+     "    if False:",
+     "test_historical_run.TestNegativeControlsRefuseByName.test_no_trading_day_on_record_refuses_not_a_guess_at_the_nearest_day",
+     "a missing trading-day record is refused by name, never silently passed through"),
+    ("histrun-growth-refusal-disabled-01", "tools/historical_run.py",
+     "    if rc3 is None or rc5 is None:",
+     "    if False:",
+     "test_historical_run.TestGrowthAnchor.test_refuses_by_name_when_history_too_short_for_either_window",
+     "insufficient revenue history for the growth anchor is refused by name, not computed anyway"),
+    ("histrun-roe-refusal-disabled-01", "tools/historical_run.py",
+     "    if roe_capped <= g:",
+     "    if False:",
+     "test_historical_run.TestTerminalMultiple.test_refuses_by_name_when_capped_roe_at_or_below_terminal_growth",
+     "a terminal ROE at/below terminal growth (undefined payout) is refused, not saturated to a negative multiple"),
+    ("histrun-basis-bypass-01", "tools/historical_run.py",
+     '    eps_today, eps_factor = basis_adjust(eps_af, price_record, price_rows, perrors, ticker + "_eps")',
+     "    eps_today, eps_factor = eps_af, 1.0",
+     "test_historical_run.TestGoldenCase2SplitAndRoeCapBuy.test_full_pipeline_matches_hand_computed_arithmetic",
+     "PREREG §7's stand-health check: the EPS leg is never fed to ivc() on its as-filed share basis"),
+    # ---- issue #28 audit round 2: two more mandate-required mutation cases ----
+    ("histrun-basis-bypass-02", "tools/historical_run.py",
+     '    fcf_today, fcf_factor = basis_adjust(fcf_af, price_record, price_rows, perrors, ticker + "_fcf")',
+     "    fcf_today, fcf_factor = fcf_af, 1.0",
+     "test_historical_run.TestFcfBasisAdjustAppliedToPublishedIv.test_published_iv_and_split_factor_use_the_adjusted_fcf",
+     "PREREG §7's stand-health check applies to the FCF leg too: it is never fed to ivc() on its as-filed share basis"),
+    ("histrun-histmedian-flip-01", "tools/historical_run.py",
+     "    if pe_hist_median is not None and pe_hist_median < multiple:",
+     "    if pe_hist_median is not None and pe_hist_median > multiple:",
+     "test_historical_run.TestTerminalMultiple.test_historical_median_wins_when_below_the_formula_ceiling",
+     "PREREG §8: the historical median only overrides the formula ceiling when it is BELOW it, never above"),
+    # ---- issue #28 audit round 3 ----
+    ("histrun-conservative-flip-01", "tools/historical_run.py",
+     '        conservative = ("gaap_eps" if usable["gaap_eps"]["implied_cagr_pct"] <=\n'
+     '                        usable["fcf_per_share"]["implied_cagr_pct"] else "fcf_per_share")',
+     '        conservative = ("gaap_eps" if usable["gaap_eps"]["implied_cagr_pct"] >=\n'
+     '                        usable["fcf_per_share"]["implied_cagr_pct"] else "fcf_per_share")',
+     "test_historical_run.TestConservativeLegSelectionPicksTheLowerCagr.test_fcf_leg_wins_when_it_is_the_more_conservative_one",
+     "the conservative leg is the one with the LOWER implied CAGR, never the higher one"),
 ]
 
 
