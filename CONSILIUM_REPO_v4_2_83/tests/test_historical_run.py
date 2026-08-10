@@ -199,6 +199,45 @@ def _gold3_price():
     return _gold2_price()
 
 
+def _gold4_edgar():
+    """Built for issue #28 audit round 3, item 4 (mutation histrun-conservative-flip-01). Same
+    shape as GOLD1 (10% growth, ROE 20%, no split) EXCEPT ocf/capex are set so the FCF leg's
+    as-filed value (170/100 = 1.70) is BELOW the EPS leg's (200/100 = 2.00) -- the reverse of
+    GOLD1/GOLD2, where the FCF leg is always the higher one. Because ivc()'s intrinsic_value/
+    implied_cagr scale with the per-share base at fixed price/growth/multiple, the LOWER base
+    (fcf) yields the LOWER implied_cagr_pct here, so the conservative pick MUST be fcf_per_share
+    -- a comparison operator flipped from <= to >= would silently pick gaap_eps (the optimistic
+    leg) instead, and this fixture is what makes that flip observable (GOLD1/GOLD2 cannot: both
+    happen to pick gaap_eps regardless of which way the comparison points)."""
+    years = [2014, 2015, 2016, 2017, 2018, 2019]
+    filed = ["2015-02-15", "2016-02-15", "2017-02-15", "2018-02-15", "2019-02-15", "2020-02-15"]
+    revenue = [100.0, 110.0, 121.0, 133.1, 146.41, 161.051]
+    rev_rows = [row("%d-01-01" % y, "%d-12-31" % y, v, filed=f)
+                for y, v, f in zip(years, revenue, filed)]
+    ni_years = years[1:]
+    ni_filed = filed[1:]
+    ni_rows = [row("%d-01-01" % y, "%d-12-31" % y, 200.0, filed=f)
+              for y, f in zip(ni_years, ni_filed)]
+    eq_rows = [row(None, "%d-12-31" % y, 1000.0, filed=f) for y, f in zip(ni_years, ni_filed)]
+    sh_rows = [row("2019-01-01", "2019-12-31", 100.0, filed="2020-02-15")]
+    # ocf - capex = 220 - 50 = 170 -> fcf_af = 1.70, BELOW eps_af = 2.00 (GOLD1 has fcf 2.50 above it)
+    ocf_rows = [row("2019-01-01", "2019-12-31", 220.0, filed="2020-02-15")]
+    capex_rows = [row("2019-01-01", "2019-12-31", 50.0, filed="2020-02-15")]
+    return facts({
+        "Revenues": usd(rev_rows),
+        "NetIncomeLoss": usd(ni_rows),
+        "StockholdersEquity": usd(eq_rows),
+        "WeightedAverageNumberOfDilutedSharesOutstanding": shares(sh_rows),
+        "NetCashProvidedByUsedInOperatingActivities": usd(ocf_rows),
+        "PaymentsToAcquirePropertyPlantAndEquipment": usd(capex_rows),
+    }, cik=4444444)
+
+
+def _gold4_price():
+    return [{"date": "2020-03-23", "close": 40.0, "adjClose": 40.0, "splitFactor": 1.0,
+            "divCash": 0.0}]
+
+
 class TestGoldenCase1CleanNoSplitNoBuy(HistoricalRunTestBase):
 
     def test_full_pipeline_matches_hand_computed_arithmetic(self):
@@ -558,6 +597,116 @@ class TestReportAndCsvSmoke(unittest.TestCase):
                 text = f.read()
             for i in (1, 2, 3, 4):
                 self.assertIn(hr.CRITERIA_TEXT[i][:20], text)
+
+
+class TestNoNetworkCallsDuringScorePair(HistoricalRunTestBase):
+    """Issue #28 audit round 3, item 1: score_pair() must never reach the network -- this run is
+    documented (module docstring, PROTOCOL_GAPS) as offline. `_get()` (edgar_facts.py) is the
+    ONE choke point every SEC HTTP call in the module goes through (company_tickers, companyfacts,
+    companyconcept) -- unlike `_companyconcept` itself, which is legitimately CALLED even on a
+    cache hit (that's how the pre-existing SHARES_CURRENT preseed already works: the call happens,
+    the cache satisfies it, `_get` is never reached). `_shares_current()` calls `_companyconcept`
+    for SHARES_CURRENT tags (preseeded already) and `edgar_facts()` calls
+    `_detect_confirmed_splits()` for shares_diluted, which does the exact same companyconcept
+    fetch per tag and was NOT preseeded -- an unnoticed network hole. Proven here by replacing
+    `_get` with a function that fails the test if it is ever called."""
+
+    def test_score_pair_never_calls_get(self):
+        # NOTE: a self.fail() raised straight out of the substitute would be caught and
+        # swallowed by _companyconcept's own `except Exception: units = None` -- so the probe
+        # records calls in a list instead of relying on the exception propagating, and the
+        # assertion runs AFTER score_pair() returns.
+        calls = []
+
+        def _boom(url):
+            calls.append(url)
+            raise RuntimeError("network blocked for test")
+        orig = ef._get
+        ef._get = _boom
+        try:
+            out = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+        finally:
+            ef._get = orig
+        self.assertEqual(calls, [],
+                         "score_pair() reached the network via _get%r -- shares_diluted concept "
+                         "cache was not preseeded" % (calls,))
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+
+
+class TestBasisEndAndLegNotePublished(HistoricalRunTestBase):
+    """Issue #28 audit round 3, item 2: eps_basis_end/fcf_basis_end/verdict_leg_note (already
+    computed in score_pair()) must reach both the CSV and the report table, not just the
+    in-memory row -- the same class of gap audit round 2 found for pe_hist_median_note and
+    eps_reason/fcf_reason."""
+
+    def test_csv_and_report_carry_basis_ends_and_leg_note(self):
+        import csv
+        import tempfile
+        out = hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["eps_basis_end"], "2019-12-31")
+        self.assertEqual(out["fcf_basis_end"], "2019-12-31")
+        self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
+
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = os.path.join(d, "out.csv")
+            md_path = os.path.join(d, "out.md")
+            hr.write_csv([out], csv_path)
+            hr.write_report([out], md_path)
+
+            with open(csv_path, encoding="utf-8") as f:
+                csv_row = next(csv.DictReader(f))
+            self.assertIn("eps_basis_end", csv_row)
+            self.assertIn("fcf_basis_end", csv_row)
+            self.assertIn("verdict_leg_note", csv_row)
+            self.assertEqual(csv_row["eps_basis_end"], "2019-12-31")
+            self.assertEqual(csv_row["fcf_basis_end"], "2019-12-31")
+            self.assertEqual(csv_row["verdict_leg_note"], "dual_basis_conservative")
+
+            with open(md_path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("Leg note", text)
+            self.assertIn("EPS basis FY", text)
+            self.assertIn("FCF basis FY", text)
+            self.assertIn("2019-12-31", text)
+            self.assertIn("dual_basis_conservative", text)
+
+
+class TestEveryRowKeyIsPublished(HistoricalRunTestBase):
+    """Issue #28 audit round 3, item 3: every non-underscore key score_pair() puts on a SCORED
+    row must reach an output surface -- either verbatim in CSV_FIELDS, or as a documented
+    compound field in CSV_COMPOUND_FIELDS (flattened by write_csv). Internal-only fields carry a
+    leading underscore (_grid, _gt_flags) and are exempt by construction. Audit rounds 1 and 2
+    each found ONE unpublished field by inspection (pe_hist_median_note, then eps_reason/
+    fcf_reason) -- this pin is the class fix, so the next one is caught by a test, not a re-read."""
+
+    def test_scored_row_keys_all_reach_csv_or_are_documented_compound_fields(self):
+        for out in (hr.score_pair("GOLD1", "2020-03-23", _gold1_edgar(), _gold1_price()),
+                   hr.score_pair("GOLD2", "2020-03-23", _gold2_edgar(), _gold2_price()),
+                   hr.score_pair("GOLD3", "2020-03-23", _gold3_edgar(), _gold3_price())):
+            self.assertEqual(out["status"], "SCORED", out.get("reason"))
+            unpublished = [k for k in out
+                          if not k.startswith("_")
+                          and k not in hr.CSV_FIELDS
+                          and k not in hr.CSV_COMPOUND_FIELDS]
+            self.assertEqual(unpublished, [],
+                             "score_pair() produced field(s) that reach no output surface: %r"
+                             % unpublished)
+
+
+class TestConservativeLegSelectionPicksTheLowerCagr(HistoricalRunTestBase):
+    """Issue #28 audit round 3, item 4: guards mutation histrun-conservative-flip-01 (the <=
+    comparison choosing the conservative leg in score_pair()'s dual_basis branch flipped to
+    >=). GOLD1/GOLD2 both happen to pick gaap_eps, so neither can distinguish a flipped
+    comparison from a correct one that always prefers the same leg by coincidence -- GOLD4 is
+    built so the FCF leg has the LOWER implied_cagr_pct, so a flip to >= would silently pick
+    gaap_eps (the optimistic leg) instead."""
+
+    def test_fcf_leg_wins_when_it_is_the_more_conservative_one(self):
+        out = hr.score_pair("GOLD4", "2020-03-23", _gold4_edgar(), _gold4_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
+        self.assertEqual(out["verdict_leg"], "fcf_per_share")
 
 
 if __name__ == "__main__":

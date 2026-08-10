@@ -95,6 +95,11 @@ PROTOCOL_GAPS = [
     "реализован тем же пинованным движком ivc_lib.ivc(), но с Gordon-growth терминальным "
     "мультипликатором (1+tg)/(hurdle-tg) вместо мультипликатора-как-в-официальном счёте; это "
     "самостоятельный дизайн-выбор для EXPLORATORY-моста, не значение из документа.",
+    "confirmed_splits в этом перепрогоне определяется только по companyfacts-плечу "
+    "_detect_confirmed_splits: companyconcept-плечо (тот же приём, что и у SHARES_CURRENT) "
+    "заранее засеяно значением (None), чтобы перепрогон оставался офлайн и детерминированным. "
+    "Возможное следствие — сплит, чей restatement виден ТОЛЬКО через companyconcept и "
+    "отсутствует в самом архивном companyfacts-снимке, этим стендом подтверждён не будет.",
 ]
 
 
@@ -285,6 +290,14 @@ def score_pair(ticker, date_iso, edgar_json, price_rows):
     ef._FACTS_CACHE[cik_str] = (time.time(), edgar_json)
     for tax, tag in ef.SHARES_CURRENT:
         ef._CONCEPT_CACHE[(cik_str, tax, tag)] = (time.time(), None)
+    # issue #28 audit round 3, item 1: edgar_facts() calls _detect_confirmed_splits() for
+    # shares_diluted, which does its OWN companyconcept fetch per tag -- the same network
+    # mechanism as SHARES_CURRENT above, just not preseeded. Left alone, every score_pair() call
+    # quietly reached data.sec.gov even though this run is documented as offline. Preseed with
+    # (time, None), same trick as SHARES_CURRENT, so the detector works from the archived
+    # companyfacts leg alone -- see PROTOCOL_GAPS for the resulting documented limitation.
+    for tag in ef.DURATION_TAGS["shares_diluted"]:
+        ef._CONCEPT_CACHE[(cik_str, "us-gaap", tag)] = (time.time(), None)
 
     gt = ef.edgar_facts(ticker=ticker, cik=cik_str, as_of=date_iso)
     if gt.get("_errors"):
@@ -431,14 +444,22 @@ def run_archive(archive_path):
     return rows, None
 
 
-CSV_FIELDS = ["ticker", "date", "status", "reason", "verdict_leg", "verdict_leg_note",
-              "eps_reason", "fcf_reason",
+CSV_FIELDS = ["ticker", "date", "status", "reason", "cik", "verdict_leg", "verdict_leg_note",
+              "eps_basis_end", "fcf_basis_end", "eps_reason", "fcf_reason",
               "growth_rate", "rev_cagr_3y", "rev_cagr_5y", "terminal_growth", "roe_median_5y",
               "future_pe_k9", "future_pe_source", "sensitivity_pe_k8", "sensitivity_pe_k10",
               "pe_hist_median", "pe_hist_median_note", "intrinsic_value",
               "implied_cagr_pct", "hurdle_gate", "buy_A_no_discount", "buy_B_10pct_discount",
               "split_factor_eps", "split_factor_fcf", "shadow_dcf_iv", "shadow_dcf_delta",
               "shadow_dcf_delta_pct"]
+
+# Compound fields deliberately excluded from CSV_FIELDS verbatim: each is flattened into other
+# named CSV_FIELDS columns by write_csv() below and read directly (unflattened) by write_report().
+# This is the ONLY escape hatch TestEveryRowKeyIsPublished (tests/test_historical_run.py) allows --
+# issue #28 audit round 3, item 3: any score_pair() key that ends up neither directly in
+# CSV_FIELDS nor listed here fails that test by construction, closing the class of bug audit
+# rounds 1-2 each found one field at a time (pe_hist_median_note, then eps_reason/fcf_reason).
+CSV_COMPOUND_FIELDS = {"sensitivity", "shadow_dcf"}
 
 
 def write_csv(rows, path):
@@ -565,11 +586,12 @@ def write_report(rows, path):
     lines.append("## Посчитанные пары")
     lines.append("")
     if scored:
-        lines.append("| Тикер | Дата | Leg | g | terminal_g | future_pe(8%) | future_pe(9%) | "
+        lines.append("| Тикер | Дата | Leg | Leg note | EPS basis FY | FCF basis FY | g | "
+                     "terminal_g | future_pe(8%) | future_pe(9%) | "
                      "future_pe(10%) | IV | implied_CAGR% | A | Б | Shadow IV (EXPLORATORY) | "
                      "Δ vs official | PE-hist медиана (примечание) | "
                      "Причина недоступности второй ноги |")
-        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for r in scored:
             sd = r.get("shadow_dcf") or {}
             sens = r.get("sensitivity") or {}
@@ -582,8 +604,13 @@ def write_report(rows, path):
             # populated only for single_leg rows -- the one leg that's None on a dual_basis row
             # carries no reason, so this is "-" there by construction (item 2).
             leg_reason_cell = (r.get("eps_reason") or r.get("fcf_reason") or "-").replace("|", "/")
-            lines.append("| %s | %s | %s | %.4f | %.4f | %s | %.2f | %s | %.2f | %.2f | %s | %s | %s | %s | %s | %s |" % (
-                r["ticker"], r["date"], r["verdict_leg"], r["growth_rate"], r["terminal_growth"],
+            # issue #28 audit round 3, item 2: verdict_leg_note/eps_basis_end/fcf_basis_end were
+            # already computed and published in the CSV but never reached this table.
+            eps_end_cell = r.get("eps_basis_end") or "n/a"
+            fcf_end_cell = r.get("fcf_basis_end") or "n/a"
+            lines.append("| %s | %s | %s | %s | %s | %s | %.4f | %.4f | %s | %.2f | %s | %.2f | %.2f | %s | %s | %s | %s | %s | %s |" % (
+                r["ticker"], r["date"], r["verdict_leg"], r["verdict_leg_note"],
+                eps_end_cell, fcf_end_cell, r["growth_rate"], r["terminal_growth"],
                 ("%.2f" % sens_k8) if sens_k8 is not None else "n/a",
                 r["future_pe_k9"],
                 ("%.2f" % sens_k10) if sens_k10 is not None else "n/a",

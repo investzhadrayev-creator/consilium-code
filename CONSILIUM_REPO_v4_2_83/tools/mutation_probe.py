@@ -783,6 +783,14 @@ CASES = [
      "    if pe_hist_median is not None and pe_hist_median > multiple:",
      "test_historical_run.TestTerminalMultiple.test_historical_median_wins_when_below_the_formula_ceiling",
      "PREREG §8: the historical median only overrides the formula ceiling when it is BELOW it, never above"),
+    # ---- issue #28 audit round 3 ----
+    ("histrun-conservative-flip-01", "tools/historical_run.py",
+     '        conservative = ("gaap_eps" if usable["gaap_eps"]["implied_cagr_pct"] <=\n'
+     '                        usable["fcf_per_share"]["implied_cagr_pct"] else "fcf_per_share")',
+     '        conservative = ("gaap_eps" if usable["gaap_eps"]["implied_cagr_pct"] >=\n'
+     '                        usable["fcf_per_share"]["implied_cagr_pct"] else "fcf_per_share")',
+     "test_historical_run.TestConservativeLegSelectionPicksTheLowerCagr.test_fcf_leg_wins_when_it_is_the_more_conservative_one",
+     "the conservative leg is the one with the LOWER implied CAGR, never the higher one"),
 ]
 
 
