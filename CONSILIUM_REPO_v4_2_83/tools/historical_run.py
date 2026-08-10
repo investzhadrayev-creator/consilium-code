@@ -155,6 +155,19 @@ PROTOCOL_GAPS = [
     "разрыва, а не буквальная формула PREREG; остаточный слепой пробел -- неподтверждённый, "
     "нераскрытый сплит без заметного скачка в shares_current -- по-прежнему проходит НЕзамеченным "
     "и не именуется этой проверкой.",
+    "issue #36, хвост аудита PR #38: shares_current в архиве не всегда фигура с обложки формы. "
+    "edgar_facts._shares_current при недоступности обложки (ни companyfacts, ни companyconcept "
+    "dei) деградирует до ПРОКСИ -- последнего годового shares_diluted (только 10-K), и помечает "
+    "это флагом gt['_flags']['shares_current_proxied']. В этом режиме улика сама годовая -- "
+    "настолько же слепа к сплиту ВНУТРИ разрыва [basis_end, date_iso], как и сама eps/fcf-серия, "
+    "которую она должна проверять. basis_gap_reason() теперь считает проверку НЕПРИМЕНИМОЙ при "
+    "этом флаге и отказывает по имени независимо от коэффициента shares_current/shares_diluted -- "
+    "'коэффициент не совпал' и 'улика деградировала и не видит разрыва' это разные утверждения, "
+    "и молчаливая SCORED-подстановка второго под первое была бы тем же классом дефекта, что и "
+    "исходный issue. Остаточный пробел: если обложка ЕСТЬ, но сама не покрывает интервал (сплит "
+    "случился и был отражён на обложке ДО очередной 10-Q, покрывающей разрыв, либо вовсе не было "
+    "10-Q между basis_end и date_iso), проверка полагается на то, что хоть одна форма с обложкой "
+    "была подана внутри разрыва -- это не гарантировано архивом и не проверяется отдельно.",
 ]
 
 
@@ -344,9 +357,29 @@ def basis_gap_reason(gt, basis_end, date_iso, shares_at_basis_end, leg_label):
     entirely inside [date_iso, today], the window the archived split_factor already covers, and
     must stay SCORED with unchanged numbers). This asymmetry — refuse only on POSITIVE evidence,
     never on mere absence of proof — and its residual blind spot for an unconfirmed, undisclosed
-    split are both named in PROTOCOL_GAPS, not hidden."""
+    split are both named in PROTOCOL_GAPS, not hidden.
+
+    Audit tail on #38: `shares_current` itself is not always the dei cover-page figure this
+    check relies on. edgar_facts._shares_current falls back to proxying it off the LATEST annual
+    shares_diluted (10-K only) when the cover page is unavailable, and flags that degradation as
+    gt['_flags']['shares_current_proxied']. In that mode the "evidence" is itself an ANNUAL
+    figure — exactly as blind to a sub-annual split as the eps/fcf series already are — so
+    'no clean-factor jump' stops meaning 'no split happened' and starts meaning 'the one witness
+    that could have seen it was never asked'. Absence of proof from a degraded witness is not the
+    same absence of proof the NFLX default above is built to tolerate: refuse by name instead of
+    silently defaulting to SCORED."""
     if basis_end is None or basis_end == date_iso:
         return None
+    proxied = (gt.get("_flags") or {}).get("shares_current_proxied")
+    if proxied:
+        return ("%s leg basis gap: shares_current is degraded (%s) -- proxied to the latest "
+                "annual shares_diluted rather than read from a filing's cover page, so it is "
+                "blind to a split between the basis FY end %s and the observation date %s the "
+                "same way the annual eps/fcf series already is; the one archive signal this "
+                "check relies on to see inside that gap is itself unavailable, so the interval "
+                "cannot be confirmed clean -- refusing rather than reporting 'no gap' from a "
+                "degraded witness (see PROTOCOL_GAPS, issue #36 audit tail)"
+                % (leg_label, proxied, basis_end, date_iso))
     shares_current = gt.get("shares_current")
     if (not isinstance(shares_current, (int, float)) or not isinstance(shares_at_basis_end, (int, float))
             or shares_current <= 0 or shares_at_basis_end <= 0):

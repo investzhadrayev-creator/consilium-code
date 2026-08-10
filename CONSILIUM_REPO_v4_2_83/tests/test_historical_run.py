@@ -83,15 +83,17 @@ def series(pairs):
 
 def gt(ticker="GOLD", cik=1234567, cik_field="_cik", revenue=None, net_income=None,
       shares_diluted=None, ocf=None, capex=None, roe_median_5y=None, errors=None,
-      shares_current=None, as_of="2020-03-23"):
+      shares_current=None, as_of="2020-03-23", flags=None):
     """Build a synthetic *_edgar.json record in the REAL archive shape (issue #30): this IS
     edgar_facts.edgar_facts()'s own output shape, not raw SEC companyfacts -- see
     tools/historical_run.py's ФОРМАТ АРХИВА. `cik_field` defaults to the real archive's own
     "_cik"; pass "cik" to exercise the legacy-fixture fallback historical_run.py also accepts.
     `shares_current` (issue #36): edgar_facts._shares_current's own bare-number field, absent
-    (None) by default so every pre-existing fixture is unaffected by basis_gap_reason()."""
+    (None) by default so every pre-existing fixture is unaffected by basis_gap_reason().
+    `flags` (issue #36 audit tail on PR #38): merged into `_flags`, e.g.
+    {"shares_current_proxied": "..."} to reproduce edgar_facts.py's degraded-witness mode."""
     out = {"_source": "sec_edgar", "_ticker": ticker, "_entity_name": ticker, "_as_of": as_of,
-          "_missing": [], "_flags": {}, "_errors": errors or {},
+          "_missing": [], "_flags": dict(flags or {}), "_errors": errors or {},
           "revenue": revenue or [], "net_income": net_income or [],
           "shares_diluted": shares_diluted or [], "ocf": ocf or [], "capex": capex or [],
           "roe_median_5y": roe_median_5y, "shares_current": shares_current}
@@ -256,6 +258,30 @@ def _nflx_safe_price():
     """Archived split_factor=10.0 -- issue #36's own quoted real number for NFLX: close=400.0
     (as-traded that day, pre-split basis) vs adjClose=40.0 (rebased to post-split "today")."""
     return price_pkg("NFLX", "2022-10-12", adj_close=40.0, close=400.0, split_factor=10.0)
+
+
+def _amzn_proxied_gt():
+    """AMZN_20221012, issue #36 audit tail on PR #38: shares_current is a PROXY (edgar_facts.py
+    falls back to the latest annual shares_diluted when no filing's dei cover page is available,
+    flagging gt['_flags']['shares_current_proxied']) -- an annual figure exactly as blind to a
+    sub-annual split as the eps/fcf series it is meant to check. shares_current is deliberately
+    set EQUAL to shares_diluted(2021-12-31) (ratio 1.0x, no clean-factor jump) so this fixture
+    proves the refusal comes from the degraded-witness flag itself, not from the ratio check --
+    before the audit-tail fix, this exact input silently scored (ratio 1.0 looks like 'no split',
+    which is precisely the false negative the flag exists to catch)."""
+    return gt("AMZN", cik=1018724, as_of="2022-10-12",
+             revenue=_REV36,
+             net_income=series([("2021-12-31", 200.0)]),
+             shares_diluted=series([("2021-12-31", 100.0)]),
+             ocf=series([("2021-12-31", 300.0)]),
+             capex=series([("2021-12-31", 50.0)]),
+             roe_median_5y=0.20, shares_current=100.0,
+             flags={"shares_current_proxied": "cover-page count unavailable; proxied to latest "
+                    "weighted-avg diluted shares (2021-12-31)"})
+
+
+def _amzn_proxied_price():
+    return price_pkg("AMZN", "2022-10-12", adj_close=40.0, close=40.0, split_factor=1.0)
 
 
 class TestGoldenCase1CleanNoSplitNoBuy(unittest.TestCase):
@@ -837,6 +863,28 @@ class TestSplitAfterObservationDateNflxStaysScoredUnchanged(unittest.TestCase):
         self.assertEqual(out["hurdle_gate"], "FAIL")
         self.assertFalse(out["buy_A_no_discount"])
         self.assertFalse(out["buy_B_10pct_discount"])
+
+
+class TestBasisGapProxiedSharesCurrentRefusesAsDegradedWitness(unittest.TestCase):
+    """Issue #36 audit tail on PR #38: basis_gap_reason() used to trust shares_current
+    unconditionally, but edgar_facts.py proxies it to the latest ANNUAL shares_diluted (flagging
+    gt['_flags']['shares_current_proxied']) when no filing's dei cover page is available -- in
+    that mode the witness is exactly as blind to a sub-annual split as the annual eps/fcf series
+    it exists to check, so 'ratio == 1.0, no clean jump' means 'cannot tell', not 'no split'. The
+    fixture sets shares_current == shares_diluted(basis_end) (ratio 1.0x) specifically so this
+    pin cannot pass by accident via the ordinary ratio path -- only the flag check can refuse it."""
+
+    def test_amzn_proxied_refuses_naming_both_dates_and_the_degraded_witness(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_proxied_gt(), _amzn_proxied_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("2021-12-31", out["reason"])
+        self.assertIn("2022-10-12", out["reason"])
+        self.assertIn("proxied", out["reason"])
+
+    def test_amzn_proxied_never_reports_a_number(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_proxied_gt(), _amzn_proxied_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertNotIn("intrinsic_value", out)
 
 
 class TestPriceRecordMissingDateFieldRefusesNamed(unittest.TestCase):
