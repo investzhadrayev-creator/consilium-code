@@ -897,6 +897,38 @@ CASES = [
      "widening past the real archive's closest non-split (PLTR_20211231, 1.6571% away -- ordinary "
      "RSU dilution, no split) must start refusing ordinary pairs by name, the failure mode the "
      "NFLX_20221012 default (issue #36) and this tolerance's own upper bound both exist to avoid"),
+    # ---- issue #39 audit round 3, item 2: basis_staleness_reason() must run BEFORE
+    # basis_gap_reason() on each leg -- a basis year too old to trust (NVDA's fcf leg, stuck on
+    # FY2012 by a capex tag change) is untrustworthy on its own, independent of whether
+    # shares_current happens to show a clean split factor. Real case: NVDA_20200323's fcf leg
+    # shows NO clean split signature at all (ratio 0.9929x vs the nearest factor -- NVDA had not
+    # split as of that date) so basis_gap_reason() alone lets it straight through; only the
+    # staleness gate catches it. ----
+    ("histrun-stale-fcf-disabled-01", "tools/historical_run.py",
+     '        stale = basis_staleness_reason(fcf_end, date_iso, "fcf")',
+     "        stale = None",
+     "test_historical_run.TestRealArchiveFixtureNVDA.test_nvda_20200323_reaches_scored_with_numbers",
+     "disabling the fcf leg's staleness check lets NVDA_20200323's fcf leg (basis FY end "
+     "2012-01-29, 2976 days / 8.1 years stale, no clean split signature at this date so "
+     "basis_gap_reason() alone never catches it) reach basis_adjust() and flip the pair back to "
+     "dual_basis_conservative on a decade-old FCF basis, the exact silent reuse this gate exists "
+     "to refuse by name instead"),
+    ("histrun-stale-threshold-too-wide-01", "tools/historical_run.py",
+     "_STALE_BASIS_THRESHOLD_DAYS = 1095",
+     "_STALE_BASIS_THRESHOLD_DAYS = 3000",
+     "test_historical_run.TestRealArchiveFixtureNVDA.test_nvda_20200323_reaches_scored_with_numbers",
+     "widening past NVDA_20200323's real 2976-day fcf-leg gap must miss that case and let the "
+     "decade-stale FY2012 basis back into dual_basis_conservative, the same failure "
+     "histrun-stale-fcf-disabled-01 proves for a full disable"),
+    ("histrun-stale-threshold-too-narrow-01", "tools/historical_run.py",
+     "_STALE_BASIS_THRESHOLD_DAYS = 1095",
+     "_STALE_BASIS_THRESHOLD_DAYS = 100",
+     "test_historical_run.TestRealArchiveFixtureMSFTStaysScoredUnderNewTolerance.test_real_msft_20211231_stays_scored_with_no_gap_named",
+     "narrowing past an ordinary real gap (MSFT_20211231's basis FY end is 184 days before "
+     "date_iso -- an unremarkable single-fiscal-year-behind case, not an anomaly) must start "
+     "refusing ordinary pairs by name, the same false-positive failure mode "
+     "_SHARES_CURRENT_GAP_TOLERANCE's own upper bound exists to avoid for the split-signature "
+     "check"),
 ]
 
 

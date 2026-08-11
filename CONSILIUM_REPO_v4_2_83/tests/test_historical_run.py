@@ -910,6 +910,36 @@ class TestPriceRecordMissingDateFieldRefusesNamed(unittest.TestCase):
         self.assertIn("no usable 'date' field", out["reason"])
 
 
+class TestBasisStalenessReasonBoundary(unittest.TestCase):
+    """issue #39 audit round 3, item 2: unit-level pin on basis_staleness_reason()'s own boundary
+    -- exactly AT the threshold must still pass (it is a real, if wide, single-FY-behind case
+    class, not an anomaly), one day past it must refuse. Complements the real-archive pins
+    (TestBasisGapNvdaRealSplitFires, TestRealArchiveFixtureMSFTStaysScoredUnderNewTolerance)
+    which exercise it against actual archive gaps, not synthetic day counts."""
+
+    def test_none_basis_end_is_not_a_gap(self):
+        self.assertIsNone(hr.basis_staleness_reason(None, "2021-12-31", "eps"))
+
+    def test_basis_end_equal_to_date_iso_is_not_a_gap(self):
+        self.assertIsNone(hr.basis_staleness_reason("2021-12-31", "2021-12-31", "eps"))
+
+    def test_exactly_at_threshold_does_not_fire(self):
+        basis_end = "2018-12-28"   # exactly 1095 days before 2021-12-27
+        self.assertEqual(hr._days_between(basis_end, "2021-12-27"), hr._STALE_BASIS_THRESHOLD_DAYS)
+        self.assertIsNone(hr.basis_staleness_reason(basis_end, "2021-12-27", "eps"))
+
+    def test_one_day_past_threshold_fires_naming_both_dates(self):
+        basis_end = "2018-12-27"   # 1096 days before 2021-12-27
+        self.assertEqual(hr._days_between(basis_end, "2021-12-27"), hr._STALE_BASIS_THRESHOLD_DAYS + 1)
+        reason = hr.basis_staleness_reason(basis_end, "2021-12-27", "eps")
+        self.assertIsNotNone(reason)
+        self.assertIn("eps leg basis gap", reason)
+        self.assertIn(basis_end, reason)
+        self.assertIn("2021-12-27", reason)
+        self.assertIn("1096 days", reason)
+        self.assertIn("staleness threshold", reason)
+
+
 class TestRealArchiveFixtureNVDA(unittest.TestCase):
     """issue #30's own acceptance mandate: a test on a REAL archive record, driven all the way to
     status=SCORED with concrete numbers -- not a synthetic fixture that merely LOOKS like the
@@ -921,7 +951,16 @@ class TestRealArchiveFixtureNVDA(unittest.TestCase):
     4:1 and 10:1 splits since 2020-03-23, compounding to split_factor=40.0 -- is not arithmetic
     anyone should hand-check; the point of this pin is that the REAL archive reaches SCORED at
     all, matching PREREG's own machinery, not that these specific digits are independently
-    re-derived)."""
+    re-derived).
+
+    issue #39 audit round 3, item 2: this pair's fcf leg is the same NVDA capex-tag-break case
+    named in _SHARES_CURRENT_GAP_TOLERANCE's and _STALE_BASIS_THRESHOLD_DAYS's own comments --
+    basis FY end 2012-01-29, 2976 days (8.1 years) before date_iso 2020-03-23. Since
+    basis_staleness_reason() landed, that leg now refuses BEFORE reaching the fcf_af != None
+    dual-basis path, so the pair still reaches SCORED but on the eps leg alone (single_leg),
+    not dual_basis_conservative on the fcf leg as before -- verdict_leg, verdict_leg_note,
+    split_factor_fcf, intrinsic_value, implied_cagr_pct and fcf_reason all changed. Read from
+    the tool's own output against this fixture after that change, not carried over from before it."""
 
     @classmethod
     def setUpClass(cls):
@@ -943,21 +982,28 @@ class TestRealArchiveFixtureNVDA(unittest.TestCase):
         out = hr.score_pair("NVDA", "2020-03-23", self.edgar, self.price)
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["cik"], "0001045810")
-        self.assertEqual(out["verdict_leg"], "fcf_per_share")
-        self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
+        # issue #39 audit round 3: the fcf leg now refuses for a stale (FY2012) basis before it
+        # can be considered, so the pair scores single_leg on gaap_eps -- see fcf_reason below.
+        self.assertEqual(out["verdict_leg"], "gaap_eps")
+        self.assertEqual(out["verdict_leg_note"], "single_leg")
         self.assertAlmostEqual(out["growth_rate"], 0.16472039648286363, places=6)
         self.assertAlmostEqual(out["terminal_growth"], 0.04, places=6)
         self.assertAlmostEqual(out["roe_median_5y"], 0.28913571676501215, places=6)
         self.assertAlmostEqual(out["future_pe_k9"], 17.23313325330132, places=4)
         self.assertEqual(out["future_pe_source"], "formula_no_median_available")
         self.assertEqual(out["split_factor_eps"], 40.0)
-        self.assertEqual(out["split_factor_fcf"], 40.0)
-        self.assertAlmostEqual(out["intrinsic_value"], 0.57, places=2)
-        self.assertAlmostEqual(out["implied_cagr_pct"], -10.37, places=2)
+        self.assertIsNone(out["split_factor_fcf"])   # fcf leg never reached basis_adjust()
+        self.assertAlmostEqual(out["intrinsic_value"], 2.06, places=2)
+        self.assertAlmostEqual(out["implied_cagr_pct"], 1.93, places=2)
         self.assertEqual(out["hurdle_gate"], "FAIL")
         self.assertFalse(out["buy_A_no_discount"])
         self.assertFalse(out["buy_B_10pct_discount"])
         self.assertIsNone(out["pe_hist_median"])   # not present in this record -- see PROTOCOL_GAPS
+        self.assertIsNone(out["eps_reason"])
+        self.assertIn("fcf leg basis gap", out["fcf_reason"])
+        self.assertIn("2012-01-29", out["fcf_reason"])
+        self.assertIn("2976 days", out["fcf_reason"])
+        self.assertIn("staleness threshold", out["fcf_reason"])
 
     def test_nvda_reaches_csv_and_report_without_raising(self):
         out = hr.score_pair("NVDA", "2020-03-23", self.edgar, self.price)
@@ -1032,7 +1078,12 @@ class TestRealArchiveFixtureMSFTStaysScoredUnderNewTolerance(unittest.TestCase):
     NVDA_20200323 или MSFT_20211231'), copied byte-for-byte from the real archive. Its ratio
     (shares_current/shares_diluted(2021-06-30)) is nowhere near any clean split factor (0.9869x --
     ordinary buybacks, not a split); this guards against the widened tolerance starting to refuse
-    ordinary pairs wholesale."""
+    ordinary pairs wholesale.
+
+    issue #39 audit round 3, item 2: also the negative pin for basis_staleness_reason() -- basis
+    FY end 2021-06-30 is 184 days before date_iso 2021-12-31, comfortably inside
+    _STALE_BASIS_THRESHOLD_DAYS, so the new gate must not fire here either; a fresh basis must
+    reach SCORED exactly as it did before that gate existed."""
 
     @classmethod
     def setUpClass(cls):
@@ -1047,6 +1098,12 @@ class TestRealArchiveFixtureMSFTStaysScoredUnderNewTolerance(unittest.TestCase):
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertIsNone(out["eps_reason"])
         self.assertIsNone(out["fcf_reason"])
+
+    def test_real_msft_20211231_basis_is_not_stale(self):
+        self.assertEqual(hr._days_between("2021-06-30", "2021-12-31"), 184)
+        self.assertLess(184, hr._STALE_BASIS_THRESHOLD_DAYS)
+        self.assertIsNone(hr.basis_staleness_reason("2021-06-30", "2021-12-31", "eps"))
+        self.assertIsNone(hr.basis_staleness_reason("2021-06-30", "2021-12-31", "fcf"))
 
     def test_real_msft_20211231_numbers_match_the_tools_own_output(self):
         out = hr.score_pair("MSFT", "2021-12-31", self.edgar, self.price)
@@ -1113,11 +1170,19 @@ class TestBasisGapNvdaRealSplitFires(unittest.TestCase):
     real-split reference points besides AMZN -- but until this pin neither was backed by a
     fixture, so the comment's own numbers were unverifiable from the test suite. NVDA_20211231
     (basis FY end 2021-01-31 for the eps leg, confirmed 4:1 split effective 5th of July 2021)
-    is a real split landing inside the observation gap on BOTH legs: eps ratio 3.9809x vs a clean
-    4x (0.4777% away -- the closest any real split in the archive comes to its factor), fcf ratio
-    4.0560x vs a clean 4x (1.4000% away -- the WORST real split in the archive, the number
-    1.5% - 1.4000% = 0.1000pp of headroom in that comment is measured against). Copied byte-for-
-    byte from Reports/histrun_2026-08-08/histrun_raw_v3.zip, like NVDA_20200323 (issue #30)."""
+    is a real split landing inside the observation gap on the eps leg: ratio 3.9809x vs a clean
+    4x (0.4777% away -- the closest any real split in the archive comes to its factor). Copied
+    byte-for-byte from Reports/histrun_2026-08-08/histrun_raw_v3.zip, like NVDA_20200323
+    (issue #30).
+
+    issue #39 audit round 3: the fcf leg's own ratio (4.0560x vs a clean 4x, 1.4000% away) is
+    STILL real arithmetic and STILL what basis_gap_reason() fires on when called directly (see
+    test_basis_gap_reason_fires_on_both_legs below) -- but its basis_end is 2012-01-29, a decade
+    before date_iso (see _STALE_BASIS_THRESHOLD_DAYS's own comment for why that basis year is a
+    capex tag-change artifact, not a normal observation gap). score_pair() now refuses that leg
+    for staleness BEFORE the ratio check ever runs, so it is excluded from
+    _SHARES_CURRENT_GAP_TOLERANCE's own calibration argument (see that constant's comment) even
+    though the number itself remains true and testable in isolation."""
 
     @classmethod
     def setUpClass(cls):
@@ -1138,16 +1203,21 @@ class TestBasisGapNvdaRealSplitFires(unittest.TestCase):
         dev = abs(ratio - 4) / 4
         self.assertAlmostEqual(dev, 0.004777069867, places=6)
 
-    def test_fcf_leg_ratio_is_the_archives_worst_real_split(self):
+    def test_fcf_leg_ratio_is_a_clean_4x_but_on_a_decade_stale_basis(self):
         fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
         self.assertIsNotNone(fcf_af)
+        self.assertEqual(fcf_end, "2012-01-29")   # the capex tag-change artifact, not a real basis
         sh_fcf = hr._value_at(self.edgar["shares_diluted"], fcf_end)
         ratio = self.edgar["shares_current"] / sh_fcf
         self.assertAlmostEqual(ratio, 4.055998741017991, places=6)
         dev = abs(ratio - 4) / 4
         self.assertAlmostEqual(dev, 0.013999685254, places=6)
-        # the exact headroom claim fixed in _SHARES_CURRENT_GAP_TOLERANCE's own comment:
-        self.assertAlmostEqual(hr._SHARES_CURRENT_GAP_TOLERANCE - dev, 0.001000315, places=6)
+        # excluded from _SHARES_CURRENT_GAP_TOLERANCE's calibration (see that constant's comment)
+        # because the basis is a decade stale, not because the ratio itself is wrong -- it is
+        # still inside the OLD tolerance too, which is exactly why staleness needed its own gate
+        # rather than relying on the shares_current ratio to catch it.
+        self.assertLess(dev, hr._SHARES_CURRENT_GAP_TOLERANCE)
+        self.assertGreater(hr._days_between(fcf_end, "2021-12-31"), hr._STALE_BASIS_THRESHOLD_DAYS)
 
     def test_basis_gap_reason_fires_on_both_legs(self):
         eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
@@ -1161,12 +1231,18 @@ class TestBasisGapNvdaRealSplitFires(unittest.TestCase):
         self.assertIsNotNone(fcf_gap)
         self.assertIn("clean 4x split signature", fcf_gap)
 
-    def test_real_nvda_20211231_refuses_naming_the_split_on_both_legs(self):
+    def test_real_nvda_20211231_refuses_eps_by_split_and_fcf_by_staleness(self):
+        # issue #39 audit round 3: the two legs now refuse for TWO DIFFERENT reasons -- eps names
+        # the clean 4x split signature (basis_end 2021-01-31, not stale), fcf names the stale
+        # FY2012 basis (never reaches the split-signature ratio check at all).
         out = hr.score_pair("NVDA", "2021-12-31", self.edgar, self.price)
         self.assertEqual(out["status"], "REFUSED", out.get("reason"))
         self.assertIn("eps leg basis gap", out["reason"])
-        self.assertIn("fcf leg basis gap", out["reason"])
         self.assertIn("clean 4x split signature", out["reason"])
+        self.assertIn("fcf leg basis gap", out["reason"])
+        self.assertIn("2012-01-29", out["reason"])
+        self.assertIn("staleness threshold", out["reason"])
+        self.assertNotIn("fcf leg basis gap: shares_current", out["reason"])   # not the split path
 
 
 class TestBasisGapIsrgRealSplitFires(unittest.TestCase):
