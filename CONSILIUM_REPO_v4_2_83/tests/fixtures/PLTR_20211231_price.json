@@ -1,0 +1,24 @@
+{
+  "_errors": {
+    "pe_same_share_basis_PLTR": "no EPS supplied"
+  },
+  "date": "2021-12-31",
+  "pe_same_share_basis": null,
+  "price_record": {
+    "adjClose": 18.21,
+    "adjHigh": 18.92,
+    "adjLow": 18.21,
+    "adjOpen": 18.61,
+    "adjVolume": 23080457,
+    "close": 18.21,
+    "date": "2021-12-31T00:00:00.000Z",
+    "divCash": 0.0,
+    "high": 18.92,
+    "low": 18.21,
+    "open": 18.61,
+    "splitFactor": 1.0,
+    "volume": 23080457
+  },
+  "split_factor": 1.0,
+  "ticker": "PLTR"
+}

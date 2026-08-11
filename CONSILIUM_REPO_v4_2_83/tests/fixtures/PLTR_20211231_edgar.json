@@ -1,0 +1,507 @@
+{
+  "_as_of": "2021-12-31",
+  "_cik": "0001321655",
+  "_entity_name": "Palantir Technologies Inc.",
+  "_errors": {},
+  "_field_sources": {
+    "capex": [
+      "PaymentsToAcquirePropertyPlantAndEquipment"
+    ],
+    "cash": "CashAndCashEquivalentsAtCarryingValue",
+    "gross_profit": [
+      "GrossProfit"
+    ],
+    "net_income": [
+      "NetIncomeLoss"
+    ],
+    "ocf": [
+      "NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "operating_income": [
+      "OperatingIncomeLoss"
+    ],
+    "restricted_cash": "RestrictedCashNoncurrent",
+    "revenue": [
+      "RevenueFromContractWithCustomerExcludingAssessedTax"
+    ],
+    "rpo": "RevenueRemainingPerformanceObligation",
+    "sbc": [
+      "ShareBasedCompensation"
+    ],
+    "shares_current": "us-gaap:CommonStockSharesOutstanding (companyfacts)",
+    "shares_diluted": [
+      "WeightedAverageNumberOfDilutedSharesOutstanding"
+    ],
+    "short_term_investments": "MarketableSecuritiesCurrent",
+    "stockholders_equity": "StockholdersEquity",
+    "total_debt": "LongTermDebtNoncurrent + 0"
+  },
+  "_flags": {
+    "cash_note": "cash excludes restricted_cash; scenario_f treats restricted separately",
+    "confirmed_splits_none": "no retroactive share-count restatement found in companyfacts+companyconcept 10-K history; a clean ratio jump downstream is UNCONFIRMED, not proven dilution",
+    "debt_components_incomplete": "components sum built from noncurrent only — INCOMPLETE by construction, not comparable to a full LongTermDebt figure",
+    "dps_series_absent": "no CommonStockDividendsPerShare* facts in companyfacts; the filer may pay no dividend, or may tag it under a name not in DURATION_TAGS['dps']",
+    "roe_median_5y_refused": {
+      "roe_not_computable": "negative_equity",
+      "years": [
+        "2018-12-31",
+        "2019-12-31"
+      ]
+    },
+    "total_debt_computed": "LongTermDebtNoncurrent + 0",
+    "total_debt_partial": "no full LongTermDebt tag; assembled from one component only — may understate"
+  },
+  "_missing": [
+    "dividends_paid",
+    "dps"
+  ],
+  "_source": "sec_edgar",
+  "_ticker": "PLTR",
+  "capex": [
+    {
+      "end": "2018-12-31",
+      "val": 13004000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 13096000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 12236000
+    }
+  ],
+  "capex_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "PaymentsToAcquirePropertyPlantAndEquipment",
+      "unit": "USD",
+      "val": 13004000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "PaymentsToAcquirePropertyPlantAndEquipment",
+      "unit": "USD",
+      "val": 13096000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "PaymentsToAcquirePropertyPlantAndEquipment",
+      "unit": "USD",
+      "val": 12236000
+    }
+  ],
+  "cash": 2335068000,
+  "cash_audit": {
+    "accn": "0001193125-21-323920",
+    "end": "2021-09-30",
+    "filed": "2021-11-09",
+    "val": 2335068000
+  },
+  "current_portion_debt": null,
+  "current_portion_debt_audit": null,
+  "debt_components_tags": {
+    "components_complete": false,
+    "current_maturities": null,
+    "full_long_term_debt": null,
+    "noncurrent": "LongTermDebtNoncurrent"
+  },
+  "dividends_paid": null,
+  "dps": null,
+  "gross_profit": [
+    {
+      "end": "2018-12-31",
+      "val": 430008000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 500182000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 740126000
+    }
+  ],
+  "gross_profit_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 430008000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 500182000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 740126000
+    }
+  ],
+  "long_term_debt": 198185000,
+  "long_term_debt_audit": {
+    "accn": "0001193125-21-159222",
+    "end": "2021-03-31",
+    "filed": "2021-05-12",
+    "val": 198185000
+  },
+  "net_income": [
+    {
+      "end": "2018-12-31",
+      "val": -580027000
+    },
+    {
+      "end": "2019-12-31",
+      "val": -579646000
+    },
+    {
+      "end": "2020-12-31",
+      "val": -1166391000
+    }
+  ],
+  "net_income_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": -580027000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": -579646000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": -1166391000
+    }
+  ],
+  "ocf": [
+    {
+      "end": "2018-12-31",
+      "val": -39012000
+    },
+    {
+      "end": "2019-12-31",
+      "val": -165215000
+    },
+    {
+      "end": "2020-12-31",
+      "val": -296608000
+    }
+  ],
+  "ocf_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": -39012000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": -165215000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": -296608000
+    }
+  ],
+  "operating_income": [
+    {
+      "end": "2018-12-31",
+      "val": -623440000
+    },
+    {
+      "end": "2019-12-31",
+      "val": -576444000
+    },
+    {
+      "end": "2020-12-31",
+      "val": -1173679000
+    }
+  ],
+  "operating_income_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": -623440000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": -576444000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": -1173679000
+    }
+  ],
+  "restricted_cash": 46791000,
+  "restricted_cash_audit": {
+    "accn": "0001193125-21-323920",
+    "end": "2021-09-30",
+    "filed": "2021-11-09",
+    "val": 46791000
+  },
+  "revenue": [
+    {
+      "end": "2018-12-31",
+      "val": 595409000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 742555000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1092673000
+    }
+  ],
+  "revenue_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 595409000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 742555000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 1092673000
+    }
+  ],
+  "roe_basis": "net_income / year_end_equity",
+  "roe_median_5y": null,
+  "rpo": 873900000,
+  "rpo_audit": {
+    "accn": "0001193125-21-323920",
+    "end": "2021-09-30",
+    "filed": "2021-11-09",
+    "val": 873900000
+  },
+  "sbc": [
+    {
+      "end": "2018-12-31",
+      "val": 248503000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 241970000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1270702000
+    }
+  ],
+  "sbc_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 248503000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 241970000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 1270702000
+    }
+  ],
+  "shares_current": 1991118000,
+  "shares_current_audit": {
+    "accn": "0001193125-21-323920",
+    "end": "2021-09-30",
+    "filed": "2021-11-09",
+    "val": 1991118000
+  },
+  "shares_diluted": [
+    {
+      "end": "2018-12-31",
+      "val": 544014393
+    },
+    {
+      "end": "2019-12-31",
+      "val": 576958560
+    },
+    {
+      "end": "2020-12-31",
+      "val": 979330067
+    }
+  ],
+  "shares_diluted_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 544014393
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 576958560
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 979330067
+    }
+  ],
+  "short_term_investments": 148077000,
+  "short_term_investments_audit": {
+    "accn": "0001193125-21-323920",
+    "end": "2021-09-30",
+    "filed": "2021-11-09",
+    "val": 148077000
+  },
+  "stockholders_equity": [
+    {
+      "end": "2017-12-31",
+      "val": -1501562000
+    },
+    {
+      "end": "2018-12-31",
+      "val": -1751428000
+    },
+    {
+      "end": "2019-12-31",
+      "val": -1980642000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1522550000
+    }
+  ],
+  "stockholders_equity_audit": [
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2017-12-31",
+      "filed": "2021-02-26",
+      "tag": "StockholdersEquity",
+      "val": -1501562000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2018-12-31",
+      "filed": "2021-02-26",
+      "tag": "StockholdersEquity",
+      "val": -1751428000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2019-12-31",
+      "filed": "2021-02-26",
+      "tag": "StockholdersEquity",
+      "val": -1980642000
+    },
+    {
+      "accn": "0001193125-21-060650",
+      "end": "2020-12-31",
+      "filed": "2021-02-26",
+      "tag": "StockholdersEquity",
+      "val": 1522550000
+    }
+  ],
+  "total_debt": 198185000
+}

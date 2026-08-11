@@ -973,5 +973,139 @@ class TestRealArchiveFixtureNVDA(unittest.TestCase):
             self.assertEqual(csv_row["status"], "SCORED")
 
 
+class TestRealArchiveFixtureAMZNRefusesUnderNewTolerance(unittest.TestCase):
+    """issue #39's own acceptance mandate, item 3: a pin on the REAL archive AMZN_20221012 pair
+    (not the synthetic near-clone in _amzn_gap_gt() above), copied byte-for-byte from
+    Reports/histrun_2026-08-08/histrun_raw_v3.zip -- the exact real pair the issue reports:
+    shares_current=10187554818, shares_diluted(2021-12-31)=515000000, ratio 19.7817x against a
+    clean 20x split signature, 1.0917% away. The OLD 1% tolerance (edgar_facts.py's own, reused
+    verbatim here before this fix) missed this by 0.0917pp and let the pair through as SCORED
+    with intrinsic_value=1398.36, implied_cagr_pct=44.05 -- the issue's own '19.78x' / '44% CAGR'
+    false BUY. _SHARES_CURRENT_GAP_TOLERANCE (1.5%, see its own comment in historical_run.py for
+    the archive-wide justification) must catch it."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "AMZN_20221012_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "AMZN_20221012_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_fixture_reproduces_the_issues_own_numbers(self):
+        sh_basis = hr._value_at(self.edgar["shares_diluted"], "2021-12-31")
+        self.assertEqual(self.edgar.get("shares_current"), 10187554818)
+        self.assertEqual(sh_basis, 515000000)
+        ratio = self.edgar["shares_current"] / sh_basis
+        self.assertAlmostEqual(ratio, 19.781659840776697, places=6)
+        # the exact gap the old 1% tolerance missed and the new 1.5% one catches:
+        self.assertGreater(abs(ratio - 20) / 20, 0.01)
+        self.assertLessEqual(abs(ratio - 20) / 20, hr._SHARES_CURRENT_GAP_TOLERANCE)
+
+    def test_real_amzn_20221012_refuses_naming_both_dates(self):
+        out = hr.score_pair("AMZN", "2022-10-12", self.edgar, self.price)
+        self.assertEqual(out["status"], "REFUSED", out.get("reason"))
+        self.assertIn("2021-12-31", out["reason"])
+        self.assertIn("2022-10-12", out["reason"])
+        self.assertIn("split", out["reason"])
+
+    def test_real_amzn_20221012_never_reports_the_false_buy_number(self):
+        out = hr.score_pair("AMZN", "2022-10-12", self.edgar, self.price)
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertNotIn("intrinsic_value", out)
+
+    def test_pre_fix_1pct_tolerance_would_have_silently_scored_this_pair(self):
+        """Documents the defect this pin exists to catch: at the OLD tolerance (0.01, reverted
+        here on a local copy of the function's own math, not by mutating the module) the ratio
+        check would not have fired at all, and the pair would have reached SCORED with the
+        issue's own false-BUY numbers -- see TestRealArchiveFixtureAMZNRefusesUnderNewTolerance
+        below for the actual reproduction on the live module state."""
+        ratio = self.edgar["shares_current"] / hr._value_at(self.edgar["shares_diluted"], "2021-12-31")
+        factor = next((c for c in hr._CLEAN_SPLIT_FACTORS if abs(ratio - c) / c <= 0.01), None)
+        self.assertIsNone(factor, "old 1%% tolerance already misses this ratio (%.4f%% away)" %
+                          (abs(ratio - 20) / 20 * 100))
+
+
+class TestRealArchiveFixtureMSFTStaysScoredUnderNewTolerance(unittest.TestCase):
+    """issue #39 mandate, item 4: a negative-control pin on a REAL archive pair with no split in
+    the gap -- MSFT_20211231, one of the two examples the issue names explicitly ('например
+    NVDA_20200323 или MSFT_20211231'), copied byte-for-byte from the real archive. Its ratio
+    (shares_current/shares_diluted(2021-06-30)) is nowhere near any clean split factor (0.9869x --
+    ordinary buybacks, not a split); this guards against the widened tolerance starting to refuse
+    ordinary pairs wholesale."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "MSFT_20211231_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "MSFT_20211231_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_real_msft_20211231_stays_scored_with_no_gap_named(self):
+        out = hr.score_pair("MSFT", "2021-12-31", self.edgar, self.price)
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertIsNone(out["eps_reason"])
+        self.assertIsNone(out["fcf_reason"])
+
+    def test_real_msft_20211231_numbers_match_the_tools_own_output(self):
+        out = hr.score_pair("MSFT", "2021-12-31", self.edgar, self.price)
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["eps_basis_end"], "2021-06-30")
+        self.assertEqual(out["split_factor_eps"], 1.0)
+        self.assertAlmostEqual(out["intrinsic_value"], 112.71, places=2)
+        self.assertAlmostEqual(out["implied_cagr_pct"], 0.78, places=2)
+
+
+class TestBasisGapPltrRealDilutionNeverReadsAsASplit(unittest.TestCase):
+    """issue #39: PLTR_20211231 is the CLOSEST any non-split pair comes to a clean split factor
+    anywhere in the real 175-pair archive -- ratio 2.0331x vs a clean 2x, 1.6571% away (heavy
+    RSU-driven dilution in PLTR's first full year after its September-2020 direct listing, not a
+    split; see gt['_flags'] in the fixture -- no confirmed_splits, no restatement). This is the
+    tightest real boundary case _SHARES_CURRENT_GAP_TOLERANCE (1.5%) has to clear on the safe
+    side: basis_gap_reason() must NOT read this ratio as a split signature.
+
+    PLTR's overall row still REFUSES in this archive -- for the unrelated, pre-existing reason
+    that roe_median_5y is unavailable (gt['_flags']['roe_median_5y_refused']: negative equity in
+    2018/2019) -- so this pin exercises basis_gap_reason() and eps_reason/fcf_reason directly on
+    the real numbers, rather than asserting an overall SCORED status the real data does not
+    support. Asserting 'SCORED' here would be exactly the kind of invented number rule 6 forbids."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "PLTR_20211231_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "PLTR_20211231_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_ratio_is_the_closest_real_non_split_to_a_clean_factor(self):
+        sh_basis = hr._value_at(self.edgar["shares_diluted"], "2020-12-31")
+        self.assertEqual(self.edgar.get("shares_current"), 1991118000)
+        self.assertEqual(sh_basis, 979330067)
+        ratio = self.edgar["shares_current"] / sh_basis
+        self.assertAlmostEqual(ratio, 2.0331429281033193, places=6)
+        dev = abs(ratio - 2) / 2
+        self.assertAlmostEqual(dev, 0.016571464051659657, places=6)
+        self.assertGreater(dev, hr._SHARES_CURRENT_GAP_TOLERANCE)   # outside the window -> no gap
+
+    def test_basis_gap_reason_does_not_fire_on_either_leg(self):
+        eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
+        fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
+        self.assertIsNotNone(eps_af)
+        self.assertIsNotNone(fcf_af)
+        sh_eps = hr._value_at(self.edgar["shares_diluted"], eps_end)
+        sh_fcf = hr._value_at(self.edgar["shares_diluted"], fcf_end)
+        self.assertIsNone(hr.basis_gap_reason(self.edgar, eps_end, "2021-12-31", sh_eps, "eps"))
+        self.assertIsNone(hr.basis_gap_reason(self.edgar, fcf_end, "2021-12-31", sh_fcf, "fcf"))
+
+    def test_real_pltr_20211231_refuses_for_roe_not_for_a_basis_gap(self):
+        out = hr.score_pair("PLTR", "2021-12-31", self.edgar, self.price)
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("roe_median_5y", out["reason"])
+        self.assertNotIn("split", out["reason"])
+        self.assertNotIn("basis gap", out["reason"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

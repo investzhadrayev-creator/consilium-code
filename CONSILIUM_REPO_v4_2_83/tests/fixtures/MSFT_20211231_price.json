@@ -1,0 +1,24 @@
+{
+  "_errors": {
+    "pe_same_share_basis_MSFT": "no EPS supplied"
+  },
+  "date": "2021-12-31",
+  "pe_same_share_basis": null,
+  "price_record": {
+    "adjClose": 323.9483692313,
+    "adjHigh": 326.8717258578,
+    "adjLow": 323.4956583204,
+    "adjOpen": 326.0578094329,
+    "adjVolume": 17772880,
+    "close": 336.32,
+    "date": "2021-12-31T00:00:00.000Z",
+    "divCash": 0.0,
+    "high": 339.355,
+    "low": 335.85,
+    "open": 338.51,
+    "splitFactor": 1.0,
+    "volume": 17772880
+  },
+  "split_factor": 1.0,
+  "ticker": "MSFT"
+}

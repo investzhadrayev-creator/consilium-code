@@ -859,6 +859,27 @@ CASES = [
      "test_historical_run.TestBasisGapProxiedSharesCurrentRefusesAsDegradedWitness.test_amzn_proxied_refuses_naming_both_dates_and_the_degraded_witness",
      "a proxied (annual, cover-page-unavailable) shares_current is treated as a degraded witness "
      "and refuses by name, never trusted as if it were the real dei cover-page figure"),
+    # ---- issue #39: edgar_facts.py's 1% is calibrated on a HOMOGENEOUS same-tag restatement
+    # ratio; the shares_current/shares_diluted(basis_end) ratio here is HETEROGENEOUS (instant vs
+    # weighted-average) and misses real splits at that tolerance -- the real AMZN_20221012 archive
+    # pair (19.7817x vs clean 20x, 1.0917% away) is the case of record. Measured on all 175 real
+    # archive pairs: the worst real split is 1.4000% away from its factor, the closest real
+    # non-split is PLTR_20211231 at 1.6571% away -- both boundaries of that gap get their own
+    # mutation, proving 1.5% is neither too narrow nor too wide, not merely "a number that passes
+    # today's fixtures". ----
+    ("histrun-tolerance-too-narrow-01", "tools/historical_run.py",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.015",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.01",
+     "test_historical_run.TestRealArchiveFixtureAMZNRefusesUnderNewTolerance.test_real_amzn_20221012_refuses_naming_both_dates",
+     "reverting to edgar_facts.py's homogeneous-pair 1% (the issue's own defect) must miss the "
+     "real AMZN_20221012 split (1.0917% away) and let the false BUY back through"),
+    ("histrun-tolerance-too-wide-01", "tools/historical_run.py",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.015",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.02",
+     "test_historical_run.TestBasisGapPltrRealDilutionNeverReadsAsASplit.test_basis_gap_reason_does_not_fire_on_either_leg",
+     "widening past the real archive's closest non-split (PLTR_20211231, 1.6571% away -- ordinary "
+     "RSU dilution, no split) must start refusing ordinary pairs by name, the failure mode the "
+     "NFLX_20221012 default (issue #36) and this tolerance's own upper bound both exist to avoid"),
 ]
 
 
