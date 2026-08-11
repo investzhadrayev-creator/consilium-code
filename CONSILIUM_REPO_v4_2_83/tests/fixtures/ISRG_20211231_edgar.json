@@ -1,0 +1,1813 @@
+{
+  "_as_of": "2021-12-31",
+  "_cik": "0001035267",
+  "_entity_name": "Intuitive Surgical, Inc.",
+  "_errors": {},
+  "_field_sources": {
+    "capex": [
+      "PaymentsToAcquireProductiveAssets"
+    ],
+    "cash": "CashAndCashEquivalentsAtCarryingValue",
+    "gross_profit": [
+      "GrossProfit"
+    ],
+    "net_income": [
+      "NetIncomeLoss"
+    ],
+    "ocf": [
+      "NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "operating_income": [
+      "OperatingIncomeLoss"
+    ],
+    "restricted_cash": "RestrictedCash",
+    "revenue": [
+      "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "SalesRevenueNet"
+    ],
+    "rpo": "RevenueRemainingPerformanceObligation",
+    "sbc": [
+      "ShareBasedCompensation"
+    ],
+    "shares_current": "dei:EntityCommonStockSharesOutstanding (companyfacts)",
+    "shares_diluted": [
+      "WeightedAverageNumberOfDilutedSharesOutstanding"
+    ],
+    "short_term_investments": "ShortTermInvestments",
+    "stockholders_equity": "StockholdersEquity"
+  },
+  "_flags": {
+    "cash_note": "cash excludes restricted_cash; scenario_f treats restricted separately",
+    "confirmed_splits": [
+      {
+        "earliest_filed": "2016-02-02",
+        "earliest_val": 37900000,
+        "end": "2015-12-31",
+        "factor": 3,
+        "latest_filed": "2018-02-02",
+        "latest_val": 113700000,
+        "tag": "WeightedAverageNumberOfDilutedSharesOutstanding"
+      },
+      {
+        "earliest_filed": "2017-02-06",
+        "earliest_val": 39300000,
+        "end": "2016-12-31",
+        "factor": 3,
+        "latest_filed": "2019-02-04",
+        "latest_val": 117900000,
+        "tag": "WeightedAverageNumberOfDilutedSharesOutstanding"
+      }
+    ],
+    "dps_series_absent": "no CommonStockDividendsPerShare* facts in companyfacts; the filer may pay no dividend, or may tag it under a name not in DURATION_TAGS['dps']",
+    "margin_step_business_event": [
+      {
+        "cosignal_changed": [
+          "accession"
+        ],
+        "end": "2014-12-31",
+        "in_cagr_window_3y": false,
+        "in_cagr_window_5y": false,
+        "jump_pct": 32.1,
+        "prev_end": "2013-12-31",
+        "prev_ratio": 0.3764,
+        "prev_tag": "SalesRevenueNet",
+        "provenance_changed": [],
+        "provenance_uncomparable": [],
+        "ratio": 0.2556,
+        "tag": "SalesRevenueNet"
+      }
+    ],
+    "series_tag_mixed": {
+      "revenue": {
+        "2007": "SalesRevenueNet",
+        "2008": "SalesRevenueNet",
+        "2009": "SalesRevenueNet",
+        "2010": "SalesRevenueNet",
+        "2011": "SalesRevenueNet",
+        "2012": "SalesRevenueNet",
+        "2013": "SalesRevenueNet",
+        "2014": "SalesRevenueNet",
+        "2015": "SalesRevenueNet",
+        "2016": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "2017": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "2018": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "2019": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "2020": "RevenueFromContractWithCustomerExcludingAssessedTax"
+      }
+    }
+  },
+  "_missing": [
+    "dividends_paid",
+    "dps",
+    "total_debt"
+  ],
+  "_source": "sec_edgar",
+  "_ticker": "ISRG",
+  "capex": [
+    {
+      "end": "2007-12-31",
+      "val": 24007000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 106000000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 53400000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 96000000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 82900000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 114200000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 104600000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 105600000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 81000000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 53900000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 190700000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 187400000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 425600000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 341500000
+    }
+  ],
+  "capex_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 24007000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 106000000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 53400000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 96000000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 82900000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 114200000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 104600000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 105600000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 81000000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 53900000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 190700000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 187400000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 425600000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "PaymentsToAcquireProductiveAssets",
+      "unit": "USD",
+      "val": 341500000
+    }
+  ],
+  "cash": 1346700000,
+  "cash_audit": {
+    "accn": "0001035267-21-000178",
+    "end": "2021-09-30",
+    "filed": "2021-10-20",
+    "val": 1346700000
+  },
+  "current_portion_debt": null,
+  "current_portion_debt_audit": null,
+  "debt_components_tags": {
+    "components_complete": false,
+    "current_maturities": null,
+    "full_long_term_debt": null,
+    "noncurrent": null
+  },
+  "dividends_paid": null,
+  "dps": null,
+  "gross_profit": [
+    {
+      "end": "2007-12-31",
+      "val": 414286000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 620800000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 751100000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 1030000000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 1273800000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 1570300000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 1594200000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 1413800000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 1577900000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 1892900000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 2202000000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 2604100000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 3110200000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 2861200000
+    }
+  ],
+  "gross_profit_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 414286000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 620800000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 751100000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1030000000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1273800000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1570300000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1594200000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1413800000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1577900000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 1892900000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 2202000000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 2604100000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 3110200000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "GrossProfit",
+      "unit": "USD",
+      "val": 2861200000
+    }
+  ],
+  "long_term_debt": null,
+  "long_term_debt_audit": null,
+  "net_income": [
+    {
+      "end": "2007-12-31",
+      "val": 144537000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 204300000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 232600000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 381800000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 495100000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 656600000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 671000000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 418800000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 588800000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 738300000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 670900000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 1127900000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 1379300000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1060600000
+    }
+  ],
+  "net_income_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 144537000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 204300000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 232600000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 381800000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 495100000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 656600000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 671000000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 418800000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 588800000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 738300000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 670900000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 1127900000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 1379300000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetIncomeLoss",
+      "unit": "USD",
+      "val": 1060600000
+    }
+  ],
+  "ocf": [
+    {
+      "end": "2007-12-31",
+      "val": 205687000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 278200000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 392200000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 545800000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 677600000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 814200000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 880000000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 665100000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 806200000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 1087000000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 1143900000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 1169600000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 1598200000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1484800000
+    }
+  ],
+  "ocf_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 205687000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 278200000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 392200000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 545800000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 677600000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 814200000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 880000000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 665100000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 806200000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 1087000000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 1143900000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 1169600000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 1598200000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "NetCashProvidedByUsedInOperatingActivities",
+      "unit": "USD",
+      "val": 1484800000
+    }
+  ],
+  "operating_income": [
+    {
+      "end": "2007-12-31",
+      "val": 206742000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 310800000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 377400000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 555200000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 694800000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 878100000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 852500000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 544800000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 740000000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 949700000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 1062900000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 1199400000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 1374500000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 1049800000
+    }
+  ],
+  "operating_income_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 206742000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 310800000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 377400000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 555200000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 694800000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 878100000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 852500000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 544800000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 740000000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 949700000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 1062900000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 1199400000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 1374500000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "OperatingIncomeLoss",
+      "unit": "USD",
+      "val": 1049800000
+    }
+  ],
+  "restricted_cash": 18000000,
+  "restricted_cash_audit": {
+    "accn": "0001035267-21-000028",
+    "end": "2020-12-31",
+    "filed": "2021-02-10",
+    "val": 18000000
+  },
+  "revenue": [
+    {
+      "end": "2007-12-31",
+      "val": 600828000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 874900000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 1052200000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 1413000000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 1757300000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 2178800000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 2265100000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 2131700000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 2384400000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 2706500000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 3138200000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 3724200000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 4478500000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 4358400000
+    }
+  ],
+  "revenue_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 600828000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 874900000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 1052200000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 1413000000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 1757300000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 2178800000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 2265100000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 2131700000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "SalesRevenueNet",
+      "unit": "USD",
+      "val": 2384400000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 2706500000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 3138200000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 3724200000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 4478500000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "unit": "USD",
+      "val": 4358400000
+    }
+  ],
+  "roe_basis": "net_income / year_end_equity",
+  "roe_median_5y": 0.1403908931112413,
+  "rpo": 1723000000,
+  "rpo_audit": {
+    "accn": "0001035267-21-000178",
+    "end": "2021-09-30",
+    "filed": "2021-10-20",
+    "val": 1723000000
+  },
+  "sbc": [
+    {
+      "end": "2007-12-31",
+      "val": 36292000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 76600000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 97000000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 117600000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 136400000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 153300000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 168900000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 168900000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 167900000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 177600000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 209100000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 261200000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 335800000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 395400000
+    }
+  ],
+  "sbc_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 36292000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 76600000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 97000000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 117600000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 136400000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 153300000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 168900000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 168900000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 167900000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 177600000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 209100000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 261200000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 335800000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "ShareBasedCompensation",
+      "unit": "USD",
+      "val": 395400000
+    }
+  ],
+  "shares_current": 357236861,
+  "shares_current_audit": {
+    "accn": "0001035267-21-000178",
+    "end": "2021-10-14",
+    "filed": "2021-10-20",
+    "val": 357236861
+  },
+  "shares_diluted": [
+    {
+      "end": "2007-12-31",
+      "val": 39021000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 39900000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 39200000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 40300000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 40200000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 41100000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 40100000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 37700000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 113700000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 117900000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 116300000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 118800000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 119500000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 120300000
+    }
+  ],
+  "shares_diluted_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2007-12-31",
+      "filed": "2010-01-29",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 39021000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2008-12-31",
+      "filed": "2011-02-01",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 39900000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2009-12-31",
+      "filed": "2012-02-06",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 39200000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2010-12-31",
+      "filed": "2013-02-04",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 40300000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2011-12-31",
+      "filed": "2014-02-03",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 40200000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2012-12-31",
+      "filed": "2015-02-06",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 41100000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2013-12-31",
+      "filed": "2016-02-02",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 40100000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 37700000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2015-12-31",
+      "filed": "2018-02-02",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 113700000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2016-12-31",
+      "filed": "2019-02-04",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 117900000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2017-12-31",
+      "filed": "2020-02-07",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 116300000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2018-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 118800000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 119500000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "form": "10-K",
+      "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "unit": "shares",
+      "val": 120300000
+    }
+  ],
+  "short_term_investments": 207241000,
+  "short_term_investments_audit": {
+    "accn": "0001193125-09-154009",
+    "end": "2009-06-30",
+    "filed": "2009-07-23",
+    "val": 207241000
+  },
+  "stockholders_equity": [
+    {
+      "end": "2006-12-31",
+      "val": 589705000
+    },
+    {
+      "end": "2007-12-31",
+      "val": 888700000
+    },
+    {
+      "end": "2008-12-31",
+      "val": 1266700000
+    },
+    {
+      "end": "2009-12-31",
+      "val": 1537300000
+    },
+    {
+      "end": "2010-12-31",
+      "val": 2037400000
+    },
+    {
+      "end": "2011-12-31",
+      "val": 2645600000
+    },
+    {
+      "end": "2012-12-31",
+      "val": 3580100000
+    },
+    {
+      "end": "2013-12-31",
+      "val": 3501400000
+    },
+    {
+      "end": "2014-12-31",
+      "val": 3379400000
+    },
+    {
+      "end": "2015-12-31",
+      "val": 4319500000
+    },
+    {
+      "end": "2016-12-31",
+      "val": 5777800000
+    },
+    {
+      "end": "2017-12-31",
+      "val": 4778800000
+    },
+    {
+      "end": "2018-12-31",
+      "val": 6678800000
+    },
+    {
+      "end": "2019-12-31",
+      "val": 8263800000
+    },
+    {
+      "end": "2020-12-31",
+      "val": 9731500000
+    }
+  ],
+  "stockholders_equity_audit": [
+    {
+      "accn": "0001193125-10-016932",
+      "end": "2006-12-31",
+      "filed": "2010-01-29",
+      "tag": "StockholdersEquity",
+      "val": 589705000
+    },
+    {
+      "accn": "0001193125-11-020229",
+      "end": "2007-12-31",
+      "filed": "2011-02-01",
+      "tag": "StockholdersEquity",
+      "val": 888700000
+    },
+    {
+      "accn": "0001193125-12-039226",
+      "end": "2008-12-31",
+      "filed": "2012-02-06",
+      "tag": "StockholdersEquity",
+      "val": 1266700000
+    },
+    {
+      "accn": "0001193125-13-036675",
+      "end": "2009-12-31",
+      "filed": "2013-02-04",
+      "tag": "StockholdersEquity",
+      "val": 1537300000
+    },
+    {
+      "accn": "0001035267-14-000009",
+      "end": "2010-12-31",
+      "filed": "2014-02-03",
+      "tag": "StockholdersEquity",
+      "val": 2037400000
+    },
+    {
+      "accn": "0001035267-15-000014",
+      "end": "2011-12-31",
+      "filed": "2015-02-06",
+      "tag": "StockholdersEquity",
+      "val": 2645600000
+    },
+    {
+      "accn": "0001035267-16-000130",
+      "end": "2012-12-31",
+      "filed": "2016-02-02",
+      "tag": "StockholdersEquity",
+      "val": 3580100000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2013-12-31",
+      "filed": "2017-02-06",
+      "tag": "StockholdersEquity",
+      "val": 3501400000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2014-12-31",
+      "filed": "2017-02-06",
+      "tag": "StockholdersEquity",
+      "val": 3379400000
+    },
+    {
+      "accn": "0001035267-17-000021",
+      "end": "2015-12-31",
+      "filed": "2017-02-06",
+      "tag": "StockholdersEquity",
+      "val": 4319500000
+    },
+    {
+      "accn": "0001035267-18-000013",
+      "end": "2016-12-31",
+      "filed": "2018-02-02",
+      "tag": "StockholdersEquity",
+      "val": 5777800000
+    },
+    {
+      "accn": "0001035267-19-000012",
+      "end": "2017-12-31",
+      "filed": "2019-02-04",
+      "tag": "StockholdersEquity",
+      "val": 4778800000
+    },
+    {
+      "accn": "0001035267-20-000032",
+      "end": "2018-12-31",
+      "filed": "2020-02-07",
+      "tag": "StockholdersEquity",
+      "val": 6678800000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2019-12-31",
+      "filed": "2021-02-10",
+      "tag": "StockholdersEquity",
+      "val": 8263800000
+    },
+    {
+      "accn": "0001035267-21-000028",
+      "end": "2020-12-31",
+      "filed": "2021-02-10",
+      "tag": "StockholdersEquity",
+      "val": 9731500000
+    }
+  ],
+  "total_debt": null
+}

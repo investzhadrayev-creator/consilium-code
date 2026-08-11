@@ -64,6 +64,7 @@ ivc_lib.py / edgar_facts.py / macro_prices.py / app.py НЕ модифициру
 """
 import argparse
 import csv
+import datetime
 import json
 import os
 import re
@@ -145,8 +146,17 @@ PROTOCOL_GAPS = [
     "в феврале 2023) -- то есть confirmed_splits почти никогда не в состоянии закрыть разрыв "
     "именно там, где он опаснее всего. Решение (basis_gap_reason(), не значение из PREREG): "
     "нога отказывает по имени с обеими датами, когда shares_current/shares_diluted(basis_end) "
-    "даёт чистый коэффициент сплита (тот же список _CLEAN_SPLIT_FACTORS и допуск 1%, что уже "
-    "использует edgar_facts.py) -- положительная улика разрыва. ОТСУТСТВИЕ такой улики -- НЕ "
+    "даёт чистый коэффициент сплита (тот же список _CLEAN_SPLIT_FACTORS, что использует "
+    "edgar_facts.py, но допуск СВОЙ -- _SHARES_CURRENT_GAP_TOLERANCE = 1.5%, не 1%: issue #39 "
+    "показал реальным прогоном, что edgar_facts.py-шный 1% калиброван на ОДНОРОДНУЮ пару "
+    "(рестейтмент одного и того же тега), а эта пара РАЗНОРОДНАЯ (моментальное число на дату vs "
+    "средневзвешенное за год) и потому шумит на процент и больше даже без всякого сплита -- "
+    "именно так пропустили AMZN_20221012 (19.7817x против чистых 20x, отклонение 1.0917%). Число "
+    "1.5% не из общих соображений: по всем 175 парам архива худшее отклонение реального сплита "
+    "(NVDA fcf, 2021-12-31) -- 1.4000%, ближайший НЕ-сплит к чистому коэффициенту (PLTR_20211231, "
+    "органическое размытие акциями, 2.0331x против 2x) -- 1.6571%; 1.5% лежит в этом чистом "
+    "промежутке с запасом в обе стороны (см. комментарий у самой константы в этом файле и текст "
+    "PR issue #39 -- полная таблица). ОТСУТСТВИЕ такой улики -- НЕ "
     "доказательство пустого разрыва (нераскрытый сплит выглядел бы так же, как компания, "
     "которая никогда не дробилась) и потому НЕ повод отказывать по умолчанию: иначе отказывала "
     "бы каждая обычная пара без сплита рядом с окном (см. пин NFLX_20221012 -- сплит ПОСЛЕ даты "
@@ -168,6 +178,19 @@ PROTOCOL_GAPS = [
     "случился и был отражён на обложке ДО очередной 10-Q, покрывающей разрыв, либо вовсе не было "
     "10-Q между basis_end и date_iso), проверка полагается на то, что хоть одна форма с обложкой "
     "была подана внутри разрыва -- это не гарантировано архивом и не проверяется отдельно.",
+    "issue #39, аудит-раунд 3, пункт 2: до этой правки ничто не проверяло, насколько СТАР сам "
+    "basis_end ноги относительно date_iso -- basis_gap_reason() ловит только чистый коэффициент "
+    "сплита в shares_current, но нога может быть недостоверна и без всякого сплита, если её "
+    "financial-year попросту слишком старый (реальный кейс: NVDA fcf-нога во всём архиве застряла "
+    "на FY2012 из-за разрыва тега capex, 6.9-10.7 года до даты наблюдения -- на порядок дальше "
+    "любой другой ноги архива). basis_staleness_reason() -- новый именованный отказ по обеим "
+    "датам при basis_end старше _STALE_BASIS_THRESHOLD_DAYS (порог обоснован распределением по "
+    "всем 175 парам, см. комментарий у самой константы); отказывает НЕЗАВИСИМО от того, показывает "
+    "ли shares_current чистый коэффициент -- 'нога слишком старая' и 'нога показывает сплит' это "
+    "разные утверждения, и первое не требует второго, чтобы быть достаточной причиной отказа. "
+    "Остаточный пробел: порог 1095 дней калиброван на ЭТОМ архиве (175 пар, единственная реальная "
+    "аномалия -- NVDA); на другом архиве с иным распределением разрывов порог может потребовать "
+    "пересчёта той же методикой (не подстановкой нового числа из головы).",
 ]
 
 
@@ -326,6 +349,116 @@ def basis_adjust(value_as_filed, split_factor, split_factor_reason, errors, symb
 # mandate for this tool.
 _CLEAN_SPLIT_FACTORS = (2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
 
+# issue #39: edgar_facts._detect_confirmed_splits's 1% tolerance compares two values of the SAME
+# tag/period restated across filings -- a genuinely HOMOGENEOUS pair (the same figure, twice). The
+# ratio here is HETEROGENEOUS by construction: shares_current is an instantaneous cover-page count,
+# shares_at_basis_end is a fiscal-year WEIGHTED AVERAGE ending months earlier -- ordinary share
+# issuance/buybacks between the two dates already move the ratio a percent or more even with zero
+# split, so reusing edgar_facts.py's 1% here is a category error, not a tightened check: it is what
+# let AMZN_20221012 (ratio 19.7817x vs a clean 20x, 1.0917% away) through as SCORED with a false
+# BUY at 44.05% implied CAGR (see TestRealArchiveFixtureAMZNRefusesUnderNewTolerance below and
+# tests/fixtures/AMZN_20221012_*.json, the real archive pair, reproducing that exact number).
+#
+# Measured on ALL 175 real archive pairs (tools/historical_run.py run against
+# Reports/histrun_2026-08-08/histrun_raw_v3.zip, both eps/fcf legs, non-proxied shares_current --
+# see the PR description for the extraction script and full table): among the 35 tickers x 5 dates,
+# only three tickers actually split inside an observation gap in this archive window (AMZN 20:1,
+# NVDA 4:1, ISRG 3:1 -- GOOG's and SHOP's real splits are invisible to this check because both
+# tickers' eps/fcf legs already refuse for an unrelated reason before basis_gap_reason() ever runs).
+#
+# issue #39 audit round 3: an earlier version of this comment also cited "NVDA fcf(2021-12-31)
+# 1.4000%" as the archive's worst real split and calibrated the tolerance's lower bound against it.
+# That number is real arithmetic but a poor calibration anchor -- NVDA's capex series in this
+# archive breaks at FY2012 (a tag change; only 2010/2011/2012 are present under the tag
+# compute_fcf_leg() reads), so _latest_common_end() resolves NVDA's fcf-leg basis_end to
+# 2012-01-29 at EVERY NVDA observation date in the archive, not just 2021-12-31 -- a gap of
+# 2521-3909 days (6.9-10.7 years) to date_iso, an order of magnitude past every other leg in the
+# archive (see _STALE_BASIS_THRESHOLD_DAYS below, which now refuses that leg by name for exactly
+# this reason, before this ratio is ever computed). A ratio taken across a decade of ordinary
+# issuance/buybacks landing within 1.4% of a clean 4x is closer to coincidence than signal, and
+# using it to justify how much slack a NORMAL (sub-year) instant-vs-average gap needs is the wrong
+# argument for the right number. Excluded from the calibration below; NVDA_20211231 and
+# NVDA_20200323 (tests/fixtures/) still document its actual ratio and prove basis_gap_reason()
+# fires on it when called directly (TestBasisGapNvdaRealSplitFires), but score_pair() never lets it
+# reach that call any more.
+#
+# Calibrating against only the COMPARABLE (non-stale, basis_end within the archive's normal window)
+# real-split points: NVDA eps(2021-12-31) 0.4777% (basis FY end 2021-01-31, tests/fixtures/
+# NVDA_20211231_*.json, TestBasisGapNvdaRealSplitFires below), ISRG(2021-12-31) 1.0150% (basis FY
+# end 2020-12-31, tests/fixtures/ISRG_20211231_*.json, TestBasisGapIsrgRealSplitFires below), AMZN
+# (2022-10-12) 1.0917% (basis FY end 2021-12-31, tests/fixtures/AMZN_20221012_*.json) -- the worst
+# COMPARABLE real split is 1.0917% away from its factor. The CLOSEST any non-split pair comes to a
+# clean factor anywhere in the archive is PLTR_20211231 at 2.0331x vs a clean 2x, 1.6571% away
+# (heavy RSU-driven dilution post-IPO, not a split -- see tests/fixtures/PLTR_20211231_*.json and
+# TestBasisGapPltrRealDilutionNeverReadsAsASplit below). Every tolerance in the OPEN interval
+# (1.0917%, 1.6571%) separates every comparable real split from every non-split pair in this archive
+# with zero false positives and zero false negatives. 1.5% sits inside that interval with slack on
+# both sides (0.4083pp of headroom above the worst comparable real split -- 1.5% - 1.0917% -- and
+# 0.1571pp of margin below the closest false-positive candidate) -- not a round number picked "from
+# general considerations".
+#
+# This tolerance governs ONLY the heterogeneous shares_current/shares_diluted(basis_end) comparison
+# below; edgar_facts.py's own 1% for its homogeneous same-tag restatement check is untouched (this
+# tool does not modify edgar_facts.py -- see the module docstring).
+_SHARES_CURRENT_GAP_TOLERANCE = 0.015
+
+# issue #39 audit round 3, item 2: nothing checked the distance between a leg's own basis_end and
+# date_iso before this -- basis_gap_reason() above only checks whether shares_current shows a CLEAN
+# split-factor jump, which says nothing about a leg whose basis year is simply too old to represent
+# "as of this date" at all (no split needed for that to be a problem: a decade of ordinary
+# dilution/buybacks/business change makes a stale basis untrustworthy on its own). The real case:
+# NVDA's fcf leg (see _SHARES_CURRENT_GAP_TOLERANCE's own comment above) is stuck on FY2012 by a
+# capex tag change and reaches basis_gap_reason() with a basis_end 6.9-10.7 years before date_iso.
+#
+# Threshold measured on ALL 175 real archive pairs, both eps and fcf legs (170 of 350 possible legs
+# resolve a basis_end at all; the rest refuse earlier for an unrelated reason -- see the PR
+# description for the extraction script and full table): 165 of those 170 legs have a basis_end
+# within 723 days of date_iso (the single widest NORMAL case is AMZN_20181224's fcf leg, itself a
+# one-fiscal-year-behind capex tag gap, basis FY end 2016-12-31 to date_iso 2018-12-24). The other
+# 5 are every NVDA fcf-leg observation in the archive (2018-12-24 / 2019-07-01 / 2020-03-23 /
+# 2021-12-31 / 2022-10-12), ALL anchored at the same 2012-01-29 basis, ranging 2521-3909 days
+# (6.9-10.7 years) from their respective date_iso. No leg in the archive falls between 724 and 2520
+# days -- a clean 1797-day gap separates every normal leg from the NVDA anomaly with zero false
+# positives and zero false negatives at any threshold in that open interval. 1095 days (3 years) is
+# chosen inside it, with 372 days of headroom above the widest normal case and 1426 days of margin
+# below the closest anomalous one -- not a round number picked "from general considerations".
+_STALE_BASIS_THRESHOLD_DAYS = 1095
+
+
+def _days_between(earlier_iso, later_iso):
+    """later_iso - earlier_iso, in days. Both are 'YYYY-MM-DD' strings (as the archive's own
+    _as_of/basis_end/date_iso fields always are -- see the module docstring's ФОРМАТ АРХИВА)."""
+    earlier = datetime.date(*(int(p) for p in earlier_iso.split("-")))
+    later = datetime.date(*(int(p) for p in later_iso.split("-")))
+    return (later - earlier).days
+
+
+def basis_staleness_reason(basis_end, date_iso, leg_label):
+    """issue #39 audit round 3, item 2: is the leg's own basis year simply too far from the
+    observation date to trust, independent of whether shares_current shows a clean split jump?
+    Must run BEFORE basis_gap_reason() on the same leg (see score_pair()) -- a leg refused here
+    for staleness never reaches that ratio check, because the ratio itself would be computed
+    against a basis year that has no claim to represent "as of date_iso" in the first place.
+
+    The real case: NVDA's fcf leg is stuck on FY2012 by a capex tag change in the archive (see
+    _STALE_BASIS_THRESHOLD_DAYS's own comment) -- a 6.9-10.7 year old basis being treated as
+    PREREG's "last FY as of the test date" for every NVDA observation in the archive. Whether or
+    not shares_current happens to land near a clean split factor for that pair is beside the
+    point: a decade of ordinary business change already makes the number untrustworthy as a
+    stand-in for "now"."""
+    if basis_end is None or basis_end == date_iso:
+        return None
+    gap_days = _days_between(basis_end, date_iso)
+    if gap_days <= _STALE_BASIS_THRESHOLD_DAYS:
+        return None
+    return ("%s leg basis gap: basis FY end %s is %d days (%.1f years) before the observation "
+            "date %s -- beyond the %d-day staleness threshold (issue #39 audit round 3; see "
+            "_STALE_BASIS_THRESHOLD_DAYS's own comment for the archive-measured distribution) -- "
+            "too far from date_iso to trust as 'the last FY as of the test date', refusing rather "
+            "than reporting a number computed against an effectively unrelated fiscal year" %
+            (leg_label, basis_end, gap_days, gap_days / 365.25, date_iso,
+             _STALE_BASIS_THRESHOLD_DAYS))
+
 
 def basis_gap_reason(gt, basis_end, date_iso, shares_at_basis_end, leg_label):
     """issue #36: does the archive give any reason to distrust the interval basis_adjust() is
@@ -346,8 +479,11 @@ def basis_gap_reason(gt, basis_end, date_iso, shares_at_basis_end, leg_label):
     blind to that gap: unlike the annual net_income/shares_diluted series (10-K-only, see
     edgar_facts._annual_merged), it is read from the dei cover page of ANY filing, including a
     10-Q filed between basis_end and date_iso. A CLEAN split-factor-sized jump (the SAME
-    _CLEAN_SPLIT_FACTORS list and 1% tolerance edgar_facts.py's own restatement detector already
-    trusts) between shares_current and the leg's own basis-year share count is the archive
+    _CLEAN_SPLIT_FACTORS list edgar_facts.py's own restatement detector trusts, but at
+    _SHARES_CURRENT_GAP_TOLERANCE — issue #39: this ratio is a heterogeneous instant-vs-average
+    comparison, so edgar_facts.py's 1% for its homogeneous same-tag restatement check does not
+    transfer here; see _SHARES_CURRENT_GAP_TOLERANCE's own comment for the archive-measured
+    justification) between shares_current and the leg's own basis-year share count is the archive
     positively telling us a split fell inside the gap — refuse, and name it.
 
     Absence of that jump is NOT proof the gap is empty (an unfiled or not-yet-disclosed split
@@ -385,7 +521,8 @@ def basis_gap_reason(gt, basis_end, date_iso, shares_at_basis_end, leg_label):
             or shares_current <= 0 or shares_at_basis_end <= 0):
         return None
     ratio = shares_current / shares_at_basis_end
-    factor = next((c for c in _CLEAN_SPLIT_FACTORS if abs(ratio - c) / c <= 0.01), None)
+    factor = next((c for c in _CLEAN_SPLIT_FACTORS
+                   if abs(ratio - c) / c <= _SHARES_CURRENT_GAP_TOLERANCE), None)
     if factor is None:
         return None
     return ("%s leg basis gap: shares_current/shares_diluted ratio %.4fx matches a clean %dx "
@@ -508,11 +645,25 @@ def score_pair(ticker, date_iso, gt, price_json):
     # issue #36: the archived split_factor is anchored at date_iso, never at the leg's own basis
     # FY end -- see basis_gap_reason()'s own docstring. Must run BEFORE basis_adjust(): a leg the
     # gap check refuses here never reaches the (correctly-behaving, unmodified) division below.
+    # issue #39 audit round 3, item 2: basis_staleness_reason() must run BEFORE basis_gap_reason()
+    # on the same leg -- a basis year too old to trust in the first place makes the shares_current
+    # ratio check moot (see basis_staleness_reason()'s own docstring; NVDA's fcf leg is the real
+    # case, stuck on FY2012).
+    if eps_af is not None:
+        stale = basis_staleness_reason(eps_end, date_iso, "eps")
+        if stale:
+            perrors[ticker + "_eps"] = stale
+            eps_af = None
     if eps_af is not None:
         gap = basis_gap_reason(gt, eps_end, date_iso, _value_at(gt.get("shares_diluted"), eps_end), "eps")
         if gap:
             perrors[ticker + "_eps"] = gap
             eps_af = None
+    if fcf_af is not None:
+        stale = basis_staleness_reason(fcf_end, date_iso, "fcf")
+        if stale:
+            perrors[ticker + "_fcf"] = stale
+            fcf_af = None
     if fcf_af is not None:
         gap = basis_gap_reason(gt, fcf_end, date_iso, _value_at(gt.get("shares_diluted"), fcf_end), "fcf")
         if gap:
