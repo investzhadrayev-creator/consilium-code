@@ -818,11 +818,47 @@ CASES = [
      "test_historical_run.TestArchiveDateSyncedWithAsOfAndPriceDate.test_as_of_null_gets_its_own_named_refusal_not_a_mismatch",
      "a null _as_of (e.g. VOO/ETF) gets its own named refusal instead of falling through to the "
      "mismatch check (which would print 'None' as if it were a date) or, worse, to a live score"),
+    # v4.2.83 (issue #36's audit tail, issue #33): refreshed for the isinstance-guard split below
+    # -- the single combined condition this used to target became TWO separate checks (a missing
+    # 'date' field is now its own named refusal, see histrun-price-date-missing-disabled-01), so
+    # the old anchor stopped matching and this case started reporting SKIP instead of RED.
     ("histrun-price-date-sync-disabled-01", "tools/historical_run.py",
-     '    if isinstance(price_date, str) and price_date[:10] != date_iso:',
+     '    if price_date[:10] != date_iso:',
      "    if False:",
      "test_historical_run.TestArchiveDateSyncedWithAsOfAndPriceDate.test_price_date_mismatch_refuses_with_both_dates_named",
      "the filename date is checked against the archived price record's own date, never trusted alone"),
+    # ---- issue #33 audit tail: a price record with NO 'date' field at all fell through the
+    # isinstance guard silently (absence looked identical to "present and agrees") ----
+    ("histrun-price-date-missing-disabled-01", "tools/historical_run.py",
+     '    if not isinstance(price_date, str):',
+     "    if False:",
+     "test_historical_run.TestPriceRecordMissingDateFieldRefusesNamed.test_missing_date_field_refuses_by_name",
+     "a price record with no 'date' field is a named refusal, never a silently skipped check"),
+    # ---- issue #36: the archived split_factor covers [date_iso, today], never [basis_end, today]
+    # -- basis_gap_reason() must run on EACH leg before basis_adjust() trusts the archived
+    # multiplier, or a split effective between the leg's basis FY end and the observation date
+    # (AMZN's real case) silently reproduces the pre-#36 mixed-basis defect on that leg alone. ----
+    ("histrun-basisgap-eps-disabled-01", "tools/historical_run.py",
+     '        gap = basis_gap_reason(gt, eps_end, date_iso, _value_at(gt.get("shares_diluted"), eps_end), "eps")',
+     "        gap = None",
+     "test_historical_run.TestBasisGapAmznRefusesNeverTheOldMixedBasisNumber.test_amzn_20221012_refuses_naming_both_dates",
+     "the EPS leg's own basis gap (interval the archived split_factor cannot see) is checked, not assumed empty"),
+    ("histrun-basisgap-fcf-disabled-01", "tools/historical_run.py",
+     '        gap = basis_gap_reason(gt, fcf_end, date_iso, _value_at(gt.get("shares_diluted"), fcf_end), "fcf")',
+     "        gap = None",
+     "test_historical_run.TestBasisGapAmznRefusesNeverTheOldMixedBasisNumber.test_amzn_20221012_refuses_naming_both_dates",
+     "the FCF leg's own basis gap (interval the archived split_factor cannot see) is checked, not assumed empty"),
+    # ---- issue #36 audit tail (PR #38): shares_current can itself be a PROXY (edgar_facts.py
+    # falls back to the latest annual shares_diluted when no filing's dei cover page is
+    # available, flagging _flags.shares_current_proxied) -- that annual figure is exactly as
+    # blind to a sub-annual split as the eps/fcf series it exists to check, so the gap check must
+    # refuse on the flag alone rather than trust a ratio computed from a degraded witness. ----
+    ("histrun-basisgap-proxied-witness-disabled-01", "tools/historical_run.py",
+     '    proxied = (gt.get("_flags") or {}).get("shares_current_proxied")',
+     "    proxied = None",
+     "test_historical_run.TestBasisGapProxiedSharesCurrentRefusesAsDegradedWitness.test_amzn_proxied_refuses_naming_both_dates_and_the_degraded_witness",
+     "a proxied (annual, cover-page-unavailable) shares_current is treated as a degraded witness "
+     "and refuses by name, never trusted as if it were the real dei cover-page figure"),
 ]
 
 

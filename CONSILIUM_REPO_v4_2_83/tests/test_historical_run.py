@@ -82,16 +82,21 @@ def series(pairs):
 
 
 def gt(ticker="GOLD", cik=1234567, cik_field="_cik", revenue=None, net_income=None,
-      shares_diluted=None, ocf=None, capex=None, roe_median_5y=None, errors=None):
+      shares_diluted=None, ocf=None, capex=None, roe_median_5y=None, errors=None,
+      shares_current=None, as_of="2020-03-23", flags=None):
     """Build a synthetic *_edgar.json record in the REAL archive shape (issue #30): this IS
     edgar_facts.edgar_facts()'s own output shape, not raw SEC companyfacts -- see
     tools/historical_run.py's ФОРМАТ АРХИВА. `cik_field` defaults to the real archive's own
-    "_cik"; pass "cik" to exercise the legacy-fixture fallback historical_run.py also accepts."""
-    out = {"_source": "sec_edgar", "_ticker": ticker, "_entity_name": ticker, "_as_of": "2020-03-23",
-          "_missing": [], "_flags": {}, "_errors": errors or {},
+    "_cik"; pass "cik" to exercise the legacy-fixture fallback historical_run.py also accepts.
+    `shares_current` (issue #36): edgar_facts._shares_current's own bare-number field, absent
+    (None) by default so every pre-existing fixture is unaffected by basis_gap_reason().
+    `flags` (issue #36 audit tail on PR #38): merged into `_flags`, e.g.
+    {"shares_current_proxied": "..."} to reproduce edgar_facts.py's degraded-witness mode."""
+    out = {"_source": "sec_edgar", "_ticker": ticker, "_entity_name": ticker, "_as_of": as_of,
+          "_missing": [], "_flags": dict(flags or {}), "_errors": errors or {},
           "revenue": revenue or [], "net_income": net_income or [],
           "shares_diluted": shares_diluted or [], "ocf": ocf or [], "capex": capex or [],
-          "roe_median_5y": roe_median_5y}
+          "roe_median_5y": roe_median_5y, "shares_current": shares_current}
     out[cik_field] = cik
     return out
 
@@ -194,6 +199,89 @@ def _gold4_gt():
 
 def _gold4_price():
     return price_pkg("GOLD4", "2020-03-23", adj_close=40.0, split_factor=1.0)
+
+
+# ---- issue #36 fixtures: AMZN_20221012 / NFLX_20221012 -----------------------------------------
+# Reports/ is out of bounds for this changeset (task boundary) so these are NOT the literal
+# archive bytes (contrast TestRealArchiveFixtureNVDA, built for issue #30 from the real zip) --
+# they are synthetic, in the real archive SHAPE, engineered to reproduce the STRUCTURAL defect
+# the issue names on realistic-scale numbers (real AMZN FY2021: ~$33.36B net income over ~515M
+# pre-split diluted shares -> EPS ~$64.8 pre-split, ~10.3B shares post the June-2022 20:1 split;
+# real observation date 2022-10-12, real archived split_factor_eps=1.0, real eps_basis_end
+# 2021-12-31 -- all three exactly as issue #36 quotes them). The GOLD1 growth/ROE shape (10%
+# growth, ROE 0.20) is reused for both so the arithmetic is traceable to already-hand-verified
+# numbers (see TestGoldenCase1's own docstring) rather than re-derived from scratch.
+_Y36 = [2016, 2017, 2018, 2019, 2020, 2021]
+_REV36 = series([("%d-12-31" % y, 100.0 * 1.10 ** n) for n, y in enumerate(_Y36)])
+
+
+def _amzn_gap_gt():
+    """AMZN_20221012 (issue #36's own real case): FY2021 EPS/FCF basis (net_income 200/shares
+    100 -> eps_af=2.00, same magnitude relationship as GOLD1) filed BEFORE the June-2022 20:1
+    split; shares_current=2000 is a stand-in for a post-split dei cover-page figure disclosed on
+    a 10-Q filed between 2021-12-31 and the observation date -- a clean 20x jump against
+    shares_diluted(2021-12-31)=100, the exact signature basis_gap_reason() looks for."""
+    return gt("AMZN", cik=1018724, as_of="2022-10-12",
+             revenue=_REV36,
+             net_income=series([("2021-12-31", 200.0)]),
+             shares_diluted=series([("2021-12-31", 100.0)]),
+             ocf=series([("2021-12-31", 300.0)]),
+             capex=series([("2021-12-31", 50.0)]),
+             roe_median_5y=0.20, shares_current=2000.0)
+
+
+def _amzn_gap_price():
+    """Archived split_factor_eps=1.0 -- issue #36's own quoted real number: no split from the
+    OBSERVATION date onward, which is exactly what makes the pre-observation-date split
+    invisible to it."""
+    return price_pkg("AMZN", "2022-10-12", adj_close=40.0, close=40.0, split_factor=1.0)
+
+
+def _nflx_safe_gt():
+    """NFLX_20221012: same growth/ROE shape as GOLD1, but net_income/ocf/capex scaled 10x so
+    that dividing by the archived split_factor=10.0 (the split effective AFTER 2022-10-12, per
+    the issue) reproduces GOLD1's exact eps_today/fcf_today (2.00/2.50) and therefore its exact
+    hand-verified numbers -- see TestIssue36SplitAfterObservationStaysScored. shares_current
+    equals shares_diluted(2021-12-31) exactly (no split has happened as of the observation date
+    yet) so basis_gap_reason() must NOT fire here -- the mutation this protects against is
+    reverting the fix's own gap check to over-refuse a genuinely safe pair."""
+    return gt("NFLX", cik=1065280, as_of="2022-10-12",
+             revenue=_REV36,
+             net_income=series([("2021-12-31", 2000.0)]),
+             shares_diluted=series([("2021-12-31", 100.0)]),
+             ocf=series([("2021-12-31", 3000.0)]),
+             capex=series([("2021-12-31", 500.0)]),
+             roe_median_5y=0.20, shares_current=100.0)
+
+
+def _nflx_safe_price():
+    """Archived split_factor=10.0 -- issue #36's own quoted real number for NFLX: close=400.0
+    (as-traded that day, pre-split basis) vs adjClose=40.0 (rebased to post-split "today")."""
+    return price_pkg("NFLX", "2022-10-12", adj_close=40.0, close=400.0, split_factor=10.0)
+
+
+def _amzn_proxied_gt():
+    """AMZN_20221012, issue #36 audit tail on PR #38: shares_current is a PROXY (edgar_facts.py
+    falls back to the latest annual shares_diluted when no filing's dei cover page is available,
+    flagging gt['_flags']['shares_current_proxied']) -- an annual figure exactly as blind to a
+    sub-annual split as the eps/fcf series it is meant to check. shares_current is deliberately
+    set EQUAL to shares_diluted(2021-12-31) (ratio 1.0x, no clean-factor jump) so this fixture
+    proves the refusal comes from the degraded-witness flag itself, not from the ratio check --
+    before the audit-tail fix, this exact input silently scored (ratio 1.0 looks like 'no split',
+    which is precisely the false negative the flag exists to catch)."""
+    return gt("AMZN", cik=1018724, as_of="2022-10-12",
+             revenue=_REV36,
+             net_income=series([("2021-12-31", 200.0)]),
+             shares_diluted=series([("2021-12-31", 100.0)]),
+             ocf=series([("2021-12-31", 300.0)]),
+             capex=series([("2021-12-31", 50.0)]),
+             roe_median_5y=0.20, shares_current=100.0,
+             flags={"shares_current_proxied": "cover-page count unavailable; proxied to latest "
+                    "weighted-avg diluted shares (2021-12-31)"})
+
+
+def _amzn_proxied_price():
+    return price_pkg("AMZN", "2022-10-12", adj_close=40.0, close=40.0, split_factor=1.0)
 
 
 class TestGoldenCase1CleanNoSplitNoBuy(unittest.TestCase):
@@ -718,6 +806,108 @@ class TestConservativeLegSelectionPicksTheLowerCagr(unittest.TestCase):
         self.assertEqual(out["status"], "SCORED", out.get("reason"))
         self.assertEqual(out["verdict_leg_note"], "dual_basis_conservative")
         self.assertEqual(out["verdict_leg"], "fcf_per_share")
+
+
+class TestBasisGapAmznRefusesNeverTheOldMixedBasisNumber(unittest.TestCase):
+    """Issue #36: the archived split_factor covers [date_iso, today], never [eps_basis_end/
+    fcf_basis_end, today] -- see basis_gap_reason()'s own docstring and PROTOCOL_GAPS. AMZN's
+    real case (split_factor_eps=1.0, eps_basis_end=2021-12-31, observed 2022-10-12, a 20:1 split
+    in between): before this fix, basis_adjust() would have divided by 1.0 (a no-op) and fed the
+    PRE-split eps_af straight to ivc() against the POST-split price -- exactly GOLD1's own
+    arithmetic (IV=22.61, see the module docstring's GOLDEN CASE 1 and the naive-IV check below),
+    a plausible-LOOKING but wrong number, the same danger class as the real run's IV=1398.36.
+    This pair must now refuse by name, citing both the basis FY end and the observation date."""
+
+    def test_amzn_20221012_refuses_naming_both_dates(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_gap_gt(), _amzn_gap_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("2021-12-31", out["reason"])
+        self.assertIn("2022-10-12", out["reason"])
+        self.assertIn("split", out["reason"])
+
+    def test_amzn_20221012_never_reports_a_number_let_alone_the_old_mixed_basis_one(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_gap_gt(), _amzn_gap_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertNotIn("intrinsic_value", out)
+
+    def test_pre_fix_mixed_basis_would_have_looked_plausible_not_absurd(self):
+        """Documents WHY a refusal is the right call rather than a number that would fail some
+        other sanity gate: fed straight to ivc() (the pre-#36 path), AMZN's own as-filed eps/fcf
+        reproduce GOLD1's already-hand-verified, entirely unremarkable-looking numbers -- a wrong
+        answer that does not announce itself as wrong."""
+        import ivc_lib
+        r = ivc_lib.ivc({"price": 40.0, "eps_normalized": 2.00, "growth_rate": 0.10,
+                         "future_pe": 16.0, "hurdle": 0.12, "discount_rate": 0.12,
+                         "terminal_growth": 0.04})
+        self.assertAlmostEqual(r["intrinsic_value"], 22.61, places=2)
+
+
+class TestSplitAfterObservationDateNflxStaysScoredUnchanged(unittest.TestCase):
+    """Issue #36's negative control ("защита от перепочинки"): NFLX_20221012's split is effective
+    AFTER the observation date, so it sits entirely inside [date_iso, today] -- the window the
+    archived split_factor=10.0 already, correctly, covers. basis_gap_reason() must NOT fire here
+    (shares_current == shares_diluted(basis_end), no clean-factor jump), and the pair must stay
+    SCORED with numbers identical to GOLD1's hand-verified arithmetic (the fixture is scaled by
+    exactly 10x on eps/fcf so dividing by split_factor=10.0 reproduces GOLD1's inputs exactly)."""
+
+    def test_nflx_20221012_stays_scored_with_gold1s_hand_verified_numbers(self):
+        out = hr.score_pair("NFLX", "2022-10-12", _nflx_safe_gt(), _nflx_safe_price())
+        self.assertEqual(out["status"], "SCORED", out.get("reason"))
+        self.assertEqual(out["split_factor_eps"], 10.0)
+        self.assertEqual(out["split_factor_fcf"], 10.0)
+        self.assertEqual(out["eps_basis_end"], "2021-12-31")
+        self.assertAlmostEqual(out["future_pe_k9"], 16.0, places=6)
+        self.assertEqual(out["verdict_leg"], "gaap_eps")
+        self.assertAlmostEqual(out["intrinsic_value"], 22.61, places=2)
+        self.assertAlmostEqual(out["implied_cagr_pct"], 5.79, places=2)
+        self.assertEqual(out["hurdle_gate"], "FAIL")
+        self.assertFalse(out["buy_A_no_discount"])
+        self.assertFalse(out["buy_B_10pct_discount"])
+
+
+class TestBasisGapProxiedSharesCurrentRefusesAsDegradedWitness(unittest.TestCase):
+    """Issue #36 audit tail on PR #38: basis_gap_reason() used to trust shares_current
+    unconditionally, but edgar_facts.py proxies it to the latest ANNUAL shares_diluted (flagging
+    gt['_flags']['shares_current_proxied']) when no filing's dei cover page is available -- in
+    that mode the witness is exactly as blind to a sub-annual split as the annual eps/fcf series
+    it exists to check, so 'ratio == 1.0, no clean jump' means 'cannot tell', not 'no split'. The
+    fixture sets shares_current == shares_diluted(basis_end) (ratio 1.0x) specifically so this
+    pin cannot pass by accident via the ordinary ratio path -- only the flag check can refuse it."""
+
+    def test_amzn_proxied_refuses_naming_both_dates_and_the_degraded_witness(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_proxied_gt(), _amzn_proxied_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("2021-12-31", out["reason"])
+        self.assertIn("2022-10-12", out["reason"])
+        self.assertIn("proxied", out["reason"])
+
+    def test_amzn_proxied_never_reports_a_number(self):
+        out = hr.score_pair("AMZN", "2022-10-12", _amzn_proxied_gt(), _amzn_proxied_price())
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertNotIn("intrinsic_value", out)
+
+
+class TestPriceRecordMissingDateFieldRefusesNamed(unittest.TestCase):
+    """Issue #33 audit tail: a price archive record with no 'date' field at all (as opposed to a
+    'date' present but disagreeing with the filename) fell through the old `isinstance(price_date,
+    str)` guard silently and was never checked -- a missing field looked exactly like "field
+    present and agrees". Must now be its own named refusal, the same class of fix as gt_as_of
+    being None above (TestArchiveDateSyncedWithAsOfAndPriceDate)."""
+
+    def test_missing_date_field_refuses_by_name(self):
+        price = _gold1_price()
+        del price["date"]
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), price)
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("no usable 'date' field", out["reason"])
+        self.assertIn("2020-03-23", out["reason"])
+
+    def test_non_string_date_field_refuses_by_name(self):
+        price = _gold1_price()
+        price["date"] = 20200323   # a plausible operator mistake: an int, not an ISO string
+        out = hr.score_pair("GOLD1", "2020-03-23", _gold1_gt(), price)
+        self.assertEqual(out["status"], "REFUSED")
+        self.assertIn("no usable 'date' field", out["reason"])
 
 
 class TestRealArchiveFixtureNVDA(unittest.TestCase):
