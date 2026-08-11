@@ -873,6 +873,23 @@ CASES = [
      "test_historical_run.TestRealArchiveFixtureAMZNRefusesUnderNewTolerance.test_real_amzn_20221012_refuses_naming_both_dates",
      "reverting to edgar_facts.py's homogeneous-pair 1% (the issue's own defect) must miss the "
      "real AMZN_20221012 split (1.0917% away) and let the false BUY back through"),
+    # audit follow-up on PR #40: the archive's other two real splits (NVDA, ISRG) named in
+    # _SHARES_CURRENT_GAP_TOLERANCE's own comment were unverifiable from the suite until the
+    # NVDA_20211231/ISRG_20211231 fixtures landed -- these two cases prove those pins can go red
+    # too, not just the AMZN one. NVDA's fcf leg (1.4000% away) is the single worst real split in
+    # the whole archive, closer to the OLD 1% boundary than AMZN or ISRG are.
+    ("histrun-tolerance-too-narrow-02", "tools/historical_run.py",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.015",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.01",
+     "test_historical_run.TestBasisGapNvdaRealSplitFires.test_basis_gap_reason_fires_on_both_legs",
+     "reverting to the old homogeneous-pair 1% must miss NVDA's fcf leg (1.4000% away, the "
+     "archive's single worst real split) even though its eps leg (0.4777% away) still fires"),
+    ("histrun-tolerance-too-narrow-03", "tools/historical_run.py",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.015",
+     "_SHARES_CURRENT_GAP_TOLERANCE = 0.01",
+     "test_historical_run.TestBasisGapIsrgRealSplitFires.test_basis_gap_reason_fires_on_both_legs",
+     "reverting to the old homogeneous-pair 1% must miss the real ISRG_20211231 split (1.0150% "
+     "away on both legs)"),
     ("histrun-tolerance-too-wide-01", "tools/historical_run.py",
      "_SHARES_CURRENT_GAP_TOLERANCE = 0.015",
      "_SHARES_CURRENT_GAP_TOLERANCE = 0.02",

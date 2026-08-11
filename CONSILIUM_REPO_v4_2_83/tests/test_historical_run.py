@@ -1107,5 +1107,122 @@ class TestBasisGapPltrRealDilutionNeverReadsAsASplit(unittest.TestCase):
         self.assertNotIn("basis gap", out["reason"])
 
 
+class TestBasisGapNvdaRealSplitFires(unittest.TestCase):
+    """Audit follow-up on issue #39 / PR #40: _SHARES_CURRENT_GAP_TOLERANCE's own comment cites
+    'NVDA eps(2021-12-31) 0.4777%' and 'NVDA fcf(2021-12-31) 1.4000%' -- the archive's OTHER two
+    real-split reference points besides AMZN -- but until this pin neither was backed by a
+    fixture, so the comment's own numbers were unverifiable from the test suite. NVDA_20211231
+    (basis FY end 2021-01-31 for the eps leg, confirmed 4:1 split effective 5th of July 2021)
+    is a real split landing inside the observation gap on BOTH legs: eps ratio 3.9809x vs a clean
+    4x (0.4777% away -- the closest any real split in the archive comes to its factor), fcf ratio
+    4.0560x vs a clean 4x (1.4000% away -- the WORST real split in the archive, the number
+    1.5% - 1.4000% = 0.1000pp of headroom in that comment is measured against). Copied byte-for-
+    byte from Reports/histrun_2026-08-08/histrun_raw_v3.zip, like NVDA_20200323 (issue #30)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "NVDA_20211231_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "NVDA_20211231_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_eps_leg_ratio_matches_the_comments_own_number(self):
+        eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
+        self.assertIsNotNone(eps_af)
+        sh_eps = hr._value_at(self.edgar["shares_diluted"], eps_end)
+        self.assertEqual(self.edgar.get("shares_current"), 2500000000)
+        self.assertEqual(sh_eps, 628000000)
+        ratio = self.edgar["shares_current"] / sh_eps
+        self.assertAlmostEqual(ratio, 3.9808917197452227, places=6)
+        dev = abs(ratio - 4) / 4
+        self.assertAlmostEqual(dev, 0.004777069867, places=6)
+
+    def test_fcf_leg_ratio_is_the_archives_worst_real_split(self):
+        fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
+        self.assertIsNotNone(fcf_af)
+        sh_fcf = hr._value_at(self.edgar["shares_diluted"], fcf_end)
+        ratio = self.edgar["shares_current"] / sh_fcf
+        self.assertAlmostEqual(ratio, 4.055998741017991, places=6)
+        dev = abs(ratio - 4) / 4
+        self.assertAlmostEqual(dev, 0.013999685254, places=6)
+        # the exact headroom claim fixed in _SHARES_CURRENT_GAP_TOLERANCE's own comment:
+        self.assertAlmostEqual(hr._SHARES_CURRENT_GAP_TOLERANCE - dev, 0.001000315, places=6)
+
+    def test_basis_gap_reason_fires_on_both_legs(self):
+        eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
+        fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
+        sh_eps = hr._value_at(self.edgar["shares_diluted"], eps_end)
+        sh_fcf = hr._value_at(self.edgar["shares_diluted"], fcf_end)
+        eps_gap = hr.basis_gap_reason(self.edgar, eps_end, "2021-12-31", sh_eps, "eps")
+        fcf_gap = hr.basis_gap_reason(self.edgar, fcf_end, "2021-12-31", sh_fcf, "fcf")
+        self.assertIsNotNone(eps_gap)
+        self.assertIn("clean 4x split signature", eps_gap)
+        self.assertIsNotNone(fcf_gap)
+        self.assertIn("clean 4x split signature", fcf_gap)
+
+    def test_real_nvda_20211231_refuses_naming_the_split_on_both_legs(self):
+        out = hr.score_pair("NVDA", "2021-12-31", self.edgar, self.price)
+        self.assertEqual(out["status"], "REFUSED", out.get("reason"))
+        self.assertIn("eps leg basis gap", out["reason"])
+        self.assertIn("fcf leg basis gap", out["reason"])
+        self.assertIn("clean 4x split signature", out["reason"])
+
+
+class TestBasisGapIsrgRealSplitFires(unittest.TestCase):
+    """Audit follow-up on issue #39 / PR #40: the same comment cites 'ISRG(2021-12-31) 1.0150%'
+    as the third real split found across the archive (ISRG's confirmed 3:1 split, effective 5th
+    of October 2021), previously named only in prose. ISRG_20211231 (basis FY end 2020-12-31 for
+    both legs -- ISRG's eps and fcf legs share the same common FY end here) has ratio 2.9695x vs
+    a clean 3x, 1.0150% away, close enough to a clean factor that this pin is load-bearing for
+    the '1.4000% worst / 1.6571% closest false positive' interval claim: without it, the interval
+    was only tested at its two endpoints (NVDA fcf and PLTR), not at this middle point. Copied
+    byte-for-byte from Reports/histrun_2026-08-08/histrun_raw_v3.zip."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        with open(os.path.join(_FIXTURES_DIR, "ISRG_20211231_edgar.json"), encoding="utf-8") as f:
+            cls.edgar = json.load(f)
+        with open(os.path.join(_FIXTURES_DIR, "ISRG_20211231_price.json"), encoding="utf-8") as f:
+            cls.price = json.load(f)
+
+    def test_both_legs_share_the_same_ratio_matching_the_comments_own_number(self):
+        eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
+        fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
+        self.assertIsNotNone(eps_af)
+        self.assertIsNotNone(fcf_af)
+        self.assertEqual(eps_end, "2020-12-31")
+        self.assertEqual(fcf_end, "2020-12-31")
+        sh_basis = hr._value_at(self.edgar["shares_diluted"], "2020-12-31")
+        self.assertEqual(self.edgar.get("shares_current"), 357236861)
+        self.assertEqual(sh_basis, 120300000)
+        ratio = self.edgar["shares_current"] / sh_basis
+        self.assertAlmostEqual(ratio, 2.969549966749792, places=6)
+        dev = abs(ratio - 3) / 3
+        self.assertAlmostEqual(dev, 0.010150011084, places=6)
+        self.assertLess(dev, hr._SHARES_CURRENT_GAP_TOLERANCE)   # inside the window -> fires
+        self.assertGreater(dev, 0.01)   # and outside the OLD (edgar_facts.py) 1% tolerance
+
+    def test_basis_gap_reason_fires_on_both_legs(self):
+        eps_af, eps_end, _ = hr.compute_eps_leg(self.edgar)
+        fcf_af, fcf_end, _ = hr.compute_fcf_leg(self.edgar)
+        sh_eps = hr._value_at(self.edgar["shares_diluted"], eps_end)
+        sh_fcf = hr._value_at(self.edgar["shares_diluted"], fcf_end)
+        eps_gap = hr.basis_gap_reason(self.edgar, eps_end, "2021-12-31", sh_eps, "eps")
+        fcf_gap = hr.basis_gap_reason(self.edgar, fcf_end, "2021-12-31", sh_fcf, "fcf")
+        self.assertIsNotNone(eps_gap)
+        self.assertIn("clean 3x split signature", eps_gap)
+        self.assertIsNotNone(fcf_gap)
+        self.assertIn("clean 3x split signature", fcf_gap)
+
+    def test_real_isrg_20211231_refuses_naming_the_split_on_both_legs(self):
+        out = hr.score_pair("ISRG", "2021-12-31", self.edgar, self.price)
+        self.assertEqual(out["status"], "REFUSED", out.get("reason"))
+        self.assertIn("eps leg basis gap", out["reason"])
+        self.assertIn("fcf leg basis gap", out["reason"])
+        self.assertIn("clean 3x split signature", out["reason"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

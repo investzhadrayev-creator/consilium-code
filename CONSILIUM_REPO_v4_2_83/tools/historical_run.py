@@ -351,16 +351,19 @@ _CLEAN_SPLIT_FACTORS = (2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20)
 # only three tickers actually split inside an observation gap in this archive window (AMZN 20:1,
 # NVDA 4:1, ISRG 3:1 -- GOOG's and SHOP's real splits are invisible to this check because both
 # tickers' eps/fcf legs already refuse for an unrelated reason before basis_gap_reason() ever runs).
-# Their deviations from the clean factor: NVDA eps 0.4777%, NVDA fcf(2022-10-12) 0.9944%,
-# ISRG 1.0150%, AMZN 1.0917%, NVDA fcf(2021-12-31) 1.4000% -- the worst real split is 1.4000% away
-# from its factor. The CLOSEST any non-split pair comes to a clean factor anywhere in the archive is
+# Their deviations from the clean factor: NVDA eps(2021-12-31) 0.4777% (tests/fixtures/
+# NVDA_20211231_*.json, TestBasisGapNvdaRealSplitFires below), NVDA fcf(2022-10-12) 0.9944%,
+# ISRG(2021-12-31) 1.0150% (tests/fixtures/ISRG_20211231_*.json, TestBasisGapIsrgRealSplitFires
+# below), AMZN 1.0917%, NVDA fcf(2021-12-31) 1.4000% -- the worst real split is 1.4000% away from
+# its factor. The CLOSEST any non-split pair comes to a clean factor anywhere in the archive is
 # PLTR_20211231 at 2.0331x vs a clean 2x, 1.6571% away (heavy RSU-driven dilution post-IPO, not a
 # split -- see tests/fixtures/PLTR_20211231_*.json and
 # TestBasisGapPltrRealDilutionNeverReadsAsASplit below). Every tolerance in the OPEN interval
 # (1.4000%, 1.6571%) separates every real split from every non-split pair in this archive with zero
 # false positives and zero false negatives. 1.5% sits in the middle of that gap with slack on both
-# sides (0.0944pp of headroom above the worst real split, 0.1571pp of margin below the closest
-# false-positive candidate) -- not a round number picked "from general considerations".
+# sides (0.1000pp of headroom above the worst real split -- 1.5% - 1.4000% -- and 0.1571pp of
+# margin below the closest false-positive candidate) -- not a round number picked "from general
+# considerations".
 #
 # This tolerance governs ONLY the heterogeneous shares_current/shares_diluted(basis_end) comparison
 # below; edgar_facts.py's own 1% for its homogeneous same-tag restatement check is untouched (this

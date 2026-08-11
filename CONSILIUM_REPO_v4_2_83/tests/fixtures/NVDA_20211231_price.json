@@ -1,0 +1,24 @@
+{
+  "_errors": {
+    "pe_same_share_basis_NVDA": "no EPS supplied"
+  },
+  "date": "2021-12-31",
+  "pe_same_share_basis": null,
+  "price_record": {
+    "adjClose": 29.3198833082,
+    "adjHigh": 29.9369656165,
+    "adjLow": 29.2397024842,
+    "adjOpen": 29.5820685216,
+    "adjVolume": 263477920,
+    "close": 294.11,
+    "date": "2021-12-31T00:00:00.000Z",
+    "divCash": 0.0,
+    "high": 300.3,
+    "low": 293.3057,
+    "open": 296.74,
+    "splitFactor": 1.0,
+    "volume": 26347792
+  },
+  "split_factor": 10.0,
+  "ticker": "NVDA"
+}
