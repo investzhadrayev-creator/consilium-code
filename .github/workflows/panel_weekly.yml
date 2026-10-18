@@ -13,6 +13,7 @@ jobs:
       - name: Панель режима (3 машинные оси; ERI/CNN = NA)
         env:
           TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           python3 tools/panel_axes.py --append || echo "PANEL_INSUFFICIENT=1" >> "$GITHUB_ENV"
       - name: Карточка этажа 1 (появится после задачи К1)

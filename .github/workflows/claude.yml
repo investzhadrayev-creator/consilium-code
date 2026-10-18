@@ -21,8 +21,9 @@ jobs:
   claude:
     # экономия лимита: запускаемся только на явное упоминание
     if: |
+      github.event.sender.type != 'Bot' && (
       contains(github.event.issue.body, '@claude') ||
-      contains(github.event.comment.body, '@claude')
+      contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -50,6 +51,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
@@ -57,7 +60,8 @@ jobs:
           prompt: |
             Ты работаешь в проекте Consilium Spine — автоматизированный equity research
             под философией Грэма-Додда. Правила проекта обязательны к исполнению:
-            прочитай CLAUDE.md в новейшем дереве CONSILIUM_REPO_v4_2_* и следуй ему.
+            прочитай CLAUDE.md в корне репозитория (главный) и CLAUDE.md в новейшем
+            дереве CONSILIUM_REPO_v4_2_* и следуй обоим.
 
             Железные правила этого проекта:
             1. Никогда не пиши в основную ветку — только ветка и заявка на изменение.
@@ -83,9 +87,12 @@ jobs:
                gh issue comment ${{ github.event.issue.number }} --body "<итог + ссылка на заявку>"
 
             ГРАНИЦЫ РАБОТЫ — соблюдать строго, они экономят лимит подписки оператора:
-            - работай ТОЛЬКО в новейшем каталоге CONSILIUM_REPO_v4_2_*;
-            - НЕ запускай ничего вне этого каталога и не устанавливай системные пакеты
+            - работай в новейшем каталоге CONSILIUM_REPO_v4_2_* И в корневых tools/, config/,
+              Reports/floor1/, Reports/pilot_*/, а также создавай mailbox/REPORT_* — если
+              этого требует задача;
+            - НЕ запускай ничего вне перечисленных каталогов и не устанавливай системные пакеты
               без необходимости для задачи;
+            - SEC-запросы — только с User-Agent из env SEC_USER_AGENT, никогда выдуманным;
             - НЕ читай старые каталоги версий, docs/HANDOFF* (7500 строк) и Reports/;
             - если задача сформулирована противоречиво или данных не хватает — не гадай:
               напиши об этом комментарием в карточку и остановись.

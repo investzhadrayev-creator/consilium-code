@@ -101,7 +101,7 @@ def do_file(subject, body):
         subprocess.run(["gh", "pr", "create", "--fill", "--title",
                         f"[ТРЕБУЕТ ОДОБРЕНИЯ ОПЕРАТОРА] {path}",
                         "--body", "Файл правил от архитектора. Merge — только оператор."],
-                       capture_output=True, text=True, env=gh_env())
+                       capture_output=True, text=True, env=dict(os.environ))
         sh("git", "checkout", "main")
         print(f"FILE -> PR (protected): {path}")
     else:

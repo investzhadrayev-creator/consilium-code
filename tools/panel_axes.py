@@ -7,7 +7,7 @@ Tiingo), кредит (HY OAS vs уровня 20 торговых точек н�
 Пишет строку замороженного формата в journal/PANEL_LOG.csv (append-only, --append).
 Missing = NA, никогда не подстановка. Запуск: python3 tools/panel_axes.py --append
 """
-import argparse, csv, datetime as dt, io, json, os, sys, urllib.request
+import argparse, csv, datetime as dt, io, json, os, sys, time, urllib.request
 
 UA = {"User-Agent": "Consilium panel (ops contact in repo)"}
 NA = "NA"
@@ -72,18 +72,58 @@ def ax_participation():
         print("WARN participation axis:", e, file=sys.stderr)
         return NA, NA, NA
 
+def _credit_fred_api(key):
+    """Путь (а): официальный API FRED (нужен FRED_API_KEY)."""
+    start = (dt.date.today() - dt.timedelta(days=120)).isoformat()
+    j = json.loads(fetch(
+        "https://api.stlouisfed.org/fred/series/observations?series_id=BAMLH0A0HYM2"
+        f"&file_type=json&observation_start={start}&api_key={key}", timeout=90))
+    return [float(o["value"]) for o in j.get("observations", [])
+            if o.get("value") not in (".", "", None)]
+
+def _credit_fredgraph():
+    """Путь (б): fredgraph.csv без ключа, timeout=90, до 3 попыток с паузой 10 с."""
+    errs = []
+    for attempt in range(1, 4):
+        try:
+            rows = fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2",
+                         timeout=90).strip().splitlines()[1:]
+            return [float(v) for _, v in (r.split(",", 1) for r in rows)
+                    if v not in (".", "")], errs
+        except Exception as e:
+            errs.append(f"fredgraph attempt {attempt}: {e}")
+            if attempt < 3:
+                time.sleep(10)
+    return None, errs
+
 def ax_credit():
-    try:
-        rows = fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2"
-                     ).strip().splitlines()[1:]
-        vals = [float(v) for _, v in (r.split(",", 1) for r in rows) if v not in (".", "")]
-        if len(vals) < 21:
-            return NA, NA, NA
-        cur, ago = vals[-1], vals[-21]
-        return f"{cur:.2f}", f"{ago:.2f}", ("1" if cur <= ago else "-1")
-    except Exception as e:
-        print("WARN credit axis:", e, file=sys.stderr)
+    """HY OAS (BAMLH0A0HYM2) vs уровня 20 торговых точек назад. Нет >=21 значения — NA."""
+    key = os.environ.get("FRED_API_KEY") or ""
+    reasons, vals = [], None
+    if key:
+        try:
+            vals = _credit_fred_api(key)
+            if len(vals) < 21:
+                reasons.append(f"fred api: only {len(vals)} values (<21)")
+                vals = None
+        except Exception as e:
+            # ключ никогда не печатаем
+            reasons.append("fred api: " + str(e).replace(key, "***"))
+            vals = None
+    else:
+        reasons.append("fred api: FRED_API_KEY not set")
+    if vals is None:
+        vals, errs = _credit_fredgraph()
+        reasons += errs
+        if vals is not None and len(vals) < 21:
+            reasons.append(f"fredgraph: only {len(vals)} values (<21)")
+            vals = None
+    if vals is None:
+        for r in reasons:
+            print("WARN credit axis:", r, file=sys.stderr)
         return NA, NA, NA
+    cur, ago = vals[-1], vals[-21]
+    return f"{cur:.2f}", f"{ago:.2f}", ("1" if cur <= ago else "-1")
 
 def regime_and_size(votes, cnn, vol_stress):
     valid = [int(v) for v in votes if v in ("1", "-1")]
