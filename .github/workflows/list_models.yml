@@ -1,0 +1,16 @@
+name: list-models
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Доступные модели OpenAI и Gemini (для repo Variables OPENAI_MODEL/GEMINI_MODEL)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "== OpenAI =="
+          curl -s https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | python3 -c "import json,sys; [print(m['id']) for m in sorted(json.load(sys.stdin)['data'], key=lambda x: x['id']) if 'gpt' in m['id']]"
+          echo "== Gemini =="
+          curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY" | python3 -c "import json,sys; [print(m['name'].split('/')[-1]) for m in json.load(sys.stdin).get('models',[]) if 'generateContent' in m.get('supportedGenerationMethods',[])]"

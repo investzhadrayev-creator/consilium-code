@@ -1,0 +1,27 @@
+name: validate-artifacts
+on:
+  push:
+    branches: [main]
+    paths: ['journal/**', 'Reports/**', 'mailbox/**']
+  pull_request:
+    paths: ['journal/**', 'Reports/**', 'mailbox/**']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Контролёр данных (append-only, схема, пути бота)
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 tools/validate_artifacts.py
+      - name: Тревога при нарушении на main
+        if: failure() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "[RED] Валидатор: нарушение в main ($(date -u +%F))" \
+            --body "Прогон: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Append-only или схема нарушены — разобрать немедленно."

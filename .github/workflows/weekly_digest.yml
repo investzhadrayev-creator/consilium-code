@@ -1,0 +1,29 @@
+name: weekly-digest
+on:
+  schedule:
+    - cron: '0 7 * * 6'   # суббота 12:00 Астана, после панели
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
+        run: |
+          python3 - << 'PY'
+          import subprocess, sys
+          sys.path.insert(0, 'tools'); import llm_clients as L
+          sh = lambda *c: subprocess.run(c, capture_output=True, text=True).stdout
+          body = ("НЕДЕЛЬНЫЙ ДАЙДЖЕСТ CONSILIUM\n\n== Панель (последняя строка) ==\n"
+                  + sh('tail','-1','journal/PANEL_LOG.csv')
+                  + "\n== Коммиты недели ==\n" + sh('git','log','--since=7 days ago','--format=- %ad %ae %s','--date=format:%m-%d')
+                  + "\n== Падения ==\n" + sh('gh','run','list','--limit','30','--status','failure','--json','name','--jq','.[].name'))
+          L.send_mail("[CONSILIUM] Недельный дайджест", body)
+          PY

@@ -1,0 +1,28 @@
+name: panel-weekly
+on:
+  schedule:
+    - cron: '0 5 * * 6'   # суббота 05:00 UTC = 10:00 Астана
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Панель режима (3 машинные оси; ERI/CNN = NA)
+        env:
+          TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+        run: |
+          python3 tools/panel_axes.py --append || echo "PANEL_INSUFFICIENT=1" >> "$GITHUB_ENV"
+      - name: Карточка этажа 1 (появится после задачи К1)
+        env:
+          TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+        run: |
+          if [ -f tools/floor1_card.py ]; then python3 tools/floor1_card.py; else echo "floor1_card.py ещё не создан (задача К1)"; fi
+      - name: Коммит
+        run: |
+          git config user.name consilium-panel
+          git config user.email actions@github.com
+          git add journal/ Reports/ && git diff --cached --quiet || git commit -m "weekly panel $(date -u +%F)"
+          git pull --rebase && git push

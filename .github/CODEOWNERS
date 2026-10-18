@@ -1,0 +1,8 @@
+# Файлы правил: изменения требуют одобрения оператора (ruleset: require code owner review)
+/.github/           @investzhadrayev-creator
+/tools/             @investzhadrayev-creator
+/CODEOWNERS         @investzhadrayev-creator
+/CLAUDE.md          @investzhadrayev-creator
+/mailbox/DECISION_* @investzhadrayev-creator
+/mailbox/PREREG_*   @investzhadrayev-creator
+/mailbox/MANDATE_*  @investzhadrayev-creator
