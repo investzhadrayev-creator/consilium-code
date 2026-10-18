@@ -16,6 +16,20 @@ async function check(name, fn) {
   catch (e) { failed++; console.log('  FAIL ' + name + '\n       ' + e.message); }
 }
 
+// K0 (2026-10-18): the node under test derives its six-month catalyst window from the wall clock
+// (`new Date()` / `Date.now()`), and the fixtures below carry JULY-2026 dates. In August all of it
+// was inside the window; by 2026-10-18 `Q2 2026` (quarter start 2026-04-01) fell outside, and the
+// (g).3 pin went red for no reason the code could be blamed for. The fixtures describe a run on
+// FIXTURE_NOW, so the clock is pinned to it. The node's behaviour is untouched; only the date the
+// test hands it is fixed. A control below proves the window still bites when the clock moves.
+const FIXTURE_NOW = Date.UTC(2026, 7, 4, 12, 0, 0);          // 2026-08-04, the ORCL fixture's run date
+let _now = FIXTURE_NOW;
+const RealDate = Date;
+global.Date = class FrozenDate extends RealDate {
+  constructor(...a) { if (a.length === 0) super(_now); else super(...a); }
+  static now() { return _now; }
+};
+
 const RESULT = {
   ivc_base: { intrinsic_value: 68.96, implied_cagr_pct: 11.56, fv10_per_share: 214.19,
     eps_terminal_dilution_adj: 7.14,
@@ -564,6 +578,21 @@ async function renderMd(over) { return (await render(over)).json.brief_md; }
         'section 6 leaked in although the pack numbered its sections');
       assert(/НА ЯЗЫКЕ ИСТОЧНИКА/.test(t),
         'the source-language disclosure is missing: English lines in a Russian brief read as a bug');
+    });
+
+  await check('K0 control: the clock is frozen, and the six-month window still drops stale events',
+    async () => {
+      assert(new Date().toISOString().slice(0, 10) === '2026-08-04',
+        'the test clock is not pinned: this suite would age with the calendar again');
+      _now = Date.UTC(2026, 9, 18, 12, 0, 0);               // the day the baseline went red
+      try {
+        const late = await renderMd();
+        const t = late.slice(late.indexOf('## Катализаторы с датами'),
+                             late.indexOf('## Что у компании хорошо'));
+        assert(!/Q2 2026/.test(t),
+          'a quarter that began >190 days before the run date was published as a current catalyst');
+        assert(/2026-06-18/.test(t), 'the control dropped an event that is still inside the window');
+      } finally { _now = FIXTURE_NOW; }
     });
 
   await check('v4.2.79 (g).3: OLD dated events are not catalysts', async () => {
