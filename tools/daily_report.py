@@ -31,10 +31,8 @@ def main():
     path = f"journal/digests/DAILY_{today}.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write(md)
-    sh("git", "config", "user.name", "consilium-report")
-    sh("git", "config", "user.email", "actions@github.com")
-    sh("git", "add", path); sh("git", "commit", "-m", f"daily report {today}")
-    sh("git", "pull", "--rebase"); sh("git", "push")
+    import autocommit
+    autocommit.publish([path], f"daily report {today}", author="consilium-report")
     L.send_mail(f"[CONSILIUM] Отчёт {today}", md)
     print("sent:", path)
 

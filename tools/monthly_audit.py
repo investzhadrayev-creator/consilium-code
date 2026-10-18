@@ -38,11 +38,9 @@ def main():
     path = f"journal/audits/MONTHLY_ARCHITECT_AUDIT_{ym}.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
-    sh("git", "config", "user.name", "consilium-audit")
-    sh("git", "config", "user.email", "actions@github.com")
-    sh("git", "add", path)
-    sh("git", "commit", "-m", f"monthly architect audit {ym}" + (" [RED]" if red else ""))
-    sh("git", "pull", "--rebase"); sh("git", "push")
+    import autocommit
+    autocommit.publish([path], f"monthly architect audit {ym}" + (" [RED]" if red else ""),
+                       author="consilium-audit")
     if red:
         L.send_mail(f"[CONSILIUM RED] Месячный аудит архитектора {ym}",
                     f"Минимум один рецензент дал RED. Файл: {path}")

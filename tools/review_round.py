@@ -24,8 +24,7 @@ def main():
               f"ACCEPT/REJECT/CONDITIONAL с причиной. Манифест mailbox для контекста "
               f"(файлы НЕ приложены — проси конкретный файл, если без него нельзя судить):\n"
               f"{manifest}\n\n=== ФАЙЛ РАУНДА ===\n{round_text}")
-    sh("git", "config", "user.name", "consilium-review")
-    sh("git", "config", "user.email", "actions@github.com")
+    written = []
     for provider, tag in (("openai", "CHATGPT_API"), ("gemini", "GEMINI_API")):
         out = f"mailbox/{base.replace('ROUND', 'R').split('_')[0]}_REVIEW_{tag}.md"
         out = f"mailbox/{base}_REVIEW_{tag}.md"
@@ -40,10 +39,11 @@ def main():
             body = f"REVIEW_UNAVAILABLE ({provider}): {e}\n"
         with open(out, "w", encoding="utf-8") as f:
             f.write(body)
-        sh("git", "add", out)
-        sh("git", "commit", "-m", f"api review {provider}: {base}")
+        written.append(out)
         print("written:", out)
-    sh("git", "pull", "--rebase"); sh("git", "push")
+    if written:
+        import autocommit
+        autocommit.publish(written, f"api review: {base}", author="consilium-review")
     L.send_mail(f"[CONSILIUM] API-аудит по {base} готов",
                 f"Ответы залиты в mailbox ({base}_REVIEW_*_API.md).")
 

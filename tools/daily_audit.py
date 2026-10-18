@@ -88,11 +88,9 @@ def write_commit(today, md, red, unavailable=False):
     os.makedirs("journal/audits", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(md)
-    sh("git", "config", "user.name", "consilium-audit")
-    sh("git", "config", "user.email", "actions@github.com")
-    sh("git", "add", path)
-    sh("git", "commit", "-m", f"daily audit {today}" + (" [RED]" if red else ""))
-    sh("git", "pull", "--rebase"); sh("git", "push")
+    import autocommit
+    autocommit.publish([path], f"daily audit {today}" + (" [RED]" if red else ""),
+                       author="consilium-audit")
     if red:
         L.send_mail(f"[CONSILIUM RED] Ежедневный аудит {today}: подтверждено нарушение",
                     "Аудитор подтвердил расхождение «сказано—сделано».\n"

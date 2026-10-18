@@ -14,6 +14,8 @@
 Secrets: GMAIL_ADDRESS, GMAIL_APP_PASSWORD, MAIL_AUTH_TOKEN; опц. CONSILIUM_PAT
 (PAT оператора: issues от его имени — упоминание @claude гарантированно будит бота).
 """
+import sys
+sys.path.insert(0, __import__("os").path.dirname(__file__))
 import base64, email, email.header, imaplib, os, re, subprocess, sys, time
 
 PROTECTED = (".github/", "tools/", "CONSILIUM_REPO", "mailbox/DECISION_",
@@ -37,9 +39,10 @@ def log_command(kind, subject, body):
     entry = f"{ts} | {kind} | {subject} | body_sha={__import__('hashlib').sha256(body.encode()).hexdigest()[:16]}"
     with open("journal/architect_commands.log", "a", encoding="utf-8") as f:
         f.write(entry + "\n")
-    sh("git", "add", "journal/architect_commands.log")
-    sh("git", "commit", "-m", f"bridge: log architect command [{kind}]")
-    sh("git", "push")
+    import autocommit
+    if not autocommit.publish(["journal/architect_commands.log"],
+                              f"bridge: log architect command [{kind}]", author="consilium-bridge"):
+        raise RuntimeError("лог команды не прошёл проверку — команда НЕ исполняется")
     print("logged:", entry)
 
 def decode_hdr(h):
@@ -94,6 +97,11 @@ def do_file(subject, body):
         sh("git", "checkout", "main", check=False); return
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+    if not protected:
+        import autocommit
+        autocommit.publish([path], f"architect via bridge: {path}", author="consilium-bridge")
+        print(f"FILE published: {path}")
+        return
     sh("git", "add", path)
     sh("git", "commit", "-m", f"architect via bridge: {path}")
     if protected:
@@ -104,9 +112,6 @@ def do_file(subject, body):
                        capture_output=True, text=True, env=dict(os.environ))
         sh("git", "checkout", "main")
         print(f"FILE -> PR (protected): {path}")
-    else:
-        sh("git", "push")
-        print(f"FILE committed: {path}")
 
 def main():
     addr = os.environ["GMAIL_ADDRESS"]; pwd = os.environ["GMAIL_APP_PASSWORD"]
@@ -135,7 +140,11 @@ def main():
         if not kind:
             continue
         sh("git", "pull", "--rebase", check=False)
-        log_command(kind, subject, body)  # след ДО исполнения
+        try:
+            log_command(kind, subject, body)  # след ДО исполнения
+        except Exception as e:
+            print(f"LOG FAILED, command skipped [{kind}] {subject}: {e}")
+            continue
         try:
             {"TASK": lambda: do_task(subject.split("]", 1)[1].strip() or "Задача архитектора", body),
              "MERGE": lambda: do_merge(subject, body),
