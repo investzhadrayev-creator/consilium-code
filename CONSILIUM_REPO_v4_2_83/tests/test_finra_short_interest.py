@@ -8,6 +8,7 @@ and a field name assumed rather than verified.
 
 All offline — _post_json is monkeypatched; no network, no credentials.
 """
+import datetime
 import time
 import unittest
 
@@ -36,8 +37,29 @@ ROWS_OK = [
 ]
 
 
+# K0 (2026-10-18): fsi refuses a latest settlement older than 45 days, measured against
+# date.today(). ROWS_OK carries July-2026 settlements, so the suite was green in August and red by
+# October -- the gate was right, the fixture had aged. The fixtures describe a run on FIXTURE_TODAY
+# (5 days after the newest row), so the clock the module sees is pinned to it. The gate itself is
+# untouched and is exercised against a moved clock in TestStalenessGateStillBites.
+FIXTURE_TODAY = datetime.date(2026, 7, 20)
+
+
+def _frozen_date(today):
+    class FrozenDate(datetime.date):
+        @classmethod
+        def today(cls):
+            return today
+    return FrozenDate
+
+
 class FinraBase(unittest.TestCase):
+    _today = FIXTURE_TODAY
+
     def setUp(self):
+        self._real_date = datetime.date
+        datetime.date = _frozen_date(self._today)      # fsi reads datetime.date at call time
+        self.addCleanup(setattr, datetime, "date", self._real_date)
         self._orig = fsi._post_json
         fsi._TOKEN_CACHE.update({"token": None, "exp": 0.0, "cid": None})
         self.calls = []
@@ -181,3 +203,28 @@ class TestDataQuery(FinraBase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestStalenessGateStillBites(FinraBase):
+    """The control for the frozen clock above: the 45-day refusal is real behaviour and must keep
+    refusing. If a future edit made the gate pass old data, freezing the clock would hide it."""
+
+    def test_the_fixture_is_fresh_on_its_own_date(self):
+        self.mock()
+        self.assertIsNotNone(fsi.finra_short_interest("ADBE", "cid", "secret"))
+
+    def test_the_day_the_baseline_went_red_is_refused_with_the_age(self):
+        datetime.date = _frozen_date(datetime.date(2026, 10, 18))
+        self.mock()
+        errs = {}
+        self.assertIsNone(fsi.finra_short_interest("ADBE", "cid", "secret", errs))
+        self.assertIn("2026-07-15", errs["finra_short"])
+        self.assertIn("95d old", errs["finra_short"])
+
+    def test_boundary_45_days_passes_46_is_refused(self):
+        newest = datetime.date(2026, 7, 15)
+        for age, ok in ((45, True), (46, False)):
+            datetime.date = _frozen_date(newest + datetime.timedelta(days=age))
+            self.mock()
+            self.assertEqual(
+                fsi.finra_short_interest("ADBE", "cid", "secret", {}) is not None, ok, age)
