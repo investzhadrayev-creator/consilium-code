@@ -26,4 +26,6 @@ jobs:
       - name: Публикация через PR (замок main не обходится)
         env:
           GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 tools/autocommit.py "weekly panel $(date -u +%F)" journal/ Reports/
