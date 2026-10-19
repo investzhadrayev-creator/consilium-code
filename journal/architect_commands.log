@@ -5,3 +5,4 @@
 2026-10-19T21:02:08Z | NOTIFY | [CONSILIUM-NOTIFY] Проверка канала | body_sha=aecdc8d830115280 | msgid=<CAPaEdTK6qximMtyY8SY9-v9BaNmgWH2ni5WGT8VPanVCLUSBsQ@mail.gmail.com>
 2026-10-19T21:02:19Z | FILE | [CONSILIUM-FILE] mailbox/REPORT_2026-10-19_BRIDGE_TEST_C.md | body_sha=0801e39dff89f377 | msgid=<CAPaEdTKP+yptc-r-7ZCnwTFAxbyiabhQYoJ_zgHTF+xZ7OifCA@mail.gmail.com>
 2026-10-19T21:02:40Z | FILE | [CONSILIUM-FILE] mailbox/CALIBRATION_REQUEST_2026-10-19.md | body_sha=1deaf91fafc5b8dd | msgid=<CAPaEdTL4vvR4FztNPFjAHrtVaTf3-CeAz_Jwzm-APCvEVphMLw@mail.gmail.com>
+2026-10-19T21:03:00Z | TASK | [CONSILIUM-TASK] K2: перебазировать PR #47 на текущий main | body_sha=acf470d75c01afea | msgid=<CAPaEdTJoJJ4LE_pHkL41EbwGKcYhey-dWmzHj8B96RCTP6BcJQ@mail.gmail.com>
