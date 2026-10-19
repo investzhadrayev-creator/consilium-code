@@ -32,6 +32,12 @@ import mail_bridge as B  # noqa: E402
 import notify_failure as NF  # noqa: E402
 import monthly_audit as M  # noqa: E402
 import panel_axes as P   # noqa: E402
+import schedule_guard as G  # noqa: E402
+
+# Default-deny: the guard shells out to git/gh. No test in this module may reach the real ones
+# (issue #70: the first run of this suite hit a real `git fetch` from a tmp cwd). Tests of the
+# guard itself live in test_schedule_guard.py and install their own fakes.
+G.sh = lambda *cmd: (1, "", "test: git/gh unavailable by design")
 
 SECRET = "123456789:AAFakeTelegramTokenValueXYZ_-abc"
 
@@ -684,6 +690,7 @@ class TestDailyReportFailures(Patched):
         self.patch(autocommit, "publish", lambda *a, **k: True)
         self.patch(R, "sh", lambda *a: "- коммит\n")
         self.patch(F, "failed_runs", lambda limit=20: ([], 0, ""))
+        self.patch(G, "watch_section", lambda *a, **k: ("## Пропущенные запуски\nstub\n", 0))
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
         self.assertTrue(sent[-1].endswith("всё зелёно"), sent)

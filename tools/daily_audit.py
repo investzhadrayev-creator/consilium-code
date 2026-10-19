@@ -10,6 +10,7 @@ import datetime as dt, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
+import schedule_guard as G
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
@@ -60,6 +61,8 @@ def build_packet(day, g):
             f"{F.fact_sections(7)}")
 
 def main():
+    if G.skip_if_published("daily-audit"):
+        return
     today = dt.date.today()
     g = gather()
     commits, cmds = g["commits"], g["cmds"]
