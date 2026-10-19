@@ -1,0 +1,26 @@
+name: calibrate-auditor
+# Калибровка аудитора (решение оператора 2026-10-19). Исполняется, только если есть
+# mailbox/CALIBRATION_REQUEST_*.md без ответа (tools/calibrate_auditor.py сам это проверяет).
+# Cron нужен потому, что слияния токеном Actions не запускают другие workflows.
+on:
+  schedule:
+    - cron: '45 16 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Калибровка Gemini-кандидата против GEMINI_MODEL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 tools/calibrate_auditor.py
