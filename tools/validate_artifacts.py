@@ -12,7 +12,8 @@ import os, re, subprocess, sys
 
 APPEND_ONLY = ("journal/PANEL_LOG.csv", "journal/architect_commands.log")
 APPEND_ONLY_DIRS = ("journal/audits/", "journal/digests/", "mailbox/")
-BOT_ALLOWED = ("journal/", "Reports/", "mailbox/ROUND")  # автокоммитам можно только сюда
+BOT_ALLOWED = ("journal/", "Reports/", "mailbox/")  # автокоммитам можно только сюда
+BOT_FORBIDDEN = ("mailbox/DECISION_", "mailbox/PREREG_", "mailbox/MANDATE_")  # законы — только оператор
 VOTES = {"1", "-1", "NA"}
 fails = []
 
@@ -76,7 +77,8 @@ def main():
         sha, _, email = c.partition("|")
         if "github-actions" in email or "actions@github.com" in email:
             for p in sh("git", "show", "--name-only", "--format=", sha).split():
-                if p and not any(p.startswith(a) for a in BOT_ALLOWED):
+                if p and (not any(p.startswith(a) for a in BOT_ALLOWED)
+                          or any(p.startswith(f) for f in BOT_FORBIDDEN)):
                     fails.append(f"BOT PATH VIOLATION: автокоммит {sha[:8]} трогает {p}")
 
     if fails:

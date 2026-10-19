@@ -89,23 +89,25 @@ def _credit_fredgraph():
             rows = fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2",
                          timeout=90).strip().splitlines()[1:]
             return [float(v) for _, v in (r.split(",", 1) for r in rows)
-                    if v not in (".", "")], errs
+                    if v not in (".", "")], errs, attempt
         except Exception as e:
             errs.append(f"fredgraph attempt {attempt}: {e}")
             if attempt < 3:
                 time.sleep(10)
-    return None, errs
+    return None, errs, None
 
 def ax_credit():
     """HY OAS (BAMLH0A0HYM2) vs уровня 20 торговых точек назад. Нет >=21 значения — NA."""
     key = os.environ.get("FRED_API_KEY") or ""
-    reasons, vals = [], None
+    reasons, vals, source = [], None, None
     if key:
         try:
             vals = _credit_fred_api(key)
             if len(vals) < 21:
                 reasons.append(f"fred api: only {len(vals)} values (<21)")
                 vals = None
+            else:
+                source = "FRED API (attempt 1)"
         except Exception as e:
             # ключ никогда не печатаем
             reasons.append("fred api: " + str(e).replace(key, "***"))
@@ -113,15 +115,19 @@ def ax_credit():
     else:
         reasons.append("fred api: FRED_API_KEY not set")
     if vals is None:
-        vals, errs = _credit_fredgraph()
+        vals, errs, attempt = _credit_fredgraph()
         reasons += errs
         if vals is not None and len(vals) < 21:
             reasons.append(f"fredgraph: only {len(vals)} values (<21)")
             vals = None
+        elif vals is not None:
+            source = f"fredgraph (attempt {attempt} of 3)"
     if vals is None:
         for r in reasons:
             print("WARN credit axis:", r, file=sys.stderr)
         return NA, NA, NA
+    # путь данных — только в лог (схема PANEL_LOG заморожена, колонку не добавляем)
+    print(f"INFO credit axis: data from {source}, {len(vals)} values", file=sys.stderr)
     cur, ago = vals[-1], vals[-21]
     return f"{cur:.2f}", f"{ago:.2f}", ("1" if cur <= ago else "-1")
 

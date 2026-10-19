@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -14,6 +16,8 @@ jobs:
       - name: Аудитор «сказано — сделано» (чёт→OpenAI, нечет→Gemini)
         env:
           GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}

@@ -9,50 +9,67 @@
 import datetime as dt, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
+import audit_facts as F
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
 
-def gather():
-    commits = sh("git", "log", "--since=26 hours ago",
-                 "--format=%h | %ae | %s")
-    cmds = ""
-    log = sh("git", "log", "--since=26 hours ago", "-p", "--",
-             "journal/architect_commands.log")
+PASS1_TASK = ("\n\nЗАДАЧА (проход 1 — сверка «сказано—сделано»): по КАЖДОЙ команде "
+              "архитектора и каждому незакрытому пункту дай вердикт строкой:\n"
+              "ПОДТВЕРЖДЕНО: <что> — <каким фактом> | РАСХОЖДЕНИЕ: <заявлено X, факт Y>\n"
+              "Обязательно ищи: команды без следов исполнения; коммиты без команд, меняющие "
+              "правила; упавшие прогоны, о которых никто не доложил. Только факты пакета.")
+
+def gather(end=None):
+    """Факты за 26ч до `end` (по умолчанию — сейчас). Для end в прошлом (калибровка) git-часть
+    берётся за то же окно, а снимки состояния GitHub (прогоны, issues, PR, ruleset) — на момент
+    вызова, и пакет это прямо пишет (нельзя вернуться во времени за состоянием API)."""
+    win = ["--since=26 hours ago"] if end is None else [
+        f"--since={(end - dt.timedelta(hours=26)).strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        f"--until={end.strftime('%Y-%m-%dT%H:%M:%SZ')}"]
+    commits = sh("git", "log", *win, "--format=%h | %ae | %s").strip()
+    log = sh("git", "log", *win, "-p", "--", "journal/architect_commands.log")
     cmds = "\n".join(l[1:] for l in log.splitlines()
-                     if l.startswith("+") and "|" in l and not l.startswith("+++"))
-    runs = sh("gh", "run", "list", "--limit", "15",
-              "--json", "name,status,conclusion,createdAt",
-              "--jq", '.[] | "\\(.createdAt) \\(.name): \\(.status)/\\(.conclusion)"')
+                     if l.startswith("+") and "|" in l and not l.startswith("+++")).strip()
+    runs = F.runs_overview(15)
     issues = sh("gh", "issue", "list", "--state", "open", "--limit", "20",
                 "--json", "number,title", "--jq", '.[] | "#\\(.number) \\(.title)"')
+    issues = F.caption(len([l for l in issues.splitlines() if l.strip()]), None, 20) + "\n" + issues
     prev = ""
     audits = sorted(os.listdir("journal/audits")) if os.path.isdir("journal/audits") else []
-    prev_files = [a for a in audits if a.startswith("DAILY_AUDIT_")]
+    prev_files = [a for a in audits if a.startswith("DAILY_AUDIT_")
+                  and (end is None or a < f"DAILY_AUDIT_{end.date()}.md")]
     if prev_files:
         with open(f"journal/audits/{prev_files[-1]}", encoding="utf-8") as f:
             prev = "\n".join(l for l in f.read().splitlines()
                              if "UNRESOLVED" in l or "ПОДТВЕРЖДАЮ НАРУШЕНИЕ" in l)[:2000]
-    return commits.strip(), cmds.strip(), runs.strip(), issues.strip(), prev.strip()
+    return {"commits": commits, "cmds": cmds, "runs": runs.strip(),
+            "issues": issues.strip(), "prev": prev.strip(), "snapshot": end is not None}
+
+def build_packet(day, g):
+    note = ("\n(ВНИМАНИЕ: ретроспективный пакет за прошлую дату — статусы прогонов, issues, "
+            "PR, ruleset ниже — снимок на момент сборки, не на дату пакета)" if g["snapshot"] else "")
+    return (f"ПАКЕТ ДНЯ {day} проекта Consilium (github.com/investzhadrayev-creator/consilium-code){note}\n\n"
+            f"== КОМАНДЫ АРХИТЕКТОРА (несмываемый лог, за 26ч) ==\n{g['cmds'] or '(нет)'}\n\n"
+            f"== ФАКТИЧЕСКИЕ КОММИТЫ (за 26ч) ==\n"
+            f"{F.list_block(g['commits'], 'git log за 26ч, лимита нет') if g['commits'] else '(нет)'}\n\n"
+            f"== СТАТУСЫ АВТОМАТИКИ (последние прогоны; подпись = размер выборки, "
+            f"НЕ число падений) ==\n{g['runs'] or '(нет)'}\n\n"
+            f"== ОТКРЫТЫЕ ЗАДАЧИ ==\n{g['issues'] or '(нет)'}\n\n"
+            f"== НЕЗАКРЫТОЕ ИЗ ПРОШЛОГО АУДИТА ==\n{g['prev'] or '(нет)'}\n\n"
+            f"{F.fact_sections(7)}")
 
 def main():
     today = dt.date.today()
-    commits, cmds, runs, issues, prev = gather()
+    g = gather()
+    commits, cmds = g["commits"], g["cmds"]
     if not commits and not cmds:
         print("пустой день — аудит не требуется"); return
     provider = "openai" if today.day % 2 == 0 else "gemini"
 
-    packet = (f"ПАКЕТ ДНЯ {today} проекта Consilium (github.com/investzhadrayev-creator/consilium-code)\n\n"
-              f"== КОМАНДЫ АРХИТЕКТОРА (несмываемый лог, за 26ч) ==\n{cmds or '(нет)'}\n\n"
-              f"== ФАКТИЧЕСКИЕ КОММИТЫ (за 26ч) ==\n{commits or '(нет)'}\n\n"
-              f"== СТАТУСЫ АВТОМАТИКИ ==\n{runs or '(нет)'}\n\n"
-              f"== ОТКРЫТЫЕ ЗАДАЧИ ==\n{issues or '(нет)'}\n\n"
-              f"== НЕЗАКРЫТОЕ ИЗ ПРОШЛОГО АУДИТА ==\n{prev or '(нет)'}")
-    p1 = (packet + "\n\nЗАДАЧА (проход 1 — сверка «сказано—сделано»): по КАЖДОЙ команде "
-          "архитектора и каждому незакрытому пункту дай вердикт строкой:\n"
-          "ПОДТВЕРЖДЕНО: <что> — <каким фактом> | РАСХОЖДЕНИЕ: <заявлено X, факт Y>\n"
-          "Обязательно ищи: команды без следов исполнения; коммиты без команд, меняющие "
-          "правила; упавшие прогоны, о которых никто не доложил. Только факты пакета.")
+    packet = build_packet(today, g)
+    prev = g["prev"]
+    p1 = packet + PASS1_TASK
     try:
         r1 = L.call(provider, p1, system=L.AUDITOR_PERSONA)
     except L.Unavailable as e:
@@ -88,17 +105,19 @@ def write_commit(today, md, red, unavailable=False):
     os.makedirs("journal/audits", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(md)
-    sh("git", "config", "user.name", "consilium-audit")
-    sh("git", "config", "user.email", "actions@github.com")
-    sh("git", "add", path)
-    sh("git", "commit", "-m", f"daily audit {today}" + (" [RED]" if red else ""))
-    sh("git", "pull", "--rebase"); sh("git", "push")
+    import autocommit
+    ok = autocommit.publish([path], f"daily audit {today}" + (" [RED]" if red else ""),
+                            author="consilium-audit")
     if red:
+        L.notify(f"[RED] Ежедневный аудит {today}: подтверждено нарушение. journal/audits/DAILY_AUDIT_{today}.md")
         L.send_mail(f"[CONSILIUM RED] Ежедневный аудит {today}: подтверждено нарушение",
                     "Аудитор подтвердил расхождение «сказано—сделано».\n"
                     f"Файл: journal/audits/DAILY_AUDIT_{today}.md\n"
                     "https://github.com/investzhadrayev-creator/consilium-code/tree/main/journal/audits")
     print(("RED" if red else "clean"), "->", path)
+    if not ok:
+        print("daily_audit: результат НЕ опубликован -> exit 1")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -13,7 +15,15 @@ jobs:
         with: { fetch-depth: 0 }
       - env:
           GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
         run: python3 tools/daily_report.py
+      - name: Валидатор данных на main за 26 ч (замена PR-проверке, которая не стартует на auto/* PR)
+        if: always()
+        run: |
+          BASE=$(git rev-list -1 --before="26 hours ago" origin/main || true)
+          if [ -z "$BASE" ]; then echo "BASE не определён: история короче 26 ч — проверка не выполнена"; exit 1; fi
+          BASE="$BASE" HEAD=origin/main python3 tools/validate_artifacts.py

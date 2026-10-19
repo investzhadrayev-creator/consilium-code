@@ -4,7 +4,7 @@
 Протокол раунда 7: пин модели через repo Variables (OPENAI_MODEL/GEMINI_MODEL),
 температура 0, повторы с backoff, при недоступности — исключение Unavailable
 (вызывающий пишет REVIEW_UNAVAILABLE, никакого фиктивного согласия)."""
-import json, os, time, hashlib, urllib.request, urllib.error
+import io, json, os, re, time, hashlib, urllib.request, urllib.error
 
 class Unavailable(Exception):
     pass
@@ -61,9 +61,9 @@ def call_openai(prompt, system=None, max_tokens=6000):
     return {"text": txt, "model": j.get("model", model),
             "usage": j.get("usage", {}), "provider": "openai"}
 
-def call_gemini(prompt, system=None, max_tokens=6000):
+def call_gemini(prompt, system=None, max_tokens=6000, model=None):
     key = os.environ.get("GEMINI_API_KEY") or ""
-    model = os.environ.get("GEMINI_MODEL") or ""
+    model = model or os.environ.get("GEMINI_MODEL") or ""
     if not key or not model:
         raise Unavailable("GEMINI_API_KEY/GEMINI_MODEL not set (run list_models workflow, set repo variable)")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
@@ -71,12 +71,26 @@ def call_gemini(prompt, system=None, max_tokens=6000):
             "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens}}
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
-    j = _retry(lambda: _post(url, {}, body))
+    temp = "0"
+
+    def once():
+        nonlocal temp
+        try:
+            return _post(url, {}, body)
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode(errors="replace")
+            # модель не принимает temperature -> один повтор без неё, факт фиксируется в meta_block
+            if e.code == 400 and "temperature" in txt.lower() and "temperature" in body["generationConfig"]:
+                del body["generationConfig"]["temperature"]
+                temp = "not_applied"
+                return _post(url, {}, body)
+            raise urllib.error.HTTPError(e.url, e.code, e.msg, e.hdrs, io.BytesIO(txt.encode()))
+    j = _retry(once)
     try:
         txt = j["candidates"][0]["content"]["parts"][0]["text"]
     except Exception:
         raise Unavailable(f"gemini: unexpected response shape: {str(j)[:300]}")
-    return {"text": txt, "model": model,
+    return {"text": txt, "model": model, "temp": temp,
             "usage": j.get("usageMetadata", {}), "provider": "gemini"}
 
 def call(provider, prompt, system=None, max_tokens=6000):
@@ -87,7 +101,7 @@ def meta_block(resp, input_text):
     h = hashlib.sha256(input_text.encode()).hexdigest()[:16]
     return (f"<!-- provider={resp['provider']} model={resp['model']} "
             f"input_sha256_16={h} usage={json.dumps(resp['usage'])} "
-            f"temp=0 ts={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} -->")
+            f"temp={resp.get('temp', '0')} ts={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} -->")
 
 AUDITOR_PERSONA = ("Ты — Senior Equity Research Analyst с 20-летним опытом в value-хедж-фонде "
                    "(школа Грэма-Додда) и внешний аудитор проекта Consilium. Стиль: скептический, "
@@ -112,3 +126,31 @@ def send_mail(subject, body_text):
         s.login(addr, pwd)
         s.sendmail(addr, [to], msg.as_string())
     return True
+
+def _scrub(text, token):
+    """Токен никогда не попадает в лог: ни сам, ни в составе URL бота."""
+    text = str(text)
+    if token:
+        text = text.replace(token, "***")
+    return re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot***", text)
+
+def notify(text):
+    """Telegram-уведомление оператору. Секреты: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+    Нет секретов -> WARN и False (не падает). Ошибка отправки -> WARN без токена и False.
+    True только если Telegram ответил ok."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or ""
+    chat = os.environ.get("TELEGRAM_CHAT_ID") or ""
+    if not token or not chat:
+        print("WARN: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set; notify skipped")
+        return False
+    msg = text if text.startswith("[Консилиум] ") else "[Консилиум] " + text
+    try:
+        j = _post(f"https://api.telegram.org/bot{token}/sendMessage", {},
+                  {"chat_id": chat, "text": msg[:4000]}, timeout=30)
+        if not j.get("ok"):
+            print("WARN: telegram not ok:", _scrub(str(j)[:200], token))
+            return False
+        return True
+    except Exception as e:
+        print("WARN: telegram notify failed:", _scrub(repr(e), token))
+        return False

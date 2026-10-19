@@ -1,1 +1,9 @@
 # Несмываемый лог команд архитектора. Append-only. Каждая команда фиксируется ДО исполнения.
+2026-10-18T20:48:33Z | FILE | [CONSILIUM-FILE] mailbox/REPORT_2026-10-19_BRIDGE_TEST_B.md | body_sha=2495d21235e62f73
+2026-10-19T00:13:27Z | TASK | [CONSILIUM-TASK] 0.6: доработки автоматики + Telegram + баг FILE (один PR) | body_sha=5a6c0c6ff3511edd
+2026-10-19T04:50:09Z | TASK | [CONSILIUM-TASK] Доработка PR #56: body_sha моста (дедуп и утечка) | body_sha=a47a06fa68fc2886
+2026-10-19T21:02:08Z | NOTIFY | [CONSILIUM-NOTIFY] Проверка канала | body_sha=aecdc8d830115280 | msgid=<CAPaEdTK6qximMtyY8SY9-v9BaNmgWH2ni5WGT8VPanVCLUSBsQ@mail.gmail.com>
+2026-10-19T21:02:19Z | FILE | [CONSILIUM-FILE] mailbox/REPORT_2026-10-19_BRIDGE_TEST_C.md | body_sha=0801e39dff89f377 | msgid=<CAPaEdTKP+yptc-r-7ZCnwTFAxbyiabhQYoJ_zgHTF+xZ7OifCA@mail.gmail.com>
+2026-10-19T21:02:40Z | FILE | [CONSILIUM-FILE] mailbox/CALIBRATION_REQUEST_2026-10-19.md | body_sha=1deaf91fafc5b8dd | msgid=<CAPaEdTL4vvR4FztNPFjAHrtVaTf3-CeAz_Jwzm-APCvEVphMLw@mail.gmail.com>
+2026-10-19T21:03:00Z | TASK | [CONSILIUM-TASK] K2: перебазировать PR #47 на текущий main | body_sha=acf470d75c01afea | msgid=<CAPaEdTJoJJ4LE_pHkL41EbwGKcYhey-dWmzHj8B96RCTP6BcJQ@mail.gmail.com>
+2026-10-19T21:03:11Z | TASK | [CONSILIUM-TASK] Надёжность расписаний: GitHub пропускает cron-запуски | body_sha=778773f62bea6268 | msgid=<CAPaEdTKrZfiOpOwtOkTKQ57E17tRrpmLf=-jjdZ_cJLzQiEzow@mail.gmail.com>
