@@ -43,7 +43,9 @@ def main():
         print("written:", out)
     if written:
         import autocommit
-        autocommit.publish(written, f"api review: {base}", author="consilium-review")
+        if not autocommit.publish(written, f"api review: {base}", author="consilium-review"):
+            print("review_round: результат НЕ опубликован -> exit 1")
+            sys.exit(1)
     L.send_mail(f"[CONSILIUM] API-аудит по {base} готов",
                 f"Ответы залиты в mailbox ({base}_REVIEW_*_API.md).")
 

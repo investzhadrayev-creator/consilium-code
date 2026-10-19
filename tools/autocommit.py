@@ -8,6 +8,7 @@ mailbox/ данные) не принадлежат CODEOWNERS, поэтому me
 Провал проверки → PR остаётся открытым, issue [RED], выход 1 — ничего не сливается.
 CLI: python3 tools/autocommit.py "<сообщение>" <путь> [<путь> ...]"""
 import os, re, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def sh(*cmd, check=True, env=None):
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -43,6 +44,11 @@ def publish(paths, message, author="consilium-auto"):
            check=False)
         sh("git", "checkout", "main", check=False)
         print("autocommit: ПРОВЕРКА ПРОВАЛЕНА — PR оставлен открытым")
+        try:
+            import llm_clients
+            llm_clients.notify(f"[RED] Автокоммит не прошёл проверку: {message} (ветка {branch})")
+        except Exception as e:  # уведомление не должно маскировать отказ
+            print("WARN: notify failed:", repr(e)[:200])
         return False
     for attempt in range(3):
         r = subprocess.run(["gh", "pr", "merge", branch, "--squash", "--delete-branch"],
@@ -58,6 +64,12 @@ def publish(paths, message, author="consilium-auto"):
     sh("git", "pull", "--ff-only", "origin", "main", check=False)
     print("autocommit: слито —", message)
     return True
+
+def publish_or_exit(paths, message, author="consilium-auto"):
+    """Зелёный job при неопубликованном результате запрещён: False -> код выхода 1."""
+    if not publish(paths, message, author=author):
+        print("autocommit: результат НЕ опубликован -> exit 1")
+        sys.exit(1)
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
