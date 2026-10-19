@@ -82,6 +82,9 @@ microservice/     Flask service (deployed to Railway as "growth-enrich"). ONE se
                     `analyze()` IS the deterministic harness. This is the money-critical function.
   ivc_lib.py        PINNED valuation math (ivc, bull_bear_table, gps_quant). Treat as frozen.
   edgar_facts.py    SEC XBRL financials + sanity gates + confirmed-split detection.
+  edgar_adapter.py  K2: as-of reads + filing-level fallback via edgartools (pinned ==). Share classes
+                    are published per class and NEVER summed; gaps are named refusals. Not yet
+                    wired into app.py.
   edgar_form4.py    SEC Form 4 insider transactions (discretionary P/S vs grants/vesting).
   market_facts.py   Second-source market layer: Alpha Vantage consensus, Finnhub revision
                     trends, in-house peer P/E (EDGAR EPS x Tiingo price), FINRA short interest,
