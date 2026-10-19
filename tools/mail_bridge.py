@@ -55,12 +55,18 @@ def gh_env():
         e["GH_TOKEN"] = pat
     return e
 
-def body_sha(body):
-    return hashlib.sha256(body.encode()).hexdigest()[:16]
+def body_sha(raw, token=""):
+    """Хэш для журнала и дедупа legacy-строк — РОВНО как в старом мосте: декодированное
+    text/plain (без нормализации CRLF и unflow) -> удалить 'AUTH: <token>' -> .strip() -> 16 hex.
+    Хэш не зависит от секрета (журнал публичный, тело TASK тоже). Пустой token (только тесты) —
+    тело хэшируется без удаления."""
+    if token:
+        raw = raw.replace(f"AUTH: {token}", "")
+    return hashlib.sha256(raw.strip().encode()).hexdigest()[:16]
 
-def log_command(kind, subject, body, msgid=""):
+def log_command(kind, subject, raw, msgid="", token=""):
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    entry = f"{ts} | {kind} | {subject} | body_sha={body_sha(body)} | msgid={msgid or 'НЕТ'}"
+    entry = f"{ts} | {kind} | {subject} | body_sha={body_sha(raw, token)} | msgid={msgid or 'НЕТ'}"
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
     import autocommit
@@ -255,7 +261,7 @@ def main():
         msgid = (msg["Message-ID"] or "").strip()
         raw, flowed, delsp = body_parts(msg)
         ids, legacy = executed_keys()
-        if (msgid and msgid in ids) or (kind, subject, body_sha(raw)) in legacy:
+        if (msgid and msgid in ids) or (kind, subject, body_sha(raw, token)) in legacy:
             print(f"SKIP (уже исполнено) {kind} {msgid or '(без Message-ID)'}")
             continue
         if addr.lower() not in sender.lower():
@@ -267,7 +273,7 @@ def main():
         sh("git", "checkout", "main", check=False)
         sh("git", "pull", "--rebase", check=False)
         try:
-            log_command(kind, subject, raw, msgid)  # след ДО исполнения
+            log_command(kind, subject, raw, msgid, token)  # след ДО исполнения
         except Exception as e:
             print(f"LOG FAILED, command skipped [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: лог не записан ({e})")

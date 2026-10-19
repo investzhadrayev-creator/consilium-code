@@ -7,6 +7,7 @@ rule: a contract asserted only in prose is a contract nobody checks.
 Network, git, gh, IMAP and Telegram are all replaced by in-process fakes; nothing leaves the box.
 """
 import contextlib
+import hashlib
 import datetime as dt
 import io
 import json
@@ -246,9 +247,10 @@ class TestBridgeMain(Patched):
             self.assertIsNone(B.parse_command(bad), bad)
 
     def test_legacy_log_line_without_msgid_dedupes_by_kind_subject_hash(self):
-        raw_body = "AUTH: TOK\r\nТело\r\n"
+        # old bridge: sha of the body AFTER removing "AUTH: <token>" and .strip()
+        old_sha = hashlib.sha256("Тело".encode()).hexdigest()[:16]
         with open(B.LOG, "a", encoding="utf-8") as f:
-            f.write(f"2026-10-18T00:00:00Z | TASK | [CONSILIUM-TASK] Старая | body_sha={B.body_sha(raw_body)}\n")
+            f.write(f"2026-10-18T00:00:00Z | TASK | [CONSILIUM-TASK] Старая | body_sha={old_sha}\n")
         self.add(b"1", self.task_mail(subject="[CONSILIUM-TASK] Старая", body="Тело"))
         self.run_main()
         self.assertEqual(self.calls, [])
@@ -291,6 +293,114 @@ class TestBridgeMain(Patched):
         self.assertEqual(code, 0)
         with open("mailbox/REPORT_2026-10-19_BRIDGE_TEST_B.md", encoding="utf-8") as f:
             self.assertEqual(f.read(), INTENDED)
+
+
+# ---------------------------------------------------------------------------------------------
+# issue #58: body_sha must equal the OLD bridge's hash and must not depend on the secret
+# ---------------------------------------------------------------------------------------------
+# Real values from journal/architect_commands.log on main (mail TEST_B, 2026-10-18T20:48:33Z).
+TEST_B_SAMPLE = json.loads(
+    '"```\\r\\n# Тест почтового моста — вариант B\\r\\n\\r\\nДата: 2026-10-19. Автор: архитектор.\\r\\n'
+    'Назначение: проверка кодовой фразы моста (вариант B — без обратной кавычки).\\r\\n'
+    'Если этот файл появился в main, мост принял фразу варианта B.\\r\\n'
+    'Файл-данные, правил не меняет.\\r\\n```"')
+TEST_B_SHA = "2495d21235e62f73"
+TEST_B_SUBJECT = "[CONSILIUM-FILE] mailbox/REPORT_2026-10-19_BRIDGE_TEST_B.md"
+TEST_B_LOG_LINE = f"2026-10-18T20:48:33Z | FILE | {TEST_B_SUBJECT} | body_sha={TEST_B_SHA}\n"
+
+
+def test_b_mail(token="TOK", subject=TEST_B_SUBJECT, msgid="<tb@x>"):
+    import quopri
+    body = f"AUTH: {token}\r\n\r\n" + TEST_B_SAMPLE + "\r\n"
+    qp = quopri.encodestring(body.encode("utf-8"))
+    head = (f"From: op@example.com\r\nSubject: {subject}\r\nMessage-ID: {msgid}\r\n"
+            "MIME-Version: 1.0\r\n"
+            "Content-Type: text/plain; charset=UTF-8; format=flowed\r\n"
+            "Content-Transfer-Encoding: quoted-printable\r\n\r\n").encode()
+    return head + qp
+
+
+class TestBodyShaMatchesOldBridge(Patched):
+    def raw_of(self, token):
+        import email
+        return B.body_parts(email.message_from_bytes(test_b_mail(token)))[0]
+
+    def test_real_test_b_mail_gives_the_hash_in_the_main_journal(self):
+        raw = self.raw_of("TOK")
+        self.assertIn("\r\n", raw, "fixture lost CRLF: not the real shape")
+        self.assertEqual(B.body_sha(raw, "TOK"), TEST_B_SHA)
+        self.assertEqual(hashlib.sha256(TEST_B_SAMPLE.encode()).hexdigest()[:16], TEST_B_SHA,
+                         "the sample no longer matches the journal value")
+
+    def test_hash_is_independent_of_the_secret(self):
+        self.assertEqual(B.body_sha(self.raw_of("TOK-ONE"), "TOK-ONE"),
+                         B.body_sha(self.raw_of("another secret 2"), "another secret 2"))
+
+    def test_hash_does_not_normalise_crlf(self):
+        """Negative control: the normalised text hashes differently (the 2026-10-19 defect, f9201065...)."""
+        raw = self.raw_of("TOK")
+        norm = B.normalize_body(raw, True, False)
+        self.assertNotEqual(B.body_sha(norm, "TOK"), TEST_B_SHA)
+
+    def test_empty_token_hashes_body_unchanged_but_stripped(self):
+        self.assertEqual(B.body_sha("  x\r\n", ""), hashlib.sha256(b"x").hexdigest()[:16])
+
+
+class TestJournalReplayDoesNotReexecute(Patched):
+    def setUp(self):
+        self.tmpcwd()
+        os.makedirs("journal")
+        # the TASK line is built by the OLD bridge's algorithm on a synthetic body (the real TASK
+        # mail body is not recoverable from the journal, only its hash)
+        task_body = "Тело задачи 0.6\r\nвторая строка"
+        self.task_sha = hashlib.sha256(task_body.encode()).hexdigest()[:16]
+        self.task_subject = "[CONSILIUM-TASK] 0.6: автоматика"
+        with open(B.LOG, "w", encoding="utf-8") as f:
+            f.write("# header\n" + TEST_B_LOG_LINE +
+                    f"2026-10-19T00:13:27Z | TASK | {self.task_subject} | body_sha={self.task_sha}\n")
+        self.env(GMAIL_ADDRESS="op@example.com", GMAIL_APP_PASSWORD="x", MAIL_AUTH_TOKEN="TOK")
+        FakeIMAP.mails, FakeIMAP.searches, FakeIMAP.stored, FakeIMAP.selected = {}, [], [], []
+        self.patch(B.imaplib, "IMAP4_SSL", FakeIMAP)
+        self.patch(B, "sh", lambda *a, **k: "")
+        self.published = []
+        self.patch(autocommit, "publish", lambda *a, **k: self.published.append(a) or True)
+        self.calls = []
+        self.patch(B, "do_task", lambda t, b: self.calls.append(("TASK", t, b)))
+        self.patch(B, "do_file", lambda s, b: self.calls.append(("FILE", s, b)))
+        self.patch(B, "do_merge", lambda s, b: self.calls.append(("MERGE", s, b)))
+        self.sent = self.notified()
+
+    def test_legacy_line_skips_test_b(self):
+        ids, legacy = B.executed_keys()
+        self.assertIn(("FILE", TEST_B_SUBJECT, TEST_B_SHA), legacy)
+        FakeIMAP.mails[b"1"] = test_b_mail("TOK")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            B.main()
+        self.assertIn("SKIP (уже исполнено) FILE", out.getvalue())
+        self.assertEqual(self.calls, [])
+
+    def test_main_on_journal_copy_executes_nothing_and_creates_no_issue(self):
+        gh_calls = []
+        self.patch(B, "sh", lambda *a, **k: gh_calls.append(a) or "")
+        task_mail = (f"From: op@example.com\r\nSubject: {self.task_subject}\r\nMessage-ID: <t0@x>\r\n"
+                     "Content-Type: text/plain; charset=utf-8\r\n\r\n"
+                     "AUTH: TOK\r\n\r\nТело задачи 0.6\r\nвторая строка\r\n").encode()
+        FakeIMAP.mails[b"1"] = test_b_mail("TOK")
+        FakeIMAP.mails[b"2"] = task_mail
+        before = open(B.LOG, encoding="utf-8").read()
+        with contextlib.redirect_stdout(io.StringIO()):
+            B.main()
+        self.assertEqual(self.calls, [], "old journal commands were re-executed")
+        self.assertFalse([c for c in gh_calls if "issue" in c and "create" in c], gh_calls)
+        self.assertEqual(self.published, [], "a replayed command was logged again")
+        self.assertEqual(open(B.LOG, encoding="utf-8").read(), before)
+
+    def test_new_line_is_logged_without_secret_dependence(self):
+        FakeIMAP.mails[b"1"] = test_b_mail("TOK", subject="[CONSILIUM-FILE] mailbox/REPORT_new.md", msgid="<n@x>")
+        with contextlib.redirect_stdout(io.StringIO()):
+            B.main()
+        line = open(B.LOG, encoding="utf-8").read().splitlines()[-1]
+        self.assertIn(f"body_sha={TEST_B_SHA}", line)
 
 
 # ---------------------------------------------------------------------------------------------
