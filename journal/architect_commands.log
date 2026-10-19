@@ -1,3 +1,4 @@
 # Несмываемый лог команд архитектора. Append-only. Каждая команда фиксируется ДО исполнения.
 2026-10-18T20:48:33Z | FILE | [CONSILIUM-FILE] mailbox/REPORT_2026-10-19_BRIDGE_TEST_B.md | body_sha=2495d21235e62f73
 2026-10-19T00:13:27Z | TASK | [CONSILIUM-TASK] 0.6: доработки автоматики + Telegram + баг FILE (один PR) | body_sha=5a6c0c6ff3511edd
+2026-10-19T04:50:09Z | TASK | [CONSILIUM-TASK] Доработка PR #56: body_sha моста (дедуп и утечка) | body_sha=a47a06fa68fc2886
