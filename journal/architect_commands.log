@@ -11,3 +11,4 @@
 2026-10-25T11:59:30Z | TASK | [CONSILIUM-TASK] Ложные тревоги: известное ограничение платформы и полный текст решений в пакете аудитора | body_sha=f5d4703258a8f2df | msgid=<CAPaEdTLRGBzmx75YwuhA1iOX=ejC5P1spC8xkN7VaDbnmL-iMw@mail.gmail.com>
 2026-10-25T11:59:39Z | TASK | [CONSILIUM-TASK] K1: карточка этажа 1 (tools/floor1_card.py) — к субботе 31.10 | body_sha=459c084fed882db5 | msgid=<CAPaEdTKYcvNJGpdFQBBDOM=SKvGoyyHj8AG1eWwO-5K2uwKcmA@mail.gmail.com>
 2026-10-25T11:59:48Z | TASK | [CONSILIUM-TASK] Telegram: уровни важности, напоминания о PR оператора, блок «ДЛЯ ОПЕРАТОРА» в каждом PR | body_sha=5cc5e4bcbe176f36 | msgid=<CAPaEdTJX7M-KLep-PE=CaLNLOb5aYuooKKQaToATMT-o-TpU7A@mail.gmail.com>
+2026-10-25T11:59:57Z | TASK | [CONSILIUM-TASK] Мост не запускается по расписанию: подстраховка через workflow_run и сторож моста | body_sha=36ca88847d2c3452 | msgid=<CAPaEdTLfU90JXhsCArX94SmW36sYFYv4k8xsvAnCGfPMACYV=g@mail.gmail.com>
