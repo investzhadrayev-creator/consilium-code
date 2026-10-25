@@ -46,7 +46,7 @@ def publish(paths, message, author="consilium-auto"):
         print("autocommit: ПРОВЕРКА ПРОВАЛЕНА — PR оставлен открытым")
         try:
             import llm_clients
-            llm_clients.notify(f"[RED] Автокоммит не прошёл проверку: {message} (ветка {branch})")
+            llm_clients.notify(f"[RED] Автокоммит не прошёл проверку: {message} (ветка {branch})", llm_clients.ALARM)
         except Exception as e:  # уведомление не должно маскировать отказ
             print("WARN: notify failed:", repr(e)[:200])
         return False

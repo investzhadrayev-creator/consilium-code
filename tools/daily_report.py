@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
 import schedule_guard as G
+import operator_prs as OP
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
@@ -37,11 +38,14 @@ def main():
     if G.skip_if_published("daily-report"):
         return
     today = dt.date.today()
+    # Напоминание оператору — раньше «пустого дня»: тихий день не повод молчать о ждущих PR.
+    # Повтор раз в сутки: skip_if_published выше отсекает второй слот расписания.
+    _, remind_err = OP.remind()
     missed, n_missed = G.watch_section()
     commits = sh("git", "log", "--since=26 hours ago", "--format=- %s (%h, %an)").strip()
     if not commits:
         print("пустой день")
-        L.notify(f"{today}: коммитов за 26ч нет, отчёт не формировался")
+        L.notify(f"{today}: коммитов за 26ч нет, отчёт не формировался", L.INFO)
         return
     failed, n_failed = failed_details()
     issues = sh("gh", "issue", "list", "--state", "open", "--limit", "15",
@@ -51,7 +55,7 @@ def main():
         for a in sorted(os.listdir("journal/audits"))[-3:]:
             with open(f"journal/audits/{a}", encoding="utf-8") as f:
                 unresolved += "".join(l for l in f if l.startswith("UNRESOLVED"))
-    n_problems = n_failed + n_missed + (1 if unresolved else 0)
+    n_problems = n_failed + n_missed + (1 if unresolved else 0) + (1 if remind_err else 0)
     md = (f"# Отчёт за {today}\n\n## Сделано\n{commits}\n\n"
           f"## Сложности\n{failed}\n{unresolved}\n"
           f"## Впереди (открытые задачи)\n{issues or '- очередь пуста'}\n\n{missed}")
@@ -61,7 +65,7 @@ def main():
     import autocommit
     ok = autocommit.publish([path], f"daily report {today}", author="consilium-report")
     L.send_mail(f"[CONSILIUM] Отчёт {today}", md)
-    L.notify(f"{today}: всё зелёно" if n_problems == 0 else f"{today}: {n_problems} проблем — см. письмо")
+    L.notify(f"{today}: всё зелёно" if n_problems == 0 else f"{today}: {n_problems} проблем — см. письмо", L.INFO)
     print("sent:", path)
     if not ok:
         print("daily_report: результат НЕ опубликован -> exit 1")

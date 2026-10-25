@@ -28,8 +28,13 @@ import daily_report as R  # noqa: E402
 import llm_clients as L  # noqa: E402
 import monthly_audit as M  # noqa: E402
 import panel_axes as P   # noqa: E402
+import operator_prs as OP  # noqa: E402
 import schedule_guard as G  # noqa: E402
+import types  # noqa: E402
 import weekly_digest as W  # noqa: E402
+
+# daily_report.main() now also asks gh for operator PRs (issue #92): default-deny, "no open PRs".
+OP.sh = lambda *cmd: types.SimpleNamespace(returncode=0, stdout="[]", stderr="")
 
 REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-19_SCHEDULE_WORKFLOWS.md")
 PEAK_MINUTES = {0, 15, 30, 45}
@@ -120,7 +125,7 @@ class Base(unittest.TestCase):
         self.sent = []
         self.mails = []
         self.llm = []
-        self.patch(L, "notify", lambda text: self.sent.append(text) or True)
+        self.patch(L, "notify", lambda text, level=L.INFO: self.sent.append(text) or True)
         self.patch(L, "send_mail", lambda *a, **k: self.mails.append(a) or True)
         self.patch(L, "call", lambda *a, **k: self.llm.append(a) or {"text": "VERDICT: GREEN", "provider": "x", "model": "m", "usage": {}})
         self.published = []

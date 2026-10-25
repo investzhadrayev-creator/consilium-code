@@ -80,7 +80,7 @@ def main():
         todo = pending()
     except BadRequest as e:
         print("CALIBRATION REFUSED:", e)
-        L.notify(f"Калибровка: заявка отклонена — {e}")
+        L.notify(f"Калибровка: заявка отклонена — {e}", L.ALARM)
         sys.exit(1)
     if not todo:
         print("calibrate: заявок без ответа нет — нечего исполнять")
@@ -99,7 +99,7 @@ def main():
         else:
             print("calibration published:", paths)
     if failed:
-        L.notify("Калибровка не завершена: " + "; ".join(f[:150] for f in failed))
+        L.notify("Калибровка не завершена: " + "; ".join(f[:150] for f in failed), L.ALARM)
         sys.exit(1)
 
 if __name__ == "__main__":
