@@ -32,6 +32,7 @@ import schedule_guard as G  # noqa: E402
 import weekly_digest as W  # noqa: E402
 
 REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-19_SCHEDULE_WORKFLOWS.md")
+BRIDGE_REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-25_BRIDGE_WORKFLOWS.md")
 PEAK_MINUTES = {0, 15, 30, 45}
 UTC = dt.timezone.utc
 
@@ -589,6 +590,137 @@ class TestWatchdog(Base):
         self.assertIn("daily-audit", md)
         self.assertRegex(self.sent[-1], r"проблем — см\. письмо")
         self.assertNotIn("всё зелёно", self.sent[-1])
+
+
+# ---------------------------------------------------------------------------------------------
+# issue #94: the bridge is not trusted to run on schedule alone -> workflow_run + bridge-age watchdog
+# ---------------------------------------------------------------------------------------------
+BRIDGE_URL = "https://github.com/investzhadrayev-creator/consilium-code/actions/workflows/mail_bridge.yml"
+TRIGGER_WORKFLOWS = ["daily-report", "daily-audit", "panel-weekly", "weekly-digest", "calibrate-auditor"]
+
+
+def bridge_report_yaml():
+    with open(BRIDGE_REPORT, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"### `\.github/workflows/mail_bridge\.yml`\s*\n\s*```yaml\n(.*?)```", text, re.S)
+    assert m, "mail_bridge.yml block not found in the bridge report"
+    return m.group(1)
+
+
+class TestBridgeWorkflowRun(unittest.TestCase):
+    """The deliverable file itself: the property is 'the bridge fires after the workflows that DO run'."""
+    def test_keeps_schedule_and_dispatch_and_adds_workflow_run_on_every_named_workflow(self):
+        y = bridge_report_yaml()
+        self.assertRegex(y, r"(?m)^  schedule:\n    - cron: '17,47 \* \* \* \*'")
+        self.assertRegex(y, r"(?m)^  workflow_dispatch:")
+        m = re.search(r"(?m)^  workflow_run:\n    workflows: \[([^\]]*)\]\n    types: \[completed\]", y)
+        self.assertIsNotNone(m, "no workflow_run trigger with types: [completed]")
+        self.assertEqual([x.strip() for x in m.group(1).split(",")], TRIGGER_WORKFLOWS)
+        self.assertIn("concurrency: { group: bridge, cancel-in-progress: false }", y)
+        self.assertIn("python3 tools/mail_bridge.py", y)
+
+    def test_every_triggering_name_is_the_name_of_a_real_workflow_file(self):
+        """workflow_run matches on `name:`; a name that matches no file never fires (silent no-op)."""
+        wf_dir = os.path.join(REPO, ".github", "workflows")
+        names = set()
+        for fn in os.listdir(wf_dir):
+            with open(os.path.join(wf_dir, fn), encoding="utf-8") as f:
+                m = re.search(r"^name:\s*(\S+)", f.read(), re.M)
+            if m:
+                names.add(m.group(1))
+        listed = [x.strip() for x in re.search(r"workflows: \[([^\]]*)\]", bridge_report_yaml()).group(1).split(",")]
+        self.assertEqual(len(listed), len(TRIGGER_WORKFLOWS))
+        for n in listed:
+            self.assertIn(n, names)
+
+    def test_the_bridge_does_not_trigger_itself(self):
+        y = bridge_report_yaml()
+        wr = re.search(r"workflows: \[([^\]]*)\]", y).group(1)
+        self.assertNotIn("mail-bridge", wr)
+
+
+class TestBridgeAgeWatchdog(Base):
+    healthy = TestWatchdog.healthy
+    rows = TestWatchdog.rows
+
+    def bridge(self, *runs):
+        self.w.runs["mail_bridge.yml"] = list(runs)
+
+    def msgs(self):
+        return [s for s in self.sent if "Мост" in s]
+
+    def test_older_than_six_hours_alarms_with_hours_action_and_link(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T09:30:00Z"))         # 6 h 10 min before 15:40
+        md, n = G.watch_section(self.now)
+        self.assertGreaterEqual(n, 1)
+        (m,) = self.msgs()
+        self.assertIn("Мост не запускался 6 ч", m)
+        self.assertIn("Actions → mail-bridge → Run workflow", m)
+        self.assertIn(BRIDGE_URL, m)
+        self.assertEqual(m.count("Run workflow"), 1, m)          # the operator hint once, not wrapped twice
+
+    def test_fresh_run_is_silent(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T09:41:00Z"))         # 5 h 59 min
+        md, n = G.watch_section(self.now)
+        self.assertEqual(self.msgs(), [])
+        self.assertEqual(n, 0, md)
+        self.assertIsNone(self.rows()["mail-bridge"]["alert"])
+
+    def test_exactly_six_hours_is_still_fresh(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T09:40:00Z"))
+        self.assertIsNone(self.rows()["mail-bridge"]["alert"])
+
+    def test_a_recent_FAILED_run_does_not_make_the_bridge_fresh(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T15:30:00Z", conclusion="failure"),
+                    *runs_at("2026-10-19T07:00:00Z"))
+        G.watch_section(self.now)
+        self.assertEqual(len(self.msgs()), 1, self.sent)
+        self.assertIn("8 ч", self.msgs()[0])
+
+    def test_a_workflow_run_or_dispatch_success_counts_not_only_schedule(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T14:50:00Z", event="workflow_run"))
+        G.watch_section(self.now)
+        self.assertEqual(self.msgs(), [])
+
+    def test_no_successful_run_in_the_window_alarms_with_a_lower_bound_not_a_made_up_age(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-19T15:30:00Z", conclusion="failure"))
+        G.watch_section(self.now)
+        (m,) = self.msgs()
+        self.assertIn("более", m)
+        self.assertRegex(m, r"Мост не запускался более \d+ ч")
+
+    def test_gh_failure_is_unknown_and_not_a_bridge_alarm(self):
+        self.healthy()
+        self.w.gh_ok = False
+        r = self.rows()["mail-bridge"]
+        self.assertEqual(r["state"], G.UNKNOWN)
+        self.assertIn("UNAVAILABLE (gh run list", r["detail"])
+        self.assertIsNone(r["alert"])
+        G.watch_section(self.now)
+        self.assertEqual(self.msgs(), [])
+        self.assertTrue(any("не смог проверить" in s and "mail-bridge" in s for s in self.sent), self.sent)
+
+    def test_daily_report_carries_the_bridge_alarm_in_its_section_and_counts_it(self):
+        self.healthy()
+        self.bridge(*runs_at("2026-10-18T03:00:00Z"))
+        self.patch(R, "sh", lambda *a: "- коммит (abc, bot)\n")
+        self.patch(R.F, "failed_runs", lambda limit=20: ([], 0, ""))
+        os.makedirs("journal/digests")
+        with quiet():
+            R.main()
+        (name,) = os.listdir("journal/digests")
+        with open(os.path.join("journal/digests", name), encoding="utf-8") as f:
+            md = f.read()
+        self.assertIn("mail-bridge", md)
+        self.assertIn("MISSING", md)
+        self.assertEqual(len(self.msgs()), 1, self.sent)
+        self.assertRegex(self.sent[-1], r"проблем — см\. письмо")
 
 
 if __name__ == "__main__":
