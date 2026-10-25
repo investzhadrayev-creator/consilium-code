@@ -3,3 +3,4 @@ gunicorn==22.0.0
 yfinance==0.2.63
 curl_cffi==0.7.4
 pandas==2.2.3
+edgartools==5.48.0

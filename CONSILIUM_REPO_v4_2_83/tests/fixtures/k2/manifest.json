@@ -1,0 +1,260 @@
+{
+ "captured": "2026-10-18",
+ "edgartools": "5.48.0",
+ "tickers": {
+  "GOOG": {
+   "as_of": [
+    "2018-12-24",
+    "2019-07-01",
+    "2020-03-23",
+    "2021-12-31",
+    "2022-10-12"
+   ],
+   "cik": "0001652044",
+   "companyconcept": {
+    "dei/EntityCommonStockSharesOutstanding": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding": {
+     "http_status": 200,
+     "sha256": "243d85bf78b61bfa96fd1334d3ef7dbd35a3bb8c628390c772b3037e6a8180ca"
+    },
+    "us-gaap/WeightedAverageNumberOfShareOutstandingBasicAndDiluted": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/WeightedAverageNumberOfSharesOutstandingBasic": {
+     "http_status": 200,
+     "sha256": "5a0cd041e53c42d0b4ae893422fcc16234490dab55ebcde34f61a0d750b6cb83"
+    }
+   },
+   "companyfacts_sha256": "a017f26ee88cb4a639d1c1ddb06d53b4afe22f0ac89cabec7cd67c88919fe1c5",
+   "filings": {
+    "0001652044-18-000007": {
+     "filing_date": "2018-02-06",
+     "form": "10-K",
+     "instance_file": "goog-20171231.xml",
+     "instance_sha256": "98f67589506d27e46621abd4fd032d66e21918b69e63f1ae5ff4ebe27c4a5639",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204418000007/goog-20171231.xml",
+     "period_of_report": "2017-12-31"
+    },
+    "0001652044-18-000035": {
+     "filing_date": "2018-10-26",
+     "form": "10-Q",
+     "instance_file": "goog-20180930.xml",
+     "instance_sha256": "14535a1a09b6b2e30ae629a173f7f40f0d242635633fb92452ce4d316f3443e6",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204418000035/goog-20180930.xml",
+     "period_of_report": "2018-09-30"
+    },
+    "0001652044-19-000004": {
+     "filing_date": "2019-02-05",
+     "form": "10-K",
+     "instance_file": "goog-20181231.xml",
+     "instance_sha256": "2ba9b195921e4362e8ed848f6b2ad9249f069a42f7d9a9fc83d97971ee248551",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204419000004/goog-20181231.xml",
+     "period_of_report": "2018-12-31"
+    },
+    "0001652044-19-000015": {
+     "filing_date": "2019-04-30",
+     "form": "10-Q",
+     "instance_file": "goog10-qq12019_htm.xml",
+     "instance_sha256": "f368e7c15e603fb0c92566fc1ae7a662dbab926a50b8ca2d04d2f3e8b9cd1763",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204419000015/goog10-qq12019_htm.xml",
+     "period_of_report": "2019-03-31"
+    },
+    "0001652044-20-000008": {
+     "filing_date": "2020-02-04",
+     "form": "10-K",
+     "instance_file": "goog10-k2019_htm.xml",
+     "instance_sha256": "f33941cc2c1b39762b59df79d635e409359d51cacbb247215b1fd4e1c6bf3655",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204420000008/goog10-k2019_htm.xml",
+     "period_of_report": "2019-12-31"
+    },
+    "0001652044-21-000010": {
+     "filing_date": "2021-02-03",
+     "form": "10-K",
+     "instance_file": "goog-20201231_htm.xml",
+     "instance_sha256": "af01be98f7082a4f102bbdba29ad1924d5885f64623252ea1b217b3465f4f954",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204421000010/goog-20201231_htm.xml",
+     "period_of_report": "2020-12-31"
+    },
+    "0001652044-21-000057": {
+     "filing_date": "2021-10-27",
+     "form": "10-Q",
+     "instance_file": "goog-20210930_htm.xml",
+     "instance_sha256": "a9cd4f82617b022ec0e09349f18428a0737bf5d1680c37e9cef6d0ef083a0733",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204421000057/goog-20210930_htm.xml",
+     "period_of_report": "2021-09-30"
+    },
+    "0001652044-22-000019": {
+     "filing_date": "2022-02-02",
+     "form": "10-K",
+     "instance_file": "goog-20211231_htm.xml",
+     "instance_sha256": "fd710b11b15169f6ab3a10d457c95f71f9f2434176b27ccb04cde25d13109918",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204422000019/goog-20211231_htm.xml",
+     "period_of_report": "2021-12-31"
+    },
+    "0001652044-22-000071": {
+     "filing_date": "2022-07-27",
+     "form": "10-Q",
+     "instance_file": "goog-20220630_htm.xml",
+     "instance_sha256": "ab7b2e3ed9403601c8921a15e47fbc008807b4d6fc40f379bb59e32523ecbc3b",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204422000071/goog-20220630_htm.xml",
+     "period_of_report": "2022-06-30"
+    }
+   }
+  },
+  "INTC": {
+   "as_of": [
+    "2022-01-25"
+   ],
+   "cik": "0000050863",
+   "companyconcept": {
+    "us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding": {
+     "http_status": 200,
+     "sha256": "bb22d96b8235a0694d657c323019d779d6836bddbdbd7a64cdfedfe35298f2a1"
+    },
+    "us-gaap/WeightedAverageNumberOfShareOutstandingBasicAndDiluted": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/WeightedAverageNumberOfSharesOutstandingBasic": {
+     "http_status": 200,
+     "sha256": "ad4286f1e33050c911d8994cb8d12cd95da1d3d20c883f780d9febbdfd2bcc7d"
+    }
+   },
+   "companyfacts_sha256": "70056711b8b04d3a27e4a42b6d86e26f85ddaa3d59e480039d66ccfb353eb0b8",
+   "filings": {}
+  },
+  "META": {
+   "as_of": [
+    "2018-12-24",
+    "2019-07-01",
+    "2020-03-23",
+    "2021-12-31",
+    "2022-10-12"
+   ],
+   "cik": "0001326801",
+   "companyconcept": {
+    "dei/EntityCommonStockSharesOutstanding": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/CommonStockSharesOutstanding": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding": {
+     "http_status": 200,
+     "sha256": "0250eca75e43e0a1cd8b1f8ba9a115f2331a6a2d610a884e7f7584f845c2f5a0"
+    },
+    "us-gaap/WeightedAverageNumberOfShareOutstandingBasicAndDiluted": {
+     "http_status": 404,
+     "sha256": null
+    },
+    "us-gaap/WeightedAverageNumberOfSharesOutstandingBasic": {
+     "http_status": 200,
+     "sha256": "661e2e0f1eed56a9a5bf7c55ecc899fd3587d7c17b19a10780cd4127a86a32b1"
+    }
+   },
+   "companyfacts_sha256": "7518e76d6dac2d016e1a3d1dec1cc55ff9ea3bdd58a151b16fcaa067a6c9d94e",
+   "filings": {
+    "0001326801-18-000009": {
+     "filing_date": "2018-02-01",
+     "form": "10-K",
+     "instance_file": "fb-20171231.xml",
+     "instance_sha256": "3a8b73eeeb4e07b7f7090dc4df0129c72b3f32244e0b2a434ebaefe71053e528",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680118000009/fb-20171231.xml",
+     "period_of_report": "2017-12-31"
+    },
+    "0001326801-18-000067": {
+     "filing_date": "2018-10-31",
+     "form": "10-Q",
+     "instance_file": "fb-20180930.xml",
+     "instance_sha256": "1b98e274524c549b2080277e8691b7477931bf32f91841109ac77b34a6b5fb90",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680118000067/fb-20180930.xml",
+     "period_of_report": "2018-09-30"
+    },
+    "0001326801-19-000009": {
+     "filing_date": "2019-01-31",
+     "form": "10-K",
+     "instance_file": "fb-20181231.xml",
+     "instance_sha256": "53f1d0fa5693731f163897cd46b8a4bcfbd948aec4c54aa80828bd7b2df55f27",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680119000009/fb-20181231.xml",
+     "period_of_report": "2018-12-31"
+    },
+    "0001326801-19-000037": {
+     "filing_date": "2019-04-25",
+     "form": "10-Q",
+     "instance_file": "fb-20190331.xml",
+     "instance_sha256": "0c0c595e17a6c85ae1db94bf886a9cb9ded07d74617ab16fc9cb743c994c1b05",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680119000037/fb-20190331.xml",
+     "period_of_report": "2019-03-31"
+    },
+    "0001326801-20-000013": {
+     "filing_date": "2020-01-30",
+     "form": "10-K",
+     "instance_file": "fb-12312019x10k_htm.xml",
+     "instance_sha256": "f7ce97840a23ac7a54c71579478e55ec9c4467509713ab12e386badf4f4b4fd2",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680120000013/fb-12312019x10k_htm.xml",
+     "period_of_report": "2019-12-31"
+    },
+    "0001326801-21-000014": {
+     "filing_date": "2021-01-28",
+     "form": "10-K",
+     "instance_file": "fb-20201231_htm.xml",
+     "instance_sha256": "98625ba8334c76b69e962cec05ae2d977604be839b4fed9f31b8a5736986b58f",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680121000014/fb-20201231_htm.xml",
+     "period_of_report": "2020-12-31"
+    },
+    "0001326801-21-000065": {
+     "filing_date": "2021-10-26",
+     "form": "10-Q",
+     "instance_file": "fb-20210930_htm.xml",
+     "instance_sha256": "949ada2d8644b5b38a97c1fe45db031a3cf79122c0745f565cedaecdd98af993",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680121000065/fb-20210930_htm.xml",
+     "period_of_report": "2021-09-30"
+    },
+    "0001326801-22-000018": {
+     "filing_date": "2022-02-03",
+     "form": "10-K",
+     "instance_file": "fb-20211231_htm.xml",
+     "instance_sha256": "abf5f3960b9fc7f481558a4488a82139b9b7d169711de23aebd43237f5ca62d3",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680122000018/fb-20211231_htm.xml",
+     "period_of_report": "2021-12-31"
+    },
+    "0001326801-22-000082": {
+     "filing_date": "2022-07-28",
+     "form": "10-Q",
+     "instance_file": "meta-20220630_htm.xml",
+     "instance_sha256": "230593c6422b4124c350489b66244e1ff5378e7fae561354d7ccb68d33022a4d",
+     "instance_url": "https://www.sec.gov/Archives/edgar/data/1326801/000132680122000082/meta-20220630_htm.xml",
+     "period_of_report": "2022-06-30"
+    }
+   }
+  },
+  "MU": {
+   "as_of": [
+    "2018-10-15"
+   ],
+   "cik": "0000723125",
+   "companyconcept": {
+    "us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding": {
+     "http_status": 200,
+     "sha256": "9bc19f33b7d213adcd8670440edc1d35d2ab3e5ac543ff9cc1fa494269e865b0"
+    },
+    "us-gaap/WeightedAverageNumberOfShareOutstandingBasicAndDiluted": {
+     "http_status": 200,
+     "sha256": "f8e08db0e5f732d6fb33ac5850d07b0a36b413a8ddbf34d1351a4b8fffb54974"
+    },
+    "us-gaap/WeightedAverageNumberOfSharesOutstandingBasic": {
+     "http_status": 200,
+     "sha256": "d4ddedf58243c836b46ba97693c387212494a1b08a6826e9faa6b492c6610404"
+    }
+   },
+   "companyfacts_sha256": "162439f31208eaf4cd1a33939d80fd40479a559735b9488d32ac43d5516ff7bf",
+   "filings": {}
+  }
+ }
+}
