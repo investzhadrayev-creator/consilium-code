@@ -161,6 +161,12 @@ def main():
     p.add_argument("--notes", default="auto")
     a = p.parse_args()
 
+    if a.append:
+        import schedule_guard
+        if schedule_guard.panel_row_published():
+            print("panel_axes: строка этой недели уже опубликована на main — ничего не пишу")
+            sys.exit(0)
+
     eri_vote = NA
     if a.eri != NA:
         try:

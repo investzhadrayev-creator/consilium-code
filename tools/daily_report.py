@@ -7,6 +7,7 @@ import datetime as dt, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
+import schedule_guard as G
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
@@ -33,7 +34,10 @@ def failed_details(since_hours=26, limit=20):
     return "\n".join(out) + "\n", len(recent)
 
 def main():
+    if G.skip_if_published("daily-report"):
+        return
     today = dt.date.today()
+    missed, n_missed = G.watch_section()
     commits = sh("git", "log", "--since=26 hours ago", "--format=- %s (%h, %an)").strip()
     if not commits:
         print("пустой день")
@@ -47,10 +51,10 @@ def main():
         for a in sorted(os.listdir("journal/audits"))[-3:]:
             with open(f"journal/audits/{a}", encoding="utf-8") as f:
                 unresolved += "".join(l for l in f if l.startswith("UNRESOLVED"))
-    n_problems = n_failed + (1 if unresolved else 0)
+    n_problems = n_failed + n_missed + (1 if unresolved else 0)
     md = (f"# Отчёт за {today}\n\n## Сделано\n{commits}\n\n"
           f"## Сложности\n{failed}\n{unresolved}\n"
-          f"## Впереди (открытые задачи)\n{issues or '- очередь пуста'}\n")
+          f"## Впереди (открытые задачи)\n{issues or '- очередь пуста'}\n\n{missed}")
     path = f"journal/digests/DAILY_{today}.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write(md)

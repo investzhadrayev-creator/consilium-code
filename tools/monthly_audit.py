@@ -7,11 +7,14 @@ import datetime as dt, os, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
+import schedule_guard as G
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
 
 def main():
+    if G.skip_if_published("monthly-architect-audit"):
+        return
     ym = dt.date.today().strftime("%Y-%m")
     packet = (f"АУДИТ АРХИТЕКТОРА, месяц {ym}, репозиторий consilium-code\n\n"
               f"== ВСЕ КОММИТЫ (30 дней) ==\n"
