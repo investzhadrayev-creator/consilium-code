@@ -1,19 +1,27 @@
 name: daily-audit
 on:
   schedule:
-    - cron: '0 16 * * *'   # 21:00 Астана, после отчёта
+    - cron: '7 16 * * *'    # основной слот, 21:07 Астана, после отчёта (15:37)
+    - cron: '37 17 * * *'   # резерв, после резерва отчёта (17:07)
   workflow_dispatch:
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read
+concurrency: { group: daily-audit, cancel-in-progress: false }
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: Идемпотентность (аудит дня уже на main?)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/schedule_guard.py check daily-audit
       - name: Аудитор «сказано — сделано» (чёт→OpenAI, нечет→Gemini)
+        if: env.ALREADY_PUBLISHED != '1'
         env:
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

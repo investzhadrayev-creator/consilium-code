@@ -1,10 +1,13 @@
 name: weekly-digest
 on:
   schedule:
-    - cron: '0 7 * * 6'   # суббота 12:00 Астана, после панели
+    - cron: '37 7 * * 6'    # суббота, после основного слота панели (05:07)
+    - cron: '37 13 * * 6'   # резерв, после слота панели 12:07
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
+concurrency: { group: weekly-digest, cancel-in-progress: false }
 jobs:
   digest:
     runs-on: ubuntu-latest
@@ -16,14 +19,4 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
-        run: |
-          python3 - << 'PY'
-          import subprocess, sys
-          sys.path.insert(0, 'tools'); import llm_clients as L
-          sh = lambda *c: subprocess.run(c, capture_output=True, text=True).stdout
-          body = ("НЕДЕЛЬНЫЙ ДАЙДЖЕСТ CONSILIUM\n\n== Панель (последняя строка) ==\n"
-                  + sh('tail','-1','journal/PANEL_LOG.csv')
-                  + "\n== Коммиты недели ==\n" + sh('git','log','--since=7 days ago','--format=- %ad %ae %s','--date=format:%m-%d')
-                  + "\n== Падения ==\n" + sh('gh','run','list','--limit','30','--status','failure','--json','name','--jq','.[].name'))
-          L.send_mail("[CONSILIUM] Недельный дайджест", body)
-          PY
+        run: python3 tools/weekly_digest.py

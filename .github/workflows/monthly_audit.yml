@@ -1,19 +1,28 @@
 name: monthly-architect-audit
 on:
   schedule:
-    - cron: '0 6 1 * *'
+    - cron: '7 6 1 * *'     # 1-е число, основной слот
+    - cron: '7 12 1 * *'    # 1-е число, резерв
+    - cron: '7 6 2 * *'     # 2-е число, резерв на случай потери обоих
   workflow_dispatch:
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read
+concurrency: { group: monthly-audit, cancel-in-progress: false }
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - env:
+      - name: Идемпотентность (аудит месяца уже на main?)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/schedule_guard.py check monthly-architect-audit
+      - if: env.ALREADY_PUBLISHED != '1'
+        env:
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
