@@ -1,19 +1,27 @@
 name: daily-report
 on:
   schedule:
-    - cron: '30 15 * * *'   # 20:30 Астана
+    - cron: '37 15 * * *'   # основной слот, 20:37 Астана
+    - cron: '7 17 * * *'    # резерв: GitHub пропускает запуски под нагрузкой
   workflow_dispatch:
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read
+concurrency: { group: daily-report, cancel-in-progress: false }
 jobs:
   report:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - env:
+      - name: Идемпотентность (результат дня уже на main?)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/schedule_guard.py check daily-report
+      - if: env.ALREADY_PUBLISHED != '1'
+        env:
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -22,7 +30,7 @@ jobs:
           OPERATOR_EMAIL: ${{ secrets.OPERATOR_EMAIL }}
         run: python3 tools/daily_report.py
       - name: Валидатор данных на main за 26 ч (замена PR-проверке, которая не стартует на auto/* PR)
-        if: always()
+        if: always() && env.ALREADY_PUBLISHED != '1'
         run: |
           BASE=$(git rev-list -1 --before="26 hours ago" origin/main || true)
           if [ -z "$BASE" ]; then echo "BASE не определён: история короче 26 ч — проверка не выполнена"; exit 1; fi

@@ -1,0 +1,23 @@
+name: schedule-watchdog
+# Самый поздний слот сторожа панели: после последнего слота panel-weekly (вс 05:07 UTC) строки
+# этой недели нет на main -> Telegram немедленно + красный job. Общий сторож по всем
+# расписаниям живёт в daily-report (раздел «Пропущенные запуски»).
+on:
+  schedule:
+    - cron: '37 7 * * 0'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Сторож панели
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 tools/schedule_guard.py watch --only panel-weekly --notify

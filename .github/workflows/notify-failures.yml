@@ -3,7 +3,7 @@ name: notify-failures
 # (startup_failure), которые step-level failure() увидеть не может.
 on:
   workflow_run:
-    workflows: [mail-bridge, daily-audit, monthly-architect-audit, daily-report, review-round, panel-weekly, calibrate-auditor]
+    workflows: [mail-bridge, daily-audit, monthly-architect-audit, daily-report, review-round, panel-weekly, calibrate-auditor, weekly-digest, schedule-watchdog]
     types: [completed]
 permissions:
   contents: read
