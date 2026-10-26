@@ -58,6 +58,7 @@ def build_packet(day, g):
             f"НЕ число падений) ==\n{g['runs'] or '(нет)'}\n\n"
             f"== ОТКРЫТЫЕ ЗАДАЧИ ==\n{g['issues'] or '(нет)'}\n\n"
             f"== НЕЗАКРЫТОЕ ИЗ ПРОШЛОГО АУДИТА ==\n{g['prev'] or '(нет)'}\n\n"
+            f"{F.missed_runs_section()}\n\n"
             f"{F.fact_sections(7)}")
 
 def main():

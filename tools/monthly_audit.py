@@ -25,6 +25,7 @@ def main():
               f"{F.clip(sh('git','log','--since=30 days ago','--name-only','--format=%h %ae','--','.github/','tools/','mailbox/DECISION_','mailbox/PREREG_','CODEOWNERS'), 3000)}\n\n"
               f"== ПАДЕНИЯ АВТОМАТИКИ (подпись = размер выборки, НЕ число падений) ==\n"
               f"{F.failed_runs_text(40)}\n\n"
+              f"{F.missed_runs_section()}\n\n"
               f"{F.fact_sections(30)}\n\n"
               "ВОПРОСЫ: 1) Нарушал ли архитектор append-only? 2) Менялись ли правила "
               "(workflows/сторожа/DECISION) без PR с одобрением оператора? 3) Расходятся ли "
