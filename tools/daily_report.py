@@ -12,6 +12,11 @@ import schedule_guard as G
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
 
+def jobs_count(rid):
+    """Число jobs прогона; None, если gh не ответил (отказ ≠ «jobs пусты»)."""
+    out = sh("gh", "run", "view", str(rid), "--json", "jobs", "--jq", ".jobs|length").strip()
+    return int(out) if out.isdigit() else None
+
 def failed_details(since_hours=26, limit=20):
     """Для каждого упавшего прогона: workflow, упавший шаг, последние 20 строк лога.
     -> (markdown, N проблем). Источник недоступен -> именованный отказ, N=1 (не «зелёно»)."""
@@ -23,15 +28,25 @@ def failed_details(since_hours=26, limit=20):
     if not recent:
         return F.caption(len(runs), total, limit) + f" упавших прогонов за {since_hours}ч нет\n", 0
     out = [F.caption(len(runs), total, limit) + f" из них за {since_hours}ч: {len(recent)}"]
+    known = []
     for r in recent:
         rid = r["databaseId"]
+        if F.is_platform_limit(r, jobs_count):
+            known.append(f"- **{r['name']}** (run {rid}, {r['event']}, {r['headBranch']}, "
+                         f"actor={r.get('actor')}): jobs пусты / startup_failure")
+            continue
         jobs = sh("gh", "run", "view", str(rid), "--json", "jobs", "--jq",
                   '[.jobs[]|select(.conclusion=="failure")|.name+" / "+([.steps[]|select(.conclusion=="failure")|.name]|join(", "))]|join("; ")').strip()
         tail = "\n".join(sh("gh", "run", "view", str(rid), "--log-failed").splitlines()[-20:])
         out.append(f"- **{r['name']}** (run {rid}, {r['event']}, {r['headBranch']})\n"
                    f"  упавший шаг: {jobs or 'НЕИЗВЕСТЕН: jobs пусты (startup_failure / ошибка файла workflow)'}\n"
                    f"```\n{tail or '(лог упавших шагов пуст)'}\n```")
-    return "\n".join(out) + "\n", len(recent)
+    n_problems = len(recent) - len(known)
+    if known:
+        out.append("### Известное ограничение платформы (не проблема)\n"
+                   f"{F.PLATFORM_LIMIT_NOTE}\nВ счёт «N проблем» и в Telegram не входят:\n"
+                   + "\n".join(known))
+    return "\n".join(out) + "\n", n_problems
 
 def main():
     if G.skip_if_published("daily-report"):

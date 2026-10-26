@@ -701,6 +701,156 @@ class TestDailyReportFailures(Patched):
 
 
 # ---------------------------------------------------------------------------------------------
+# issue #88: the known platform limit is not a problem; the auditor packet carries full DECISION text
+# ---------------------------------------------------------------------------------------------
+REPO_ROOT = os.path.dirname(TOOLS)
+DECISION_REAL = "mailbox/DECISION_2026-10-11_ROUND7_REBOOT.md"
+
+
+def run_row(name="validate-artifacts", event="pull_request", branch="auto/x", actor="github-actions[bot]",
+            rid=1, **kw):
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dict({"databaseId": rid, "name": name, "createdAt": now, "event": event,
+                 "headBranch": branch, "actor": actor, "status": "completed",
+                 "conclusion": "startup_failure"}, **kw)
+
+
+class TestKnownPlatformLimit(Patched):
+    def chdir(self, d):
+        old = os.getcwd()
+        os.chdir(d)
+        self.addCleanup(os.chdir, old)
+
+    def details(self, runs, jobs="0"):
+        self.patch(F, "failed_runs", lambda limit=20: (runs, len(runs), ""))
+        self.patch(R, "sh", lambda *cmd: jobs if cmd[-1] == ".jobs|length" else "")
+        return R.failed_details()
+
+    def test_88_the_known_limit_is_in_its_own_section_and_not_counted(self):
+        md, n = self.details([run_row(rid=1), run_row("claude-audit", rid=2)])
+        self.assertEqual(n, 0)
+        self.assertIn("Известное ограничение платформы (не проблема)", md)
+        self.assertIn("DECISION_2026-10-25_OPERATOR_ROUND8.md п. 6", md)
+        self.assertNotIn("упавший шаг", md)
+
+    def test_88_the_telegram_line_is_green_when_only_the_known_limit_failed(self):
+        self.tmpcwd()
+        os.makedirs("journal/digests")
+        sent = self.notified()
+        self.patch(L, "send_mail", lambda *a, **k: True)
+        self.patch(autocommit, "publish", lambda *a, **k: True)
+        self.patch(G, "watch_section", lambda *a, **k: ("## Пропущенные запуски\nstub\n", 0))
+        self.patch(F, "failed_runs", lambda limit=20: ([run_row()], 1, ""))
+        self.patch(R, "sh", lambda *cmd: "0" if cmd[-1] == ".jobs|length" else "- коммит\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            R.main()
+        self.assertTrue(sent[-1].endswith("всё зелёно"), sent)
+
+    def test_88_each_missing_condition_makes_it_a_problem(self):
+        cases = {
+            "bot's PR is not the actions bot": (run_row(actor="claude[bot]"), "0"),
+            "operator's PR": (run_row(actor="investzhadrayev-creator"), "0"),
+            "actor unknown": (run_row(actor=None), "0"),
+            "branch is not auto/*": (run_row(branch="claude/x"), "0"),
+            "event is push": (run_row(event="push"), "0"),
+            "other workflow": (run_row(name="tests"), "0"),
+            "jobs not empty": (run_row(), "3"),
+            "jobs count unavailable": (run_row(), ""),
+        }
+        for label, (row, jobs) in cases.items():
+            md, n = self.details([row], jobs)
+            self.assertEqual(n, 1, label)
+            self.assertNotIn("Известное ограничение платформы (не проблема)", md, label)
+
+    def test_88_a_real_problem_next_to_the_known_limit_still_counts(self):
+        md, n = self.details([run_row(rid=1), run_row("tests", "push", "main", "op", rid=2)])
+        self.assertEqual(n, 1)
+        self.assertIn("Известное ограничение платформы (не проблема)", md)
+
+    def test_88_runs_api_carries_the_actor(self):
+        j = {"total_count": 4, "workflow_runs": [{"id": 5, "name": "claude-audit", "created_at": "t",
+             "event": "pull_request", "head_branch": "auto/a", "status": "completed",
+             "conclusion": "startup_failure", "actor": {"login": "investzhadrayev-creator"}}]}
+        self.patch(F, "sh", lambda *a: (0, json.dumps(j), ""))
+        runs, total, err = F.failed_runs(20)
+        self.assertEqual((total, runs[0]["actor"], runs[0]["databaseId"]),
+                         (4, "investzhadrayev-creator", 5))
+
+    def packets(self, sh):
+        """-> (daily packet, monthly packet sent to the first provider) built over the fake `sh`."""
+        self.patch(F, "sh", sh)
+        self.patch(G, "watch_section", lambda *a, **k: ("## Пропущенные запуски\nMISSED-STUB\n", 0))
+        self.patch(F, "merged_prs", lambda d, limit=50: "p")
+        self.patch(F, "ruleset_state", lambda: "protect-main")
+        g = {"commits": "c", "cmds": "k", "runs": F.runs_overview(15), "issues": "i", "prev": "",
+             "snapshot": False}
+        seen = {}
+        self.patch(L, "call", lambda prov, prompt, **k: seen.setdefault(prov, prompt) and
+                   {"text": "VERDICT: GREEN", "provider": prov, "model": "m", "usage": {}})
+        self.patch(autocommit, "publish", lambda *a, **k: True)
+        daily = D.build_packet(dt.date(2026, 10, 25), g)
+        with contextlib.redirect_stdout(io.StringIO()):
+            M.main()
+        return daily, seen["openai"]
+
+    def test_88_auditor_packets_mark_the_known_limit_and_warn_the_auditor(self):
+        j = {"total_count": 2, "workflow_runs": [
+            {"id": 5, "name": "validate-artifacts", "created_at": "t1", "event": "pull_request",
+             "head_branch": "auto/a", "status": "completed", "conclusion": "startup_failure",
+             "actor": {"login": "github-actions[bot]"}},
+            {"id": 6, "name": "validate-artifacts", "created_at": "t2", "event": "pull_request",
+             "head_branch": "claude/b", "status": "completed", "conclusion": "failure",
+             "actor": {"login": "claude[bot]"}}]}
+
+        def sh(*cmd):
+            if cmd[:3] == ("gh", "run", "view"):
+                return 0, "0", ""
+            if "actions/runs" in " ".join(cmd):
+                return 0, json.dumps(j), ""
+            return 1, "", "stub"
+        self.tmpcwd()
+        os.makedirs("journal/audits")
+        for packet in self.packets(sh):
+            self.assertIn("ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ ПЛАТФОРМЫ (читать до статусов", packet)
+            self.assertIn("MISSED-STUB", packet)           # the schedule_guard section is in the packet
+            known = [l for l in packet.splitlines() if "t1 validate-artifacts" in l]
+            other = [l for l in packet.splitlines() if "t2 validate-artifacts" in l]
+            self.assertTrue(known and all("не проблема и не расхождение" in l for l in known), packet)
+            self.assertTrue(other and not any("не проблема и не расхождение" in l for l in other))
+
+    def test_88_decision_text_in_both_packets_is_the_real_file_not_the_front_matter_line(self):
+        def sh(*cmd):
+            if cmd[0] == "git":
+                return 0, f"2026-10-11\n{DECISION_REAL}\n", ""
+            return 1, "", "stub"
+        with open(os.path.join(REPO_ROOT, DECISION_REAL), encoding="utf-8") as f:
+            real = f.read()
+        tmp = self.tmpcwd()
+        os.makedirs("journal/audits")
+        os.makedirs("mailbox")
+        with open(DECISION_REAL, "w", encoding="utf-8") as f:
+            f.write(real)
+        for packet in self.packets(sh):
+            self.assertIn("Досье в гейте — ТРИ", packet)
+            self.assertIn(f"показано {len(real)} символов из {len(real)}", packet)
+
+    def test_88_the_decision_budget_is_explicit_and_a_cut_is_signed(self):
+        def sh(*cmd):
+            return (0, f"2026-10-11\n{DECISION_REAL}\nmailbox/DECISION_2026-10-12_X.md\n", "") \
+                if cmd[0] == "git" else (1, "", "stub")
+        self.patch(F, "sh", sh)
+        self.chdir(REPO_ROOT)
+        with open(DECISION_REAL, encoding="utf-8") as f:
+            total = len(f.read())
+        out = F.decisions(60, budget=100)
+        self.assertIn(f"показано 100 символов из {total}", out)
+        self.assertIn("УСЕЧЕН", out)
+        self.assertIn("UNAVAILABLE (файл недоступен", out)    # a missing file is named, not skipped
+        self.assertNotIn("Досье в гейте — ТРИ", out)          # past the budget: not smuggled in
+        self.assertIn(f"показано {total} символов из {total}", F.decisions(60, budget=10**6))
+
+
+# ---------------------------------------------------------------------------------------------
 # item 5: credit axis names its data path in the log; the PANEL_LOG row is unchanged
 # ---------------------------------------------------------------------------------------------
 class TestCreditAxisSource(Patched):
