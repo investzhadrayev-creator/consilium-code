@@ -30,6 +30,7 @@ import daily_report as R  # noqa: E402
 import llm_clients as L  # noqa: E402
 import mail_bridge as B  # noqa: E402
 import notify_failure as NF  # noqa: E402
+import operator_prs as OP  # noqa: E402
 import monthly_audit as M  # noqa: E402
 import panel_axes as P   # noqa: E402
 import schedule_guard as G  # noqa: E402
@@ -38,6 +39,9 @@ import schedule_guard as G  # noqa: E402
 # (issue #70: the first run of this suite hit a real `git fetch` from a tmp cwd). Tests of the
 # guard itself live in test_schedule_guard.py and install their own fakes.
 G.sh = lambda *cmd: (1, "", "test: git/gh unavailable by design")
+# daily_report now also asks gh for operator PRs (issue #92). Tests of OTHER things see "no open PRs";
+# the reminder's own tests (TestOperatorReminder) install their own fakes.
+OP.sh = lambda *cmd: types.SimpleNamespace(returncode=0, stdout="[]", stderr="")
 
 SECRET = "123456789:AAFakeTelegramTokenValueXYZ_-abc"
 
@@ -68,7 +72,8 @@ class Patched(unittest.TestCase):
 
     def notified(self):
         sent = []
-        self.patch(L, "notify", lambda text: sent.append(text) or True)
+        self.levels = []
+        self.patch(L, "notify", lambda text, level=L.INFO: (sent.append(text), self.levels.append(level)) and True)
         return sent
 
 
@@ -270,7 +275,7 @@ class TestBridgeMain(Patched):
     def test_notify_logs_first_then_sends(self):
         order = []
         self.patch(B, "log_command", lambda *a, **k: order.append("log"))
-        self.patch(B.L, "notify", lambda t: order.append("notify:" + t) or True)
+        self.patch(B.L, "notify", lambda t, level=L.INFO: order.append("notify:" + t) or True)
         self.add(b"1", self.task_mail(subject="[CONSILIUM-NOTIFY] Заголовок", body="строка тела"))
         code, _ = self.run_main()
         self.assertEqual(code, 0)
@@ -279,7 +284,7 @@ class TestBridgeMain(Patched):
         self.assertIn("строка тела", order[1])
 
     def test_notify_that_cannot_be_delivered_turns_the_job_red(self):
-        self.patch(B.L, "notify", lambda t: False)
+        self.patch(B.L, "notify", lambda t, level=L.INFO: False)
         self.add(b"1", self.task_mail(subject="[CONSILIUM-NOTIFY] X"))
         code, _ = self.run_main()
         self.assertEqual(code, 1)

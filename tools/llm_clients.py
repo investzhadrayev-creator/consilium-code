@@ -134,19 +134,53 @@ def _scrub(text, token):
         text = text.replace(token, "***")
     return re.sub(r"bot\d+:[A-Za-z0-9_-]+", "bot***", text)
 
-def notify(text):
+# Уровни важности Telegram (issue #92). Оператор одобряет с телефона: важное не должно тонуть
+# среди ежедневных строк. ACTION/ALARM — жирный заголовок + звук; INFO — без звука.
+ACTION = "ACTION"   # нужно решение оператора (PR на одобрение, отказ моста в merge)
+ALARM = "ALARM"     # реальный сбой / подтверждённое нарушение правил
+INFO = "INFO"       # ежедневная строка, чистый аудит, прочие сведения
+LEVEL_HEADERS = {ACTION: "🔴 НУЖНО ВАШЕ РЕШЕНИЕ", ALARM: "🟠 ТРЕВОГА"}
+TG_LIMIT = 4000
+TRUNC_MARK = "\n…(усечено)"
+
+def _fit_html(msg, head):
+    """Экранированный текст, влезающий в лимит Telegram. Режем СЫРОЙ текст до экранирования:
+    обрезка уже экранированной строки может разорвать сущность (&amp;) и Telegram отклонит всё."""
+    import html
+    budget = TG_LIMIT - len(head) - 1
+    esc = html.escape(msg, quote=False)
+    if len(esc) <= budget:
+        return esc
+    n = len(msg)
+    while n > 0:
+        esc = html.escape(msg[:n], quote=False) + TRUNC_MARK
+        if len(esc) <= budget:
+            return esc
+        n = n - max(1, (len(esc) - budget) // 6)
+    return TRUNC_MARK.strip()
+
+def notify(text, level=INFO):
     """Telegram-уведомление оператору. Секреты: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+    level: ACTION | ALARM (HTML, жирный заголовок, со звуком) | INFO (без звука, по умолчанию).
+    Неизвестный уровень — ValueError (не молчаливая подстановка INFO: missing != default).
     Нет секретов -> WARN и False (не падает). Ошибка отправки -> WARN без токена и False.
     True только если Telegram ответил ok."""
+    if level not in (ACTION, ALARM, INFO):
+        raise ValueError(f"notify: неизвестный уровень {level!r}; допустимо ACTION|ALARM|INFO")
     token = os.environ.get("TELEGRAM_BOT_TOKEN") or ""
     chat = os.environ.get("TELEGRAM_CHAT_ID") or ""
     if not token or not chat:
         print("WARN: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set; notify skipped")
         return False
     msg = text if text.startswith("[Консилиум] ") else "[Консилиум] " + text
+    if level == INFO:
+        payload = {"chat_id": chat, "text": msg[:TG_LIMIT], "disable_notification": True}
+    else:
+        head = f"<b>{LEVEL_HEADERS[level]}</b>"
+        payload = {"chat_id": chat, "text": head + "\n" + _fit_html(msg, head),
+                   "parse_mode": "HTML", "disable_notification": False}
     try:
-        j = _post(f"https://api.telegram.org/bot{token}/sendMessage", {},
-                  {"chat_id": chat, "text": msg[:4000]}, timeout=30)
+        j = _post(f"https://api.telegram.org/bot{token}/sendMessage", {}, payload, timeout=30)
         if not j.get("ok"):
             print("WARN: telegram not ok:", _scrub(str(j)[:200], token))
             return False

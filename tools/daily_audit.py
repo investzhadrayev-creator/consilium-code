@@ -93,7 +93,9 @@ def main():
               + "\n\n" + ev +
               "\n\nЗАДАЧА (проход 2 — доследование): по КАЖДОМУ расхождению закончи одним из двух, "
               "отмолчаться нельзя:\nПОДТВЕРЖДАЮ НАРУШЕНИЕ: <суть> | ПРИЧИНА: <почему произошло> | "
-              "ПЛАН: <что, в каком файле, кем исправить>\nлибо\nОТЗЫВАЮ: <почему первое впечатление ошибочно>")
+              "ПЛАН: <что, в каком файле, кем исправить> | КЛАСС: <ПРАВИЛО|ЗАДНИМ_ЧИСЛОМ|ПОДСТАНОВКА|ИНОЕ>\n"
+              "(КЛАСС: ПРАВИЛО — изменение правила без PR оператора; ЗАДНИМ_ЧИСЛОМ — правка задним числом; "
+              "ПОДСТАНОВКА — подстановка числа вместо именованного отказа; прочее — ИНОЕ)\nлибо\nОТЗЫВАЮ: <почему первое впечатление ошибочно>")
         try:
             r2 = L.call(provider, p2, system=L.AUDITOR_PERSONA)
             out += ["", L.meta_block(r2, p2), "", "## Проход 2 — доследование", "", r2["text"]]
@@ -104,6 +106,21 @@ def main():
             out += ["", f"## Проход 2: REVIEW_UNAVAILABLE ({e})", "UNRESOLVED: доследование не выполнено"]
     write_commit(today, "\n".join(out) + "\n", red=red)
 
+RULE_CLASSES = ("ПРАВИЛО", "ЗАДНИМ_ЧИСЛОМ", "ПОДСТАНОВКА")
+
+def rule_violations(text):
+    """Подтверждённые нарушения правил (список В-Б, issue #92): строка «ПОДТВЕРЖДАЮ НАРУШЕНИЕ» с
+    «КЛАСС: <один из RULE_CLASSES>». Нет метки класса или класс ИНОЕ -> не из списка (INFO, не ALARM):
+    ALARM только по явной метке аудитора, не по догадке парсера."""
+    out = []
+    for ln in text.splitlines():
+        if "ПОДТВЕРЖДАЮ НАРУШЕНИЕ" not in ln or "КЛАСС:" not in ln:
+            continue
+        cls = ln.rsplit("КЛАСС:", 1)[1].strip().strip("<>*`. ").split()[0:1]
+        if cls and cls[0].strip("|,;.").upper() in RULE_CLASSES:
+            out.append(ln.strip())
+    return out
+
 def write_commit(today, md, red, unavailable=False):
     path = f"journal/audits/DAILY_AUDIT_{today}.md"
     os.makedirs("journal/audits", exist_ok=True)
@@ -113,7 +130,10 @@ def write_commit(today, md, red, unavailable=False):
     ok = autocommit.publish([path], f"daily audit {today}" + (" [RED]" if red else ""),
                             author="consilium-audit")
     if red:
-        L.notify(f"[RED] Ежедневный аудит {today}: подтверждено нарушение. journal/audits/DAILY_AUDIT_{today}.md")
+        hard = rule_violations(md)
+        L.notify(f"[RED] Ежедневный аудит {today}: подтверждено нарушение"
+                 + (f" правил ({len(hard)})" if hard else " (не из списка нарушений правил — к сведению)")
+                 + f". journal/audits/DAILY_AUDIT_{today}.md", L.ALARM if hard else L.INFO)
         L.send_mail(f"[CONSILIUM RED] Ежедневный аудит {today}: подтверждено нарушение",
                     "Аудитор подтвердил расхождение «сказано—сделано».\n"
                     f"Файл: journal/audits/DAILY_AUDIT_{today}.md\n"

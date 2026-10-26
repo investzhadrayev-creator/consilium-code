@@ -13,7 +13,7 @@ def message(env=os.environ):
             f"событие {env.get('WF_EVENT') or '?'}) {env.get('WF_URL') or ''}").strip()
 
 def main():
-    ok = L.notify(message())
+    ok = L.notify(message(), L.ALARM)
     print("notify_failure:", "отправлено" if ok else "НЕ отправлено (см. WARN выше)")
 
 if __name__ == "__main__":

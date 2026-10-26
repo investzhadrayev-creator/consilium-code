@@ -183,13 +183,29 @@ def do_merge(subject, body):
            "Мост отказал в merge: PR трогает защищённые пути "
            f"({', '.join(bad[:5])}). Требуется одобрение оператора в GitHub.", check=False)
         L.notify(f"Мост отказал в merge PR #{n}: защищённые пути ({', '.join(bad[:3])}). "
-                 f"{repo_url()}/pull/{n}")
+                 f"{repo_url()}/pull/{n}", L.ACTION)
         raise CommandFailed(f"MERGE REFUSED pr#{n}: protected paths {bad}")
     r = subprocess.run(["gh", "pr", "merge", n, "--squash", "--delete-branch"],
                        capture_output=True, text=True)
     print(r.stdout)
     if r.returncode != 0:
         raise CommandFailed(f"MERGE pr#{n} не выполнен: {r.stderr.strip()[:300]}")
+
+def operator_pr_body(content):
+    """Тело PR моста начинается с блока «## ДЛЯ ОПЕРАТОРА» (CLAUDE.md, issue #92): блок берётся из
+    первых строк файла архитектора. Нет блока в файле -> блок-отказ с причиной, не выдуманное резюме."""
+    lines = content.replace("\r\n", "\n").split("\n")
+    for i, ln in enumerate(lines[:40]):
+        if ln.strip().upper() == "## ДЛЯ ОПЕРАТОРА":
+            blk = [ln]
+            for nxt in lines[i + 1:i + 12]:
+                if nxt.lstrip().startswith("## "):
+                    break
+                blk.append(nxt)
+            return "\n".join(blk).rstrip() + "\n\nФайл правил от архитектора. Merge — только оператор."
+    return ("## ДЛЯ ОПЕРАТОРА\n- Что меняется: НЕ УКАЗАНО — в первых 40 строках файла архитектора нет блока "
+            "«## ДЛЯ ОПЕРАТОРА».\n- Тип: НЕ УКАЗАН\n- Риск: НЕ УКАЗАН\n\n"
+            "Файл правил от архитектора. Merge — только оператор.")
 
 def do_file(subject, body):
     path = parse_command(subject)[1]
@@ -216,18 +232,27 @@ def do_file(subject, body):
     sh("git", "push", "-u", "origin", br)
     r = subprocess.run(["gh", "pr", "create", "--fill", "--title",
                         f"[ТРЕБУЕТ ОДОБРЕНИЯ ОПЕРАТОРА] {path}",
-                        "--body", "Файл правил от архитектора. Merge — только оператор."],
+                        "--body", operator_pr_body(content)],
                        capture_output=True, text=True, env=dict(os.environ))
     sh("git", "checkout", "main")
     if r.returncode != 0:
         raise CommandFailed(f"FILE {path}: PR не создан: {r.stderr.strip()[:300]}")
     url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
-    L.notify(f"PR «ТРЕБУЕТ ОДОБРЕНИЯ ОПЕРАТОРА»: {path} {url}")
+    L.notify(f"PR «ТРЕБУЕТ ОДОБРЕНИЯ ОПЕРАТОРА»: {path} {url}", L.ACTION)
     print(f"FILE -> PR (protected): {path} {url}")
 
+def notify_level(title):
+    """Тема [CONSILIUM-NOTIFY]: «!ACTION ...» / «!ALARM ...» -> уровень, иначе INFO.
+    -> (уровень, тема без метки). Метка — отдельное слово: «!ACTIONS» меткой не является."""
+    first, _, tail = title.strip().partition(" ")
+    if first in ("!ACTION", "!ALARM"):
+        return first[1:], tail.strip()
+    return L.INFO, title
+
 def do_notify(title, body):
+    level, title = notify_level(title)
     text = (title + ("\n" + body if body else "")).strip() or "(пустое уведомление)"
-    if not L.notify(text):
+    if not L.notify(text, level):
         raise CommandFailed("NOTIFY: Telegram не принял сообщение (нет секретов или ошибка отправки)")
 
 def recent_commands(M, days=WINDOW_DAYS):
@@ -288,7 +313,7 @@ def main():
             failures.append(f"{kind} {subject}: {e}")
             sh("git", "checkout", "main", check=False)
     if failures:
-        L.notify(f"Мост: не исполнено {len(failures)} команд(ы): " + "; ".join(f[:120] for f in failures[:3]))
+        L.notify(f"Мост: не исполнено {len(failures)} команд(ы): " + "; ".join(f[:120] for f in failures[:3]), L.ALARM)
         sys.exit(1)
 
 if __name__ == "__main__":

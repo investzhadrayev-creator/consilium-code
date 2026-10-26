@@ -430,11 +430,11 @@ def watch_section(now=None, only=None, notify=True):
     if notify:
         for r in rows:
             if r["alert"]:
-                L.notify(alert_text(r))
+                L.notify(alert_text(r), L.ALARM)
         unk = [r for r in rows if r["state"] == UNKNOWN]
         if unk:
             L.notify("Сторож расписаний не смог проверить: "
-                     + "; ".join(f"{r['name']} ({r['detail'][:80]})" for r in unk))
+                     + "; ".join(f"{r['name']} ({r['detail'][:80]})" for r in unk), L.INFO)
     bad = [r for r in rows if r["alert"] or r["state"] in (MISSING, UNKNOWN)]
     return render(rows, now), len(bad)
 

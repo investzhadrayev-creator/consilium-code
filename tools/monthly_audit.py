@@ -48,7 +48,7 @@ def main():
     ok = autocommit.publish([path], f"monthly architect audit {ym}" + (" [RED]" if red else ""),
                             author="consilium-audit")
     if red:
-        L.notify(f"[RED] Месячный аудит архитектора {ym}. {path}")
+        L.notify(f"[RED] Месячный аудит архитектора {ym}. {path}", L.INFO)
         L.send_mail(f"[CONSILIUM RED] Месячный аудит архитектора {ym}",
                     f"Минимум один рецензент дал RED. Файл: {path}")
     print(("RED" if red else "clean"), "->", path)

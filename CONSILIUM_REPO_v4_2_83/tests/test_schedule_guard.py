@@ -28,8 +28,13 @@ import daily_report as R  # noqa: E402
 import llm_clients as L  # noqa: E402
 import monthly_audit as M  # noqa: E402
 import panel_axes as P   # noqa: E402
+import operator_prs as OP  # noqa: E402
 import schedule_guard as G  # noqa: E402
+import types  # noqa: E402
 import weekly_digest as W  # noqa: E402
+
+# daily_report.main() now also asks gh for operator PRs (issue #92): default-deny, "no open PRs".
+OP.sh = lambda *cmd: types.SimpleNamespace(returncode=0, stdout="[]", stderr="")
 
 REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-19_SCHEDULE_WORKFLOWS.md")
 BRIDGE_REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-25_BRIDGE_WORKFLOWS.md")
@@ -121,7 +126,7 @@ class Base(unittest.TestCase):
         self.sent = []
         self.mails = []
         self.llm = []
-        self.patch(L, "notify", lambda text: self.sent.append(text) or True)
+        self.patch(L, "notify", lambda text, level=L.INFO: self.sent.append(text) or True)
         self.patch(L, "send_mail", lambda *a, **k: self.mails.append(a) or True)
         self.patch(L, "call", lambda *a, **k: self.llm.append(a) or {"text": "VERDICT: GREEN", "provider": "x", "model": "m", "usage": {}})
         self.published = []
@@ -606,6 +611,80 @@ def bridge_report_yaml():
     assert m, "mail_bridge.yml block not found in the bridge report"
     return m.group(1)
 
+
+ALL_REPORT = os.path.join(REPO, "mailbox", "REPORT_2026-10-26_ALL_WORKFLOWS.md")
+
+
+def all_report_block(name):
+    with open(ALL_REPORT, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"### `\.github/workflows/" + re.escape(name) + r"`[^\n]*\n\n(`{3,})yaml\n(.*?)\n\1", text, re.S)
+    assert m, f"{name} block not found in the ALL_WORKFLOWS report"
+    return m.group(2)
+
+
+def steps_of(y):
+    """[(name, body)] of the single job's steps, in file order (no yaml module offline)."""
+    parts = re.split(r"(?m)^      - ", y.split("    steps:\n", 1)[1])[1:]
+    return [((re.search(r"name: (.*)", p) or [None, ""])[1], p) for p in parts]
+
+
+class TestPanelPublishesWithoutTheCard(unittest.TestCase):
+    """Issue #105: the PANEL row must not depend on the floor-1 card. A failed card (Tiingo 429, SEC refusal)
+    used to skip the publish step and lose the panel row too."""
+    @classmethod
+    def setUpClass(cls):
+        cls.steps = steps_of(all_report_block("panel_weekly.yml"))
+
+    def _find(self, needle):
+        hits = [(i, b) for i, (n, b) in enumerate(self.steps) if needle in n]
+        self.assertEqual(len(hits), 1, f"{needle!r}: {len(hits)} steps")
+        return hits[0]
+
+    def test_publish_runs_even_when_an_earlier_step_failed(self):
+        _, pub = self._find("Публикация через PR")
+        self.assertRegex(pub, r"(?m)^        if: always\(\) && env\.ALREADY_PUBLISHED != '1'$")
+
+    def test_a_failing_card_or_dependency_step_does_not_stop_the_job(self):
+        for needle, sid in (("Карточка этажа 1 (tools", "card"), ("Зависимость адаптера", "deps")):
+            _, b = self._find(needle)
+            self.assertRegex(b, rf"(?m)^        id: {sid}$")
+            self.assertRegex(b, r"(?m)^        continue-on-error: true")
+
+    def test_card_failure_is_an_alarm_and_a_red_job_AFTER_publication(self):
+        i_pub, _ = self._find("Публикация через PR")
+        i_alarm, alarm = self._find("Карточка упала")
+        self.assertGreater(i_alarm, i_pub, "the red job must come after the publish step, or it is not 'after'")
+        cond = re.search(r"(?m)^        if: (.*)$", alarm).group(1)
+        self.assertTrue(cond.startswith("always()"), cond)
+        self.assertIn("steps.card.outcome == 'failure'", cond)
+        self.assertIn("steps.deps.outcome == 'failure'", cond)
+        self.assertIn("python3 tools/notify_failure.py", alarm)
+        self.assertRegex(alarm, r"(?m)^          exit 1$")
+        self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", alarm)
+
+    def test_alarm_data_travels_through_env_not_shell_interpolation(self):
+        _, alarm = self._find("Карточка упала")
+        run = alarm.split("run: |", 1)[1]
+        self.assertNotIn("${{", run)
+
+    def test_the_card_still_gets_both_secrets_and_the_pin_install_survived(self):
+        _, card = self._find("Карточка этажа 1 (tools")
+        self.assertIn("SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}", card)
+        self.assertIn("TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}", card)
+        _, deps = self._find("Зависимость адаптера")
+        self.assertIn("grep -i '^edgartools=='", deps)
+
+    def test_schedule_concurrency_and_bridge_block_are_what_the_earlier_reports_delivered(self):
+        y = all_report_block("panel_weekly.yml")
+        with open(os.path.join(REPO, "mailbox", "REPORT_2026-10-25_K1_WORKFLOWS.md"), encoding="utf-8") as f:
+            k1 = f.read()
+        crons = re.findall(r"(?m)^    - cron: .*$", y)
+        self.assertEqual(len(crons), 5)
+        for line in crons:
+            self.assertIn(line, k1)
+        self.assertIn("concurrency: { group: panel-weekly, cancel-in-progress: false }", y)
+        self.assertEqual(all_report_block("mail_bridge.yml").strip(), bridge_report_yaml().strip())
 
 class TestBridgeWorkflowRun(unittest.TestCase):
     """The deliverable file itself: the property is 'the bridge fires after the workflows that DO run'."""
