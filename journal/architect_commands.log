@@ -13,3 +13,4 @@
 2026-10-25T11:59:48Z | TASK | [CONSILIUM-TASK] Telegram: уровни важности, напоминания о PR оператора, блок «ДЛЯ ОПЕРАТОРА» в каждом PR | body_sha=5cc5e4bcbe176f36 | msgid=<CAPaEdTJX7M-KLep-PE=CaLNLOb5aYuooKKQaToATMT-o-TpU7A@mail.gmail.com>
 2026-10-25T11:59:57Z | TASK | [CONSILIUM-TASK] Мост не запускается по расписанию: подстраховка через workflow_run и сторож моста | body_sha=36ca88847d2c3452 | msgid=<CAPaEdTLfU90JXhsCArX94SmW36sYFYv4k8xsvAnCGfPMACYV=g@mail.gmail.com>
 2026-10-26T07:07:24Z | TASK | [CONSILIUM-TASK] K1.1: покрытие карточки — исправить наши дефекты, отделить классы неприменимости (до пт 30.10) | body_sha=95ed0feb47c9015b | msgid=<CAPaEdTKjOLqj0sco+aE_xvt_zKha4wjULEBXeEpNNL3bjPHpTQ@mail.gmail.com>
+2026-10-26T07:07:35Z | TASK | [CONSILIUM-TASK] PR #97: перебазировать на main и собрать ИТОГОВЫЕ версии всех workflow-файлов одним отчётом | body_sha=6e1141898a57ea91 | msgid=<CAPaEdT+LGY_hzGk0XNfE=xQaFzKu+EOHoz+r8SuhmHdjuSpEDA@mail.gmail.com>
