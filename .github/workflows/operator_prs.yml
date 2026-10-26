@@ -1,0 +1,19 @@
+name: operator-prs
+on:
+  schedule:
+    - cron: '7 5 * * *'     # ~10:07 Астана; GitHub может задержать запуск под нагрузкой
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+concurrency: { group: operator-prs, cancel-in-progress: false }
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 tools/operator_prs.py

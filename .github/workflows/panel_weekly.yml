@@ -26,16 +26,39 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           python3 tools/panel_axes.py --append || echo "PANEL_INSUFFICIENT=1" >> "$GITHUB_ENV"
-      - name: Карточка этажа 1 (появится после задачи К1)
+      - name: Зависимость адаптера К2 (edgartools — пин из requirements.txt новейшего дерева)
+        id: deps
         if: env.FLOOR1_PUBLISHED != '1'
+        continue-on-error: true   # падение карточки не должно отменять публикацию панели (см. шаг ALARM внизу)
+        run: |
+          req="$(ls -d CONSILIUM_REPO_v4_2_*/ | sort -V | tail -1)microservice/requirements.txt"
+          python3 -m pip install --quiet "$(grep -i '^edgartools==' "$req")"
+      - name: Карточка этажа 1 (tools/floor1_card.py, задача К1)
+        id: card
+        if: env.FLOOR1_PUBLISHED != '1'
+        continue-on-error: true   # то же: красный job — отдельным шагом ПОСЛЕ публикации
         env:
           TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: |
           if [ -f tools/floor1_card.py ]; then python3 tools/floor1_card.py; else echo "floor1_card.py ещё не создан (задача К1)"; fi
       - name: Публикация через PR (замок main не обходится)
-        if: env.ALREADY_PUBLISHED != '1'
+        if: always() && env.ALREADY_PUBLISHED != '1'
         env:
           GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 tools/autocommit.py "weekly panel $(date -u +%F)" journal/ Reports/
+      - name: Карточка упала — ALARM в Telegram и красный job (ПОСЛЕ публикации панели)
+        if: always() && (steps.deps.outcome == 'failure' || steps.card.outcome == 'failure')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WF_NAME: panel-weekly — шаг карточки этажа 1 упал (строка ПАНЕЛИ опубликована отдельно)
+          WF_BRANCH: ${{ github.ref_name }}
+          WF_EVENT: ${{ github.event_name }}
+          WF_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 tools/notify_failure.py || echo "ALARM не отправлен (см. вывод выше)"
+          echo "::error::Карточка этажа 1 не построена; панель опубликована. Повтор — следующий слот расписания."
+          exit 1
