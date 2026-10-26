@@ -74,6 +74,27 @@ def yearly(vals, last_year=2025):
     return [pt("%d-12-31" % (last_year - len(vals) + 1 + i), v) for i, v in enumerate(vals)]
 
 
+def tag_facts(tags, accn="0000000000-25-000001"):
+    """companyfacts-подобная синтетика: {тег: [(end, val)]} -> instant-факты 10-K (для net_debt_series)."""
+    return {"facts": {"us-gaap": {t: {"units": {"USD": [{"end": e, "val": v, "form": "10-K", "filed": e, "accn": accn}
+                                                         for e, v in pts]}} for t, pts in tags.items()}}}
+
+
+def dur_facts(tags):
+    """{тег: [(year, val, accn)]} -> годовые duration-факты 10-K с началом 01-01 (для вывода валовой прибыли)."""
+    return {"facts": {"us-gaap": {t: {"units": {"USD": [
+        {"start": "%d-01-01" % y, "end": "%d-12-31" % y, "val": v, "form": "10-K", "filed": "%d-12-31" % y, "accn": a}
+        for y, v, a in pts]}} for t, pts in tags.items()}}}
+
+
+def syn_out(gp=None):
+    out = {"revenue": yearly([100] * 8), "net_income": yearly([10] * 8), "ocf": yearly([30] * 8),
+           "capex": yearly([5] * 8), "shares_diluted": yearly([5] * 8), "_flags": {}, "_refusals": {}}
+    if gp is not None:
+        out["gross_profit"] = gp
+    return out
+
+
 class TestGoldens(unittest.TestCase):
     """Исходные факты (USD) прочитаны с фикстур К2 и записаны здесь; ожидаемое -- арифметика от них."""
 
@@ -123,8 +144,11 @@ class TestGoldens(unittest.TestCase):
         self.assertEqual(val(r, "fcf_latest"), 57_683_000_000 - 18_567_000_000)
         self.assertAlmostEqual(val(r, "fcf_to_ni"), 39_116 / 39_370, places=12)
         self.assertAlmostEqual(val(r, "shares_chg_1y"), 2_859 / 2_888 - 1, places=12)
-        self.assertEqual(refused(r, "gm_latest"), "MISSING_INPUT")     # GrossProfit у META нет в SEC-данных
-        self.assertEqual(refused(r, "gm_med5"), "MISSING_INPUT")
+        # GrossProfit у META нет в SEC-данных (K1.1 ч.1): маржа ВЫВЕДЕНА (rev 117_929M, CostOfRevenue 22_649M, оба из
+        # 10-K 0001326801-22-000018) и честно помечена derived -- не выдана за отчётный GrossProfit
+        self.assertAlmostEqual(val(r, "gm_latest"), (117_929 - 22_649) / 117_929, places=12)
+        self.assertTrue(r["fields"]["gm_latest"]["derived"])
+        self.assertEqual(r["fields"]["gm_latest"]["prov"], ["0001326801-22-000018"])
 
     def test_f1_05_GOOG_share_classes_are_refused_by_name_not_summed(self):
         # FY2021 FCF: OCF 91_652M - capex 24_640M. Консолидированного разводнённого числа акций у GOOG нет.
@@ -153,13 +177,15 @@ class TestGoldens(unittest.TestCase):
 
 class TestMissingIsNotZero(unittest.TestCase):
     def test_f1_08_a_stale_series_is_refused_not_shown_as_the_latest_value(self):
-        # MU: LongTermDebt перестал заполняться после FY2012; INTC: денежный тег оборвался в FY2018. Раньше
-        # карточка показывала долг 2012 года как «текущий» -- устаревшее число, выданное за актуальное.
-        mu = card("MU", "2018-10-15")
-        self.assertEqual(refused(mu, "net_debt_latest"), "STALE_SERIES")
-        self.assertIn("2012", mu["fields"]["net_debt_latest"]["reason"])
-        self.assertEqual(refused(mu, "net_debt_chg_3y"), "STALE_SERIES")
-        self.assertEqual(mu["flags"]["DEBT_FOR_BUYBACKS"]["state"], "UNDETERMINED")
+        # Единственный тег долга оборвался в FY2020, карточка на FY2025: долг 2020 года -- не «текущий». (На реальном
+        # MU LongTermDebt оборвался в 2012, но теперь есть DebtAndCapitalLeaseObligations -- см. f1_34.)
+        facts = tag_facts({"LongTermDebt": [("2020-12-31", 90)], "CashAndCashEquivalentsAtCarryingValue":
+                           [("%d-12-31" % y, 10) for y in range(2020, 2026)]})
+        F, _ = fc.sec_fields(syn_out(), facts, EF)
+        self.assertEqual(refused({"fields": F}, "net_debt_latest"), "STALE_SERIES")
+        self.assertIn("2020", F["net_debt_latest"]["reason"])
+        self.assertEqual(refused({"fields": F}, "net_debt_chg_3y"), "STALE_SERIES")
+        self.assertEqual(fc.flags_for(F, _)["DEBT_FOR_BUYBACKS"]["state"], "UNDETERMINED")
 
     def test_f1_09_no_debt_tag_is_a_refusal_and_never_zero_debt(self):
         out, ref = fc.net_debt_series({"facts": {"us-gaap": {}}}, EF)
@@ -198,12 +224,12 @@ class TestMissingIsNotZero(unittest.TestCase):
 
     def test_f1_13_csv_cell_of_a_refused_field_is_empty_with_a_reason(self):
         with tempfile.TemporaryDirectory() as td:
-            rows = [card("MU", "2018-10-15")]
-            fc.write_outputs(rows, "2018-10-15", td, "test", {"edgartools": AD.EDGARTOOLS_PIN})
-            with open(os.path.join(td, "FLOOR1_2018-10-15.csv"), encoding="utf-8") as fh:
+            rows = [card("META", CHECK_DATE)]
+            fc.write_outputs(rows, CHECK_DATE, td, "test", {"edgartools": AD.EDGARTOOLS_PIN})
+            with open(os.path.join(td, "FLOOR1_%s.csv" % CHECK_DATE), encoding="utf-8") as fh:
                 rec = next(csv.DictReader(fh))
         self.assertEqual(rec["net_debt_latest"], "")
-        self.assertIn("STALE_SERIES", rec["net_debt_latest__reason"])
+        self.assertIn("MISSING_INPUT", rec["net_debt_latest__reason"])
         self.assertEqual(rec["rs_voo_4w"], "")
         self.assertIn("TIINGO_UNAVAILABLE", rec["rs_voo_4w__reason"])
         self.assertNotEqual(rec["ni_latest"], "0")
@@ -438,6 +464,72 @@ class TestWorkflowReport(unittest.TestCase):
         text = open(REPORT, encoding="utf-8").read()
         self.assertIn("ДОПУЩЕНИЕ", text)
         self.assertIn("403", text)
+
+
+class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
+    """K1.1 ч.1: дрейф тегов (цепочки) и валовая прибыль = выручка - себестоимость из одного отчёта."""
+
+    def test_f1_34_mu_net_debt_comes_from_the_alternative_tag_and_says_which(self):
+        # MU FY2018: LongTermDebt нет с 2012; DebtAndCapitalLeaseObligations 4_636M, деньги 6_506M (из фактов фикстуры)
+        mu = card("MU", "2018-10-15")
+        self.assertEqual(val(mu, "net_debt_latest"), 4_636_000_000 - 6_506_000_000)
+        self.assertEqual(mu["fields"]["net_debt_latest"]["tags"],
+                         ["DebtAndCapitalLeaseObligations", "CashAndCashEquivalentsAtCarryingValue"])
+        self.assertIn("DebtAndCapitalLeaseObligations", mu["fields"]["net_debt_latest"]["basis"])
+
+    def test_f1_35_change_across_different_tag_sets_is_marked_mixed(self):
+        yrs = lambda a, b: ["%d-12-31" % y for y in range(a, b + 1)]
+        cash = [(e, 10) for e in yrs(2022, 2025)]
+        mixed = tag_facts({"LongTermDebt": [(yrs(2022, 2022)[0], 50)], "DebtAndCapitalLeaseObligations":
+                           [(e, 80) for e in yrs(2023, 2025)], "CashAndCashEquivalentsAtCarryingValue": cash})
+        F, _ = fc.sec_fields(syn_out(), mixed, EF)
+        f = F["net_debt_chg_3y"]
+        self.assertEqual(f["value"], (80 - 10) - (50 - 10))
+        self.assertTrue(f["mixed_tags"])
+        self.assertIn("РАЗНЫЕ ТЕГИ", f["basis"])
+        same = tag_facts({"LongTermDebt": [(e, 50) for e in yrs(2022, 2025)], "CashAndCashEquivalentsAtCarryingValue": cash})
+        F, _ = fc.sec_fields(syn_out(), same, EF)
+        self.assertFalse(F["net_debt_chg_3y"]["mixed_tags"])
+        self.assertNotIn("РАЗНЫЕ", F["net_debt_chg_3y"]["basis"])
+
+    def test_f1_36_derived_gross_profit_carries_both_accessions_from_one_report(self):
+        a = "0000000000-25-000007"
+        facts = dur_facts({"Revenues": [(y, 100 + y - 2018, a) for y in range(2018, 2026)],
+                           "CostOfRevenue": [(y, 40, a) for y in range(2018, 2026)]})
+        gp, rv, ref = fc.gross_profit_derived(facts, EF)
+        self.assertIsNone(ref)
+        self.assertEqual(gp[-1]["val"], 107 - 40)
+        self.assertEqual(gp[-1]["accn"], [a, a])
+        self.assertEqual(gp[-1]["tags"], ["Revenues", "CostOfRevenue"])
+        F, _ = fc.sec_fields(syn_out(), facts, EF)
+        g = F["gm_latest"]
+        self.assertTrue(g["derived"])
+        self.assertAlmostEqual(g["value"], 67 / 107, places=12)
+        self.assertEqual(g["prov"], [a])
+        self.assertEqual(g["tags"], ["Revenues", "CostOfRevenue"])
+
+    def test_f1_37_missing_cost_or_report_mismatch_is_a_refusal_never_zero_or_revenue(self):
+        years = range(2018, 2026)
+        only_rev = dur_facts({"Revenues": [(y, 100, "0000000000-25-000007") for y in years]})
+        gp, rv, ref = fc.gross_profit_derived(only_rev, EF)
+        self.assertIsNone(gp)
+        self.assertEqual(ref["refused"], "MISSING_INPUT")
+        F, _ = fc.sec_fields(syn_out(), only_rev, EF)
+        self.assertEqual(refused({"fields": F}, "gm_latest"), "MISSING_INPUT")
+        self.assertEqual(refused({"fields": F}, "gm_med5"), "MISSING_INPUT")
+        two_reports = dur_facts({"Revenues": [(y, 100, "0000000000-25-000007") for y in years],
+                                 "CostOfRevenue": [(y, 40, "0000000000-25-000008") for y in years]})
+        gp, rv, ref = fc.gross_profit_derived(two_reports, EF)
+        self.assertIsNone(gp, "выручка из одного отчёта и себестоимость из другого не склеиваются")
+        self.assertEqual(ref["refused"], "MISSING_INPUT")
+
+    def test_f1_38_reported_gross_profit_wins_and_is_not_marked_derived(self):
+        a = "0000000000-25-000007"
+        facts = dur_facts({"Revenues": [(y, 100, a) for y in range(2018, 2026)],
+                           "CostOfRevenue": [(y, 40, a) for y in range(2018, 2026)]})
+        F, _ = fc.sec_fields(syn_out(gp=yearly([55] * 8)), facts, EF)
+        self.assertAlmostEqual(F["gm_latest"]["value"], 0.55)     # 55/100 отчётный, а не (100-40)/100
+        self.assertNotIn("derived", F["gm_latest"])
 
 
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)

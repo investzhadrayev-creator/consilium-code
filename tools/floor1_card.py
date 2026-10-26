@@ -99,7 +99,7 @@ def align(num, den):
     for r in num or []:
         d = dm.get(r["end"])
         if d and d["val"]:
-            out.append({"end": r["end"], "val": r["val"] / d["val"], "accn": [r.get("accn"), d.get("accn")]})
+            out.append({"end": r["end"], "val": r["val"] / d["val"], "accn": accns(r, d)})
     return out
 
 
@@ -208,37 +208,87 @@ def share_change(shares, n, splits, shares_refusal):
               accns(a, b))
 
 
-def net_debt_series(facts, ef):
-    """-> (series, refusal). Долг на дате ФГ: полный LongTermDebt, а если его на этой дате нет —
-    LongTermDebtNoncurrent + LongTermDebtCurrent/DebtCurrent, но только когда ОБА слагаемых есть на этой дате
-    (нет текущей части в данных != текущая часть ноль). Минус CashAndCashEquivalents на той же дате."""
-    full, _ = ef._annual_instant_series(facts, ef.DEBT_FULL_LT)
-    nonc, _ = ef._annual_instant_series(facts, ef.DEBT_NONCURRENT)
-    cur = {}
-    for tag in ef.DEBT_CUR:
+# Цепочки альтернативных us-gaap тегов (K1.1 ч.1). Эмитент мог перестать заполнять один тег и перейти на другой
+# (MU: LongTermDebt оборвался в FY2012, дальше DebtAndCapitalLeaseObligations). Точка берётся из ПЕРВОГО тега цепочки,
+# у которого есть эта дата; какой тег дал число -- в provenance (tags). Теги с разным смыслом (LongTermDebt vs
+# DebtAndCapitalLeaseObligations -- со своими арендами) в одном расчёте изменения помечаются mixed_tags.
+DEBT_FULL_CHAIN = ["LongTermDebt", "DebtAndCapitalLeaseObligations"]
+DEBT_NONC_CHAIN = ["LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations"]
+DEBT_CUR_CHAIN = ["LongTermDebtCurrent", "DebtCurrent", "LongTermDebtAndCapitalLeaseObligationsCurrent"]
+CASH_CHAIN = ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]
+COST_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
+
+
+def _by_end(facts, ef, chain):
+    """{end: row-with-tag}: для каждой даты строка из первого тега цепочки, у которого она есть."""
+    out = {}
+    for tag in chain:
         rows, _ = ef._annual_instant_series(facts, [tag])
         for r in rows:
-            cur.setdefault(r["end"], r)
+            out.setdefault(r["end"], r)
+    return out
+
+
+def net_debt_series(facts, ef):
+    """-> (series, refusal). Долг на дате ФГ: полный долг (цепочка DEBT_FULL_CHAIN), а если его на этой дате нет --
+    нетекущая + текущая часть (цепочки), но только когда ОБА слагаемых есть на этой дате (нет текущей части в данных
+    != текущая часть ноль). Минус деньги (CASH_CHAIN) на той же дате. Точка несёт tags -- теги, давшие число."""
+    full, nonc, cur = (_by_end(facts, ef, c) for c in (DEBT_FULL_CHAIN, DEBT_NONC_CHAIN, DEBT_CUR_CHAIN))
     if not full and not nonc:
-        return None, refusal("DEBT_TAG_ABSENT", "нет us-gaap:LongTermDebt и LongTermDebtNoncurrent: «долга нет» и "
-                             "«тег не заполнен» неотличимы, ноль не подставляется")
-    cash, _ = ef._annual_instant_series(facts, ef.INSTANT_TAGS["cash"])
-    cm = {r["end"]: r for r in cash}
-    fm, nm = {r["end"]: r for r in full}, {r["end"]: r for r in nonc}
+        return None, refusal("DEBT_TAG_ABSENT", "нет ни одного тега долга из цепочек %s / %s: «долга нет» и "
+                             "«тег не заполнен» неотличимы, ноль не подставляется"
+                             % (",".join(DEBT_FULL_CHAIN), ",".join(DEBT_NONC_CHAIN)))
+    cm = _by_end(facts, ef, CASH_CHAIN)
     out = []
-    for end in sorted(set(fm) | set(nm)):
+    for end in sorted(set(full) | set(nonc)):
         if end not in cm:
             continue
-        if end in fm:
-            debt, accn = fm[end]["val"], [fm[end].get("accn")]
-        elif end in nm and end in cur:
-            debt, accn = nm[end]["val"] + cur[end]["val"], [nm[end].get("accn"), cur[end].get("accn")]
+        if end in full:
+            debt, parts = full[end]["val"], [full[end]]
+        elif end in nonc and end in cur:
+            debt, parts = nonc[end]["val"] + cur[end]["val"], [nonc[end], cur[end]]
         else:
             continue
-        out.append({"end": end, "val": debt - cm[end]["val"], "accn": accn + [cm[end].get("accn")]})
+        out.append({"end": end, "val": debt - cm[end]["val"], "accn": [r.get("accn") for r in parts + [cm[end]]],
+                    "tags": [r["tag"] for r in parts + [cm[end]]]})
     if not out:
         return None, refusal("MISSING_INPUT", "нет ни одной даты, где есть и полный долг, и денежные средства")
     return out, None
+
+
+def tag_note(*pts):
+    """-> (tags, mixed): все теги точек (без повторов) и признак «точки собраны из разных наборов тегов»."""
+    sets = [tuple(p.get("tags") or ()) for p in pts]
+    tags = []
+    for t in sets:
+        for x in t:
+            if x not in tags:
+                tags.append(x)
+    return tags, len(set(sets)) > 1
+
+
+def gross_profit_derived(facts, ef):
+    """-> (gp_series, rev_series, refusal). Валовая прибыль = выручка - себестоимость из ОДНОГО отчёта: точка есть
+    только там, где accession выручки и себестоимости совпадают (иначе это склейка двух отчётов). Нет второго
+    слагаемого -- отказ MISSING_INPUT, не ноль и не «выручка = прибыль»."""
+    rev, _, _, _ = ef._annual_merged(facts, ef.DURATION_TAGS["revenue"], drop_zero=True)
+    cost, _, _, _ = ef._annual_merged(facts, COST_TAGS)
+    if not rev or not cost:
+        return None, None, refusal("MISSING_INPUT", "gross profit: нет GrossProfit и нет %s (нет %s) -- вывести "
+                                   "не из чего, ноль не подставляется"
+                                   % ("выручки" if not rev else "себестоимости", "/".join(COST_TAGS)))
+    cm = {r["end"]: r for r in cost}
+    gp, rv = [], []
+    for r in rev:
+        c = cm.get(r["end"])
+        if c and c.get("accn") and c["accn"] == r.get("accn"):
+            gp.append({"end": r["end"], "val": r["val"] - c["val"], "accn": [r["accn"], c["accn"]],
+                       "tags": [r["tag"], c["tag"]]})
+            rv.append(dict(r, accn=[r["accn"]], tags=[r["tag"]]))
+    if not gp:
+        return None, None, refusal("MISSING_INPUT", "gross profit: выручка и себестоимость не совпадают ни по одной "
+                                   "дате в одном accession (разные отчёты не склеиваются)")
+    return gp, rv, None
 
 
 def sec_fields(out, facts, ef):
@@ -264,6 +314,16 @@ def sec_fields(out, facts, ef):
     F["rev_accel"] = rev_accel(rev)
     for key, num, nm in (("gm", gp, "gross margin"), ("om", opi, "operating margin"), ("nm", ni, "net margin")):
         F[key + "_latest"], F[key + "_med5"] = margin_pair(num, rev, nm, fy)
+    if not is_ok(F["gm_latest"]):        # нет GrossProfit (или ряд устарел): Revenue - CostOfRevenue из одного отчёта
+        gp_d, rev_d, gp_ref = gross_profit_derived(facts, ef)
+        if gp_d:
+            F["gm_latest"], F["gm_med5"] = margin_pair(gp_d, rev_d, "gross margin (выручка - себестоимость)", fy)
+            for k in ("gm_latest", "gm_med5"):
+                if is_ok(F[k]):
+                    F[k]["derived"] = True
+                    F[k]["tags"] = tag_note(gp_d[-1])[0]
+        elif F["gm_latest"].get("refused") == "MISSING_INPUT":
+            F["gm_latest"] = F["gm_med5"] = refusal("MISSING_INPUT", F["gm_latest"]["reason"] + "; " + gp_ref["reason"])
     raw["om"] = align(opi, rev)
 
     F["ni_latest"] = (ok(ni[-1]["val"], "USD", "NetIncomeLoss ФГ %s" % ni[-1]["end"], accns(ni[-1]))
@@ -302,12 +362,18 @@ def sec_fields(out, facts, ef):
     if nd_ref:
         F["net_debt_latest"] = F["net_debt_chg_3y"] = nd_ref
     else:
-        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг(LTD или Noncurrent+Current) - Cash&Equivalents ФГ %s" % nd[-1]["end"],
-                                  accns(nd[-1]))
+        tags, _ = tag_note(nd[-1])
+        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг - Cash ФГ %s; теги: %s" % (nd[-1]["end"], ",".join(tags)),
+                                  accns(nd[-1]), tags=tags)
         a = at_offset(nd, 3)
-        F["net_debt_chg_3y"] = (ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s" % (nd[-1]["end"], a["end"]),
-                                   accns(a, nd[-1])) if a else
-                                refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"]))
+        if a:
+            tags, mixed = tag_note(a, nd[-1])
+            F["net_debt_chg_3y"] = ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s; теги: %s%s" % (
+                nd[-1]["end"], a["end"], ",".join(tags),
+                " [РАЗНЫЕ ТЕГИ на концах окна: определения долга могут отличаться]" if mixed else ""),
+                accns(a, nd[-1]), tags=tags, mixed_tags=mixed)
+        else:
+            F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
     return F, raw
 
 
