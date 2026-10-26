@@ -27,6 +27,8 @@ GRACE = dt.timedelta(minutes=60)            # прогон последнего 
 NOTIFY_WINDOW = dt.timedelta(hours=26)      # о пропуске периода сообщаем один раз, не неделю подряд
 RUN_LIMIT = 200
 PUBLISHED, MISSING, NOT_REQUIRED, UNKNOWN = "PUBLISHED", "MISSING", "NOT_REQUIRED", "UNKNOWN"
+BRIDGE_MAX_AGE = dt.timedelta(hours=6)      # старше — мост считается незапущенным (issue #94)
+BRIDGE_URL = "https://github.com/investzhadrayev-creator/consilium-code/actions/workflows/mail_bridge.yml"
 FLOOR1_RE = re.compile(r"^FLOOR1_(\d{4}-\d{2}-\d{2})\.md$")
 
 SPECS = {
@@ -265,6 +267,25 @@ def gh_runs(file, since_date):
     return runs, None
 
 
+def bridge_check(runs, since_date, now):
+    """Возраст последнего УСПЕШНОГО прогона mail-bridge (любой event: schedule / workflow_run / dispatch).
+    -> (state, detail, alert|None). Старше BRIDGE_MAX_AGE или успешных нет -> MISSING + alert.
+    Нет успешного прогона в окне -> возраст неизвестен, называется нижняя граница («более N ч»)."""
+    ok = [r["_t"] for r in runs if r["conclusion"] == "success"]
+    if ok:
+        age = max(now - max(ok), dt.timedelta(0))
+        hours, bound = int(age.total_seconds() // 3600), ""
+        detail = f"последний успешный прогон {max(ok):%Y-%m-%d %H:%M}Z, возраст {hours} ч"
+    else:
+        age = now - _dt(dt.date.fromisoformat(since_date))
+        hours, bound = int(age.total_seconds() // 3600), "более "
+        detail = f"успешных прогонов в окне с {since_date} нет (возраст не определить, нижняя граница {hours} ч)"
+    if age <= BRIDGE_MAX_AGE:
+        return PUBLISHED, detail, None
+    return MISSING, detail, (f"Мост не запускался {bound}{hours} ч — Actions → mail-bridge → Run workflow "
+                             f"{BRIDGE_URL}")
+
+
 def result_state(name, p, check_activity=False):
     """Опубликован ли результат периода p workflow `name` на main. -> (state, detail)."""
     spec = SPECS[name]
@@ -364,10 +385,9 @@ def watch(now=None, only=None):
                 if row["actual"] is not None:
                     row["state"] = NOT_REQUIRED
                     row["detail"] = "результата периода нет (дедуп внутри скрипта)"
-                    if row["expected"] >= 1 and row["actual"] == 0:
-                        row["state"] = MISSING
-                        row["detail"] = "за 24 ч ни одного запуска по расписанию"
-                        row["alert"] = "ни одного запуска по расписанию за 24 ч"
+                    if name == "mail-bridge":      # возраст последнего успешного прогона, не число слотов
+                        row["state"], row["detail"], row["alert"] = bridge_check(
+                            runs, (now - dt.timedelta(hours=24)).date().isoformat(), now)
                 continue
             p, deadline = latest_closed_period(name, now)
             row["period"] = str(p)
@@ -397,6 +417,8 @@ def render(rows, now):
 
 
 def alert_text(r):
+    if r["name"] == "mail-bridge":
+        return r["alert"]
     return (f"Пропущен запуск: {r['name']} — {r['alert']}. Оператору: Actions → {r['name']} → "
             f"Run workflow (workflow_dispatch).")
 
