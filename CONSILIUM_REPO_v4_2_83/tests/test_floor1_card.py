@@ -517,6 +517,11 @@ class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
         F, _ = fc.sec_fields(syn_out(), only_rev, EF)
         self.assertEqual(refused({"fields": F}, "gm_latest"), "MISSING_INPUT")
         self.assertEqual(refused({"fields": F}, "gm_med5"), "MISSING_INPUT")
+        a = "0000000000-25-000007"          # себестоимости за последний ФГ нет: он не «ноль», маржа за него не считается
+        no_last_cost = dur_facts({"Revenues": [(y, 100, a) for y in years],
+                                  "CostOfRevenue": [(y, 40, a) for y in years if y < 2025]})
+        F, _ = fc.sec_fields(syn_out(), no_last_cost, EF)
+        self.assertEqual(refused({"fields": F}, "gm_latest"), "STALE_SERIES")
         two_reports = dur_facts({"Revenues": [(y, 100, "0000000000-25-000007") for y in years],
                                  "CostOfRevenue": [(y, 40, "0000000000-25-000008") for y in years]})
         gp, rv, ref = fc.gross_profit_derived(two_reports, EF)
