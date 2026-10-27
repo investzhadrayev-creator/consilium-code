@@ -190,6 +190,64 @@ def eps_series(ni, shares):
             for r in (ni or []) if r["end"] in sm and sm[r["end"]]["val"]]
 
 
+def split_events(splits):
+    """Подтверждённые сплиты адаптера (_flags.confirmed_splits) -> события [{factor, pre, post, ends}].
+    Одно событие = несколько дат ФГ, пересчитанных одним сплитом (одинаковый factor, пересекающиеся окна). Сплит
+    произошёл ПОСЛЕ подачи старого значения и НЕ ПОЗЖЕ подачи нового: дата сплита в (pre, post], где
+    pre = max(earliest_filed), post = min(latest_filed). Запись без factor/filed события не даёт -> (None, плохие)."""
+    good, bad = [], []
+    for sp in splits or []:
+        if sp.get("factor") and sp.get("earliest_filed") and sp.get("latest_filed") and sp["factor"] > 0:
+            good.append(sp)
+        else:
+            bad.append(sp.get("end", "?"))
+    events = []
+    for sp in sorted(good, key=lambda x: (x["earliest_filed"], x["end"])):
+        ev = events[-1] if events else None
+        if ev and ev["factor"] == sp["factor"] and sp["earliest_filed"] < ev["post"] and ev["pre"] < sp["latest_filed"]:
+            ev["pre"], ev["post"] = max(ev["pre"], sp["earliest_filed"]), min(ev["post"], sp["latest_filed"])
+            ev["ends"].append(sp["end"])
+        else:
+            events.append({"factor": sp["factor"], "pre": sp["earliest_filed"], "post": sp["latest_filed"],
+                           "ends": [sp["end"]]})
+    return events, bad
+
+
+def split_adjust_point(row, events):
+    """-> (val_на_пост-сплитовой_базе, [применённые factor], None) или (None, [], причина). Базу строки определяет дата
+    подачи её accession: filed <= pre -> значение до сплита (умножаем на factor); filed >= post -> уже после; между
+    или нет filed -> база недоказуема (отказ, не угадывание)."""
+    val, applied = row["val"], []
+    for ev in events:
+        f = row.get("filed")
+        if not f:
+            return None, [], "у строки %s нет даты подачи (filed): база до/после сплита недоказуема" % row["end"]
+        if f <= ev["pre"]:
+            val, applied = val * ev["factor"], applied + [ev["factor"]]
+        elif f < ev["post"]:
+            return None, [], ("строка %s подана %s внутри окна неопределённости сплита (%s, %s]: база недоказуема"
+                              % (row["end"], f, ev["pre"], ev["post"]))
+    return val, applied, None
+
+
+def split_adjust_series(rows, splits):
+    """Ряд акций на сопоставимой (пост-сплитовой) базе. Подтверждённый сплит -> пересчёт с пометкой split_adjusted и
+    коэффициентом; строки с недоказуемой базой выбрасываются (и возвращаются в bad_ends), не угадываются."""
+    events, bad_sp = split_events(splits)
+    if not events or not rows:
+        return list(rows or []), [], bad_sp
+    out, bad_ends = [], []
+    for r in rows:
+        v, applied, why = split_adjust_point(r, events)
+        if why:
+            bad_ends.append(r["end"])
+        elif applied:
+            out.append(dict(r, val=v, orig_val=r["val"], split_adjusted=True, split_factors=applied))
+        else:
+            out.append(r)
+    return out, bad_ends, bad_sp
+
+
 def share_change(shares, n, splits, shares_refusal):
     if shares_refusal:
         return shares_refusal
@@ -199,13 +257,29 @@ def share_change(shares, n, splits, shares_refusal):
     if a is None:
         return refusal("INSUFFICIENT_HISTORY", "shares_diluted: нет точки за %d ФГ до %s" % (n, b["end"]))
     hit = [s["end"] for s in splits if a["end"] < s.get("end", "") <= b["end"]]
+    adj_note, factors = "", []
     if hit:
-        return refusal("SPLIT_IN_WINDOW", "подтверждённый сплит %s внутри окна %s..%s: числа акций несопоставимы"
-                       % (",".join(hit), a["end"], b["end"]))
+        events, bad_sp = split_events(splits)
+        if bad_sp or not events:
+            return refusal("SPLIT_IN_WINDOW", "подтверждённый сплит %s внутри окна %s..%s, но у записи нет factor/дат "
+                           "подачи: пересчёт на сопоставимую базу невозможен, числа акций несопоставимы"
+                           % (",".join(hit), a["end"], b["end"]))
+        pts = []
+        for r in (a, b):
+            v, ap, why = split_adjust_point(r, events)
+            if why:
+                return refusal("SPLIT_IN_WINDOW", "подтверждённый сплит %s внутри окна %s..%s; %s"
+                               % (",".join(hit), a["end"], b["end"], why))
+            pts.append((v, ap))
+        (a_val, a_ap), (b_val, b_ap) = pts
+        factors = sorted(set(a_ap + b_ap))
+        a, b = dict(a, val=a_val), dict(b, val=b_val)
+        adj_note = " [split_adjusted: пересчёт на пост-сплитовую базу, коэффициенты %s]" % ",".join("%g" % f for f in factors)
     if not a["val"]:
         return refusal("SHARES_UNDEFINED", "shares_diluted: нулевая база на %s" % a["end"])
-    return ok(b["val"] / a["val"] - 1, "ratio", "средневзв. разводнённые акции %s vs %s" % (b["end"], a["end"]),
-              accns(a, b))
+    extra = {"split_adjusted": True, "split_factors": factors} if factors else {}
+    return ok(b["val"] / a["val"] - 1, "ratio", "средневзв. разводнённые акции %s vs %s%s" % (b["end"], a["end"], adj_note),
+              accns(a, b), **extra)
 
 
 # Цепочки альтернативных us-gaap тегов (K1.1 ч.1). Эмитент мог перестать заполнять один тег и перейти на другой
@@ -344,8 +418,12 @@ def sec_fields(out, facts, ef):
     else:
         F["fcf_to_ni"] = F["fcf_latest"] if not is_ok(F["fcf_latest"]) else refusal(
             "FY_MISMATCH", "последние ФГ NI и FCF не совпадают")
-    eps = [] if sh_ref or not shares else eps_series(ni, shares)
-    raw["eps"], raw["shares"] = eps, shares
+    sh_adj, _, _ = split_adjust_series(shares, splits) if shares else (shares, [], [])
+    eps = [] if sh_ref or not sh_adj else eps_series(ni, sh_adj)     # EPS на сопоставимой базе акций
+    if shares and sh_adj and sh_adj[-1]["end"] != shares[-1]["end"]:
+        eps, sh_ref = [], refusal("SPLIT_IN_WINDOW", "shares_diluted: база акций последнего ФГ %s недоказуема относительно "
+                                  "подтверждённого сплита (дата подачи внутри окна неопределённости)" % shares[-1]["end"])
+    raw["eps"], raw["shares"] = eps, sh_adj
     if eps:
         F["eps_latest"] = ok(eps[-1]["val"], "USD/sh", "вычислено: NI / средневзв. разводнённые акции, ФГ %s "
                              "(НЕ отчётный EPS)" % eps[-1]["end"], accns(eps[-1]))

@@ -542,6 +542,65 @@ class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
         self.assertNotIn("derived", F["gm_latest"])
 
 
+def sh_row(year, v, filed):
+    return {"end": "%d-12-31" % year, "val": v, "accn": "0000000000-%02d-000001" % (year % 100), "filed": filed}
+
+
+def split10(ends=(2022, 2023)):
+    """10:1 сплит: старое значение подано <= 2023-02-01/2024-02-01, пересчитанное — 2025-02-01 (окно сплита (2024-02-01, 2025-02-01])."""
+    ef = {2022: "2023-02-01", 2023: "2024-02-01"}
+    return [{"end": "%d-12-31" % y, "factor": 10, "earliest_val": 100, "earliest_filed": ef[y],
+             "latest_val": 1000, "latest_filed": "2025-02-01", "tag": "WeightedAverageNumberOfDilutedSharesOutstanding"}
+            for y in ends]
+
+
+def split_series():
+    return [sh_row(2021, 100, "2022-02-01"), sh_row(2022, 1000, "2025-02-01"), sh_row(2023, 1000, "2025-02-01"),
+            sh_row(2024, 1020, "2025-02-01")]
+
+
+class TestSplitAdjustment(unittest.TestCase):
+    """K1.1 ч.2 п.2: подтверждённый сплит -> пересчёт на сопоставимую базу (split_adjusted + коэффициент); отказ только
+    для неподтверждённой базы."""
+
+    def test_f1_39_confirmed_split_is_restated_to_a_comparable_base_and_marked(self):
+        r = fc.share_change(split_series(), 3, split10(), None)
+        self.assertTrue(fc.is_ok(r), r)
+        self.assertAlmostEqual(r["value"], 1020 / (100 * 10) - 1, places=12)      # а не 1020/100 - 1 = +920%
+        self.assertIs(r["split_adjusted"], True)
+        self.assertEqual(r["split_factors"], [10])
+        self.assertIn("split_adjusted", r["basis"])
+        self.assertIn("10", r["basis"])
+
+    def test_f1_40_a_window_without_a_split_is_not_marked_adjusted(self):
+        r = fc.share_change(split_series(), 1, split10(), None)       # 2023 -> 2024: обе точки уже пост-сплитовые
+        self.assertTrue(fc.is_ok(r), r)
+        self.assertAlmostEqual(r["value"], 1020 / 1000 - 1, places=12)
+        self.assertNotIn("split_adjusted", r)
+
+    def test_f1_41_a_row_filed_inside_the_split_uncertainty_window_is_refused_not_guessed(self):
+        rows = split_series()
+        rows[0] = sh_row(2021, 100, "2024-08-01")          # подана между «старым» и «новым» значением: база недоказуема
+        r = fc.share_change(rows, 3, split10(), None)
+        self.assertEqual(r["refused"], "SPLIT_IN_WINDOW")
+        self.assertIn("недоказуема", r["reason"])
+        nofiled = split_series()
+        del nofiled[0]["filed"]
+        self.assertEqual(fc.share_change(nofiled, 3, split10(), None)["refused"], "SPLIT_IN_WINDOW")
+
+    def test_f1_42_eps_is_computed_on_the_restated_share_base(self):
+        out = syn_out()
+        out["shares_diluted"] = split_series() + [sh_row(2025, 1030, "2026-02-01")]
+        out["net_income"] = [{"end": "%d-12-31" % y, "val": 1000, "accn": "0000000000-00-000009"} for y in range(2021, 2026)]
+        out["_flags"] = {"confirmed_splits": split10()}
+        F, raw = fc.sec_fields(out, {"facts": {}}, EF)
+        eps21 = next(r for r in raw["eps"] if r["end"] == "2021-12-31")
+        self.assertAlmostEqual(eps21["val"], 1000 / 1000)           # 100 акций * 10 = 1000, а не 1000/100 = 10
+        self.assertAlmostEqual(F["shares_chg_3y"]["value"], 1030 / 1000 - 1, places=12)   # 2022..2025 целиком пост-сплит
+        self.assertNotIn("split_adjusted", F["shares_chg_3y"])
+        self.assertTrue(fc.is_ok(F["eps_latest"]))
+
+
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)
 
 if __name__ == "__main__":
