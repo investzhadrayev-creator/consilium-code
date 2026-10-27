@@ -19,6 +19,10 @@ User-Agent из env SEC_USER_AGENT), цены — Tiingo (env TIINGO_TOKEN).
   * RS = доходность тикера минус доходность бенчмарка за окно (п.п.), Tiingo adjClose;
     4н = 28 календарных дней, 13н = 91; просадка от max adjClose за 364 дня.
   * ускорение выручки = YoY(последний ФГ) - YoY(предыдущий ФГ) — НЕ разность перекрывающихся CAGR.
+  * подтверждённый сплит (confirmed_splits адаптера) -> акции пересчитаны на пост-сплитовую базу, поле несёт
+    split_adjusted и split_factors; база строки доказывается датой подачи; недоказуема -> SPLIT_IN_WINDOW.
+  * классы ячейки (cell_class): FILLED / GAP / NOT_APPLICABLE (математически не определено) / OUT_OF_SCOPE_FORM (нет
+    годового 10-K в списке подач). Покрытие: (А) заполнено / все поля; (Б) заполнено / (применимые поля имён в scope).
 Флаги (CYCLE_PEAK, CASH_CONV_DIVERGENCE, BUYBACK_EPS, DEBT_FOR_BUYBACKS) — без числовых порогов:
 сравнения знака/экстремума, каждый с именованной уликой; нет входа -> UNDETERMINED с причиной.
 Пороги в #44 не заданы; правила ниже — предложение исполнителя, подлежат подтверждению архитектора.
@@ -51,6 +55,28 @@ def ok(value, unit, basis, prov=None, **extra):
 
 def is_ok(f):
     return isinstance(f, dict) and "value" in f
+
+
+# Классы ячейки (K1.1 ч.2). Определяются ПРАВИЛОМ над данными, не по имени тикера.
+#   FILLED             -- есть число / флаг определён;
+#   GAP                -- пробел: данных нет или мы не смогли (именованный отказ) -- остаётся в знаменателе (Б);
+#   NOT_APPLICABLE     -- показатель математически не определён (рост при базе <= 0; FCF/NI при NI <= 0; маржа при
+#                         выручке <= 0): не «заполнено» и не «пробел»;
+#   OUT_OF_SCOPE_FORM  -- у эмитента нет годовой формы 10-K в списке подач адаптера на as_of (20-F/40-F, IFRS; ещё нет
+#                         первого 10-K): имя вне scope, не «заполнено» и не «пробел».
+NOT_APPLICABLE = "NOT_APPLICABLE"
+OUT_OF_SCOPE_FORM = "OUT_OF_SCOPE_FORM"
+
+
+def cell_class(item):
+    """-> FILLED | GAP | NOT_APPLICABLE | OUT_OF_SCOPE_FORM для поля (dict с value/refused) или флага (dict со state)."""
+    if "state" in item:                                  # флаг
+        if item["state"] in ("RAISED", "CLEAR"):
+            return "FILLED"
+        return item.get("code") if item.get("code") in (NOT_APPLICABLE, OUT_OF_SCOPE_FORM) else "GAP"
+    if is_ok(item):
+        return "FILLED"
+    return item.get("refused") if item.get("refused") in (NOT_APPLICABLE, OUT_OF_SCOPE_FORM) else "GAP"
 
 
 def micro_dir():
@@ -98,7 +124,7 @@ def align(num, den):
     out = []
     for r in num or []:
         d = dm.get(r["end"])
-        if d and d["val"]:
+        if d and d["val"] > 0:
             out.append({"end": r["end"], "val": r["val"] / d["val"], "accn": accns(r, d)})
     return out
 
@@ -140,7 +166,7 @@ def cagr(series, n, name):
     if a is None:
         return refusal("INSUFFICIENT_HISTORY", "%s: нет точки за %d ФГ до %s" % (name, n, b["end"]))
     if a["val"] <= 0 or b["val"] <= 0:
-        return refusal("CAGR_UNDEFINED", "%s: неположительная граница (%s=%s, %s=%s)" % (
+        return refusal(NOT_APPLICABLE, "%s: CAGR не определён, неположительная граница (%s=%s, %s=%s)" % (
             name, a["end"], a["val"], b["end"], b["val"]))
     return ok((b["val"] / a["val"]) ** (1.0 / n) - 1, "ratio", "CAGR %dл ФГ %s..%s" % (n, a["end"], b["end"]),
               accns(a, b))
@@ -154,7 +180,8 @@ def rev_accel(series):
     if p1 is None or p2 is None:
         return refusal("INSUFFICIENT_HISTORY", "revenue: нужны три подряд идущих ФГ до %s" % p0["end"])
     if p1["val"] <= 0 or p2["val"] <= 0:
-        return refusal("GROWTH_UNDEFINED", "revenue: неположительная база")
+        return refusal(NOT_APPLICABLE, "revenue: рост не определён, неположительная база (%s=%s, %s=%s)" % (
+            p1["end"], p1["val"], p2["end"], p2["val"]))
     g0, g1 = p0["val"] / p1["val"] - 1, p1["val"] / p2["val"] - 1
     return ok(g0 - g1, "ratio", "YoY(%s) - YoY(%s) = %.4f - %.4f" % (p0["end"], p1["end"], g0, g1),
               accns(p0, p1, p2))
@@ -165,6 +192,11 @@ def margin_pair(num, rev, name, fy):
     num, r = current(num, fy, "числитель " + name)
     if r:
         return r, r
+    rv = {r["end"]: r for r in (rev or [])}
+    if num[-1]["end"] in rv and rv[num[-1]["end"]]["val"] <= 0:
+        r = refusal(NOT_APPLICABLE, "%s: маржа не определена, выручка ФГ %s <= 0 (%s)" % (
+            name, num[-1]["end"], rv[num[-1]["end"]]["val"]))
+        return r, r
     ms = align(num, rev)
     if not ms:
         r = refusal("MISSING_INPUT", "%s: нет совпадающих по датам рядов числителя и выручки" % name)
@@ -173,6 +205,10 @@ def margin_pair(num, rev, name, fy):
     latest = ok(last["val"], "ratio", "%s ФГ %s" % (name, last["end"]), accns(last))
     pts = [last] + [at_offset(ms, k) for k in range(1, 5)]
     if any(p is None for p in pts):
+        nonpos = [r["end"] for r in (at_offset(rev or [], k) for k in range(1, 5)) if r and r["val"] <= 0]
+        if nonpos:       # дыра в ряду маржи из-за выручки <= 0 (а не из-за нехватки истории)
+            return latest, refusal(NOT_APPLICABLE, "%s: медиана не определена, выручка <= 0 на ФГ %s"
+                                   % (name, ",".join(nonpos)))
         return latest, refusal("INSUFFICIENT_HISTORY", "%s: нет 5 ФГ подряд до %s" % (name, last["end"]))
     return latest, ok(statistics.median(p["val"] for p in pts), "ratio",
                       "медиана %s за 5 ФГ до %s включительно" % (name, last["end"]), accns(*pts))
@@ -414,7 +450,7 @@ def sec_fields(out, facts, ef):
             F["fcf_to_ni"] = ok(fcf[-1]["val"] / ni[-1]["val"], "ratio", "FCF/NI ФГ %s" % ni[-1]["end"],
                                 accns(ni[-1], fcf[-1]))
         else:
-            F["fcf_to_ni"] = refusal("RATIO_UNDEFINED", "FCF/NI: NI <= 0 (%s)" % ni[-1]["val"])
+            F["fcf_to_ni"] = refusal(NOT_APPLICABLE, "FCF/NI не определено: NI <= 0 (%s)" % ni[-1]["val"])
     else:
         F["fcf_to_ni"] = F["fcf_latest"] if not is_ok(F["fcf_latest"]) else refusal(
             "FY_MISMATCH", "последние ФГ NI и FCF не совпадают")
@@ -458,7 +494,7 @@ def sec_fields(out, facts, ef):
 # ----------------------------------------------------------------------------- flags
 
 def _und(code, reason):
-    return {"state": "UNDETERMINED", "evidence": "%s: %s" % (code, reason)}
+    return {"state": "UNDETERMINED", "code": code, "evidence": "%s: %s" % (code, reason)}
 
 
 def _need_fields(F, names):
@@ -499,7 +535,8 @@ def flag_buyback_eps(F, raw):
     if not ni or not eps or a_n is None or a_e is None:
         return _und("INSUFFICIENT_HISTORY", "нет NI/EPS за 3 ФГ до последнего")
     if min(a_n["val"], ni[-1]["val"], a_e["val"], eps[-1]["val"]) <= 0:
-        return _und("CAGR_UNDEFINED", "неположительная граница NI/EPS")
+        return {"state": NOT_APPLICABLE, "code": NOT_APPLICABLE,
+                "evidence": "CAGR NI/EPS не определён: неположительная граница"}
     g_ni, g_eps = (ni[-1]["val"] / a_n["val"]) ** (1 / 3.0) - 1, (eps[-1]["val"] / a_e["val"]) ** (1 / 3.0) - 1
     sh = F["shares_chg_3y"]["value"]
     ev = "акции 3л %+.4f; CAGR3 NI %.4f, CAGR3 EPS(вычисл.) %.4f" % (sh, g_ni, g_eps)
@@ -603,6 +640,25 @@ FLAG_ORDER = ["CYCLE_PEAK", "CASH_CONV_DIVERGENCE", "BUYBACK_EPS", "DEBT_FOR_BUY
 SEC_ONLY = [f for f in FIELD_ORDER if not f.startswith(("rs_", "dd_"))]
 
 
+def annual_scope(source, cik, as_of):
+    """-> (in_scope: bool|None, reason). Правило, не имя: в списке подач адаптера есть годовая форма 10-K с
+    filing_date <= as_of -> в scope. Нет -> OUT_OF_SCOPE_FORM (20-F/40-F, IFRS; ещё нет первого 10-K).
+    Список недоступен (нет cik/метода/исключение) -> None: вне scope не объявляем, отказ остаётся пробелом."""
+    lister = getattr(source, "listing", None)
+    if not cik or lister is None:
+        return None, "список подач недоступен"
+    try:
+        listing = lister(cik)
+    except Exception as e:
+        return None, "список подач не прочитан: %s: %s" % (type(e).__name__, str(e)[:100])
+    if source.ad.select_filing(listing, as_of, source.ad.ANNUAL_FORMS):
+        return True, ""
+    forms = sorted({r.get("form") for r in listing if r.get("form")})
+    return False, ("в списке подач адаптера нет годовой формы %s с filing_date <= %s (формы в списке: %s) -- эмитент без "
+                   "годового 10-K (20-F/40-F, IFRS или ещё нет первого 10-K); адаптер читает только 10-K"
+                   % ("/".join(source.ad.ANNUAL_FORMS), as_of, ",".join(forms) or "нет"))
+
+
 def sec_unavailable(out, facts):
     taxes = sorted((facts or {}).get("facts", {}).keys()) if facts else []
     if out.get("_errors"):
@@ -610,14 +666,15 @@ def sec_unavailable(out, facts):
     elif "ifrs-full" in taxes and "us-gaap" not in taxes:
         code, why = "FOREIGN_FILER_IFRS", "companyfacts содержит только ifrs-full (иностранный эмитент, 20-F/40-F); адаптер читает us-gaap"
     else:
-        code, why = "NO_US_GAAP_ANNUAL_FACTS", "нет годовых us-gaap фактов (revenue и net_income пусты); таксономии: %s" % (taxes or "нет")
+        code, why = "NO_US_GAAP_ANNUAL_FACTS", ("нет годовых us-gaap фактов из форм 10-K (revenue и net_income пусты; "
+                                                 "годовые ряды адаптера берутся только из 10-K); таксономии: %s" % (taxes or "нет"))
     return refusal(code, why)
 
 
 def build_name(ticker, as_of, source, px, bench, price_err=None):
     """source.read(ticker) -> (adapter_out, companyfacts_filtered, cik). Любое исключение — именованный отказ."""
     ef = source.ef
-    row = {"ticker": ticker, "fields": {}, "flags": {}, "meta": {}}
+    row = {"ticker": ticker, "fields": {}, "flags": {}, "meta": {"scope": "IN_SCOPE"}}
     try:
         out, facts, cik = source.read(ticker)
     except Exception as e:
@@ -625,6 +682,10 @@ def build_name(ticker, as_of, source, px, bench, price_err=None):
     row["meta"]["cik"] = cik
     if out.get("_errors") or (not out.get("revenue") and not out.get("net_income")):
         r = sec_unavailable(out, facts)
+        in_scope, why_scope = annual_scope(source, cik, as_of)
+        if in_scope is False:
+            r = refusal(OUT_OF_SCOPE_FORM, why_scope)
+            row["meta"]["scope"] = OUT_OF_SCOPE_FORM
         F = {n: r for n in SEC_ONLY}
         raw = {}
         row["flags"] = {f: _und(r["refused"], r["reason"]) for f in FLAG_ORDER}
@@ -644,26 +705,71 @@ def build_name(ticker, as_of, source, px, bench, price_err=None):
 
 # ----------------------------------------------------------------------------- coverage + output
 
+def row_counts(r):
+    """Число ячеек (поля + флаги) имени по классам."""
+    c = {"FILLED": 0, "GAP": 0, NOT_APPLICABLE: 0, OUT_OF_SCOPE_FORM: 0}
+    for item in list(r["fields"].values()) + list(r["flags"].values()):
+        c[cell_class(item)] += 1
+    return c
+
+
 def coverage(rows):
+    """(А) сырое покрытие: заполнено / все ячейки всех имён (классы NOT_APPLICABLE/OUT_OF_SCOPE_FORM -- не заполнено)."""
     per, tot_ok, tot = {}, 0, 0
     for r in rows:
-        ok_n = sum(1 for f in r["fields"].values() if is_ok(f)) + sum(1 for f in r["flags"].values() if f["state"] != "UNDETERMINED")
-        n = len(r["fields"]) + len(r["flags"])
-        per[r["ticker"]] = (ok_n, n)
-        tot_ok, tot = tot_ok + ok_n, tot + n
+        c = row_counts(r)
+        n = sum(c.values())
+        per[r["ticker"]] = (c["FILLED"], n)
+        tot_ok, tot = tot_ok + c["FILLED"], tot + n
     return per, (tot_ok / tot if tot else 0.0), tot_ok, tot
 
 
+def coverage_ab(rows):
+    """(А) = заполнено / все ячейки всех имён.
+    (Б) = заполнено / применимые ячейки имён в scope (scope = имя не OUT_OF_SCOPE_FORM; применимая = не NOT_APPLICABLE).
+    Пробел (GAP) остаётся в знаменателе (Б). Пустой знаменатель -> None, не 0 и не 100%."""
+    a_num = a_den = b_num = b_den = 0
+    n_na = n_oos_cells = n_gap = n_oos_names = 0
+    for r in rows:
+        c = row_counts(r)
+        a_num, a_den = a_num + c["FILLED"], a_den + sum(c.values())
+        n_na, n_gap = n_na + c[NOT_APPLICABLE], n_gap + c["GAP"]
+        if r["meta"].get("scope") == OUT_OF_SCOPE_FORM:
+            n_oos_names += 1
+            n_oos_cells += sum(c.values())
+            continue
+        b_num, b_den = b_num + c["FILLED"], b_den + c["FILLED"] + c["GAP"]
+    return {"a_num": a_num, "a_den": a_den, "a": a_num / a_den if a_den else None,
+            "b_num": b_num, "b_den": b_den, "b": b_num / b_den if b_den else None,
+            "not_applicable_cells": n_na, "gap_cells": n_gap, "out_of_scope_names": n_oos_names,
+            "out_of_scope_cells": n_oos_cells}
+
+
+def classified(rows, cls):
+    """[(ticker, поле, код, причина)] ячеек данного класса (NOT_APPLICABLE / OUT_OF_SCOPE_FORM)."""
+    out = []
+    for r in rows:
+        for n, f in list(r["fields"].items()) + list(r["flags"].items()):
+            if cell_class(f) == cls:
+                out.append((r["ticker"], n, cls, f.get("reason") or f.get("evidence")))
+    return out
+
+
 def limitations(rows):
+    """Только пробелы (GAP). NOT_APPLICABLE и OUT_OF_SCOPE_FORM -- не пробел, см. classified()."""
     out = []
     for r in rows:
         for n, f in r["fields"].items():
-            if not is_ok(f):
+            if cell_class(f) == "GAP":
                 out.append((r["ticker"], n, f["refused"], f["reason"]))
         for n, f in r["flags"].items():
-            if f["state"] == "UNDETERMINED":
+            if cell_class(f) == "GAP":
                 out.append((r["ticker"], n, "UNDETERMINED", f["evidence"]))
     return out
+
+
+def _pct(num, den):
+    return "%.1f%%" % (100.0 * num / den) if den else "н/д (знаменатель 0)"
 
 
 def _fmt(f):
@@ -680,14 +786,17 @@ def _fmt(f):
 def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     os.makedirs(out_dir, exist_ok=True)
     per, cov, n_ok, n_all = coverage(rows)
+    ab = coverage_ab(rows)
     lim = limitations(rows)
+    na_cells, oos_cells = classified(rows, NOT_APPLICABLE), classified(rows, OUT_OF_SCOPE_FORM)
     base = os.path.join(out_dir, "FLOOR1_%s" % as_of)
     cols = ["ticker", "fy_end", "fy_age_days"]
     for n in FIELD_ORDER:
         cols += [n, n + "__reason"]
     for n in FLAG_ORDER:
         cols += [n, n + "__evidence"]
-    cols += ["prov_accessions"]
+    cols += ["prov_accessions", "scope", "cells_filled", "cells_gap", "cells_not_applicable", "cells_out_of_scope",
+             "coverage_A_raw", "coverage_B_applicable"]
     with open(base + ".csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(cols)
@@ -702,19 +811,40 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
             for n in FLAG_ORDER:
                 line += [r["flags"][n]["state"], r["flags"][n]["evidence"]]
             line.append(" ".join(prov))
+            c = row_counts(r)
+            in_sc = r["meta"].get("scope") != OUT_OF_SCOPE_FORM
+            line += [r["meta"].get("scope", "IN_SCOPE"), c["FILLED"], c["GAP"], c[NOT_APPLICABLE], c[OUT_OF_SCOPE_FORM],
+                     _pct(c["FILLED"], sum(c.values())), _pct(c["FILLED"], c["FILLED"] + c["GAP"]) if in_sc else ""]
             w.writerow(line)
+        # итоговая строка: ticker начинается с «_», в ряд имён не входит; (А)/(Б) по всей карточке
+        tot = [""] * len(cols)
+        tot[0] = "_TOTAL"
+        tot[cols.index("scope")] = "out_of_scope_names=%d" % ab["out_of_scope_names"]
+        tot[cols.index("cells_filled")] = ab["a_num"]
+        tot[cols.index("cells_gap")] = ab["gap_cells"]
+        tot[cols.index("cells_not_applicable")] = ab["not_applicable_cells"]
+        tot[cols.index("cells_out_of_scope")] = ab["out_of_scope_cells"]
+        tot[cols.index("coverage_A_raw")] = _pct(ab["a_num"], ab["a_den"])
+        tot[cols.index("coverage_B_applicable")] = _pct(ab["b_num"], ab["b_den"])
+        w.writerow(tot)
     L = ["# FLOOR1 — карточка этажа 1, %s" % as_of, "",
          "Сгенерировано `tools/floor1_card.py` (К1, #44/#90). as_of SEC = %s; SEC через адаптер К2 (edgartools==%s); цены — Tiingo adjClose." % (as_of, run_info["edgartools"]),
          "Имён: %d. Бенчмарки RS: VOO, QQQ (%s)." % (len(rows), bench_status),
          "Подстановок нет: пустая ячейка = именованный отказ (причина в колонке `__reason` CSV и в списке ниже).", "",
-         "**Покрытие полей: %d/%d = %.1f%%** (цель ≥%d%% ИЛИ named limitation; все %d пробелов названы ниже)." % (
-             n_ok, n_all, cov * 100, COVERAGE_TARGET * 100, len(lim)), ""]
+         "**Покрытие (А), сырое: %d/%d = %s** — заполнено / все поля всех имён." % (ab["a_num"], ab["a_den"], _pct(ab["a_num"], ab["a_den"])),
+         "**Покрытие (Б), применимое: %d/%d = %s** — заполнено / применимые поля имён в scope "
+         "(scope = имя не OUT_OF_SCOPE_FORM; применимое = не NOT_APPLICABLE; пробел по нашей вине остаётся в знаменателе)." % (
+             ab["b_num"], ab["b_den"], _pct(ab["b_num"], ab["b_den"])),
+         "Цель ≥%d%% ИЛИ named limitation; пробелов (GAP) %d — все названы ниже. Не пробел и не «заполнено»: NOT_APPLICABLE — %d ячеек, "
+         "OUT_OF_SCOPE_FORM — %d имён (%d ячеек)." % (COVERAGE_TARGET * 100, len(lim), ab["not_applicable_cells"],
+                                                       ab["out_of_scope_names"], ab["out_of_scope_cells"]), ""]
     keys = ["rev_cagr_3y", "rev_cagr_5y", "rev_accel", "om_latest", "om_med5", "fcf_to_ni", "shares_chg_3y",
             "net_debt_latest", "rs_voo_13w", "rs_qqq_13w", "dd_52w"]
     L += ["| тикер | ФГ | " + " | ".join(keys) + " | флаги | покрытие |", "|" + "---|" * (len(keys) + 4)]
     for r in rows:
         raised = ",".join(n for n in FLAG_ORDER if r["flags"][n]["state"] == "RAISED") or "—"
-        L.append("| %s | %s | %s | %s | %d/%d |" % (r["ticker"], r["meta"].get("fy_end") or "—",
+        L.append("| %s | %s | %s | %s | %d/%d |" % (r["ticker"] + (" [вне scope]" if r["meta"].get("scope") == OUT_OF_SCOPE_FORM else ""),
+                 r["meta"].get("fy_end") or "—",
                  " | ".join(_fmt(r["fields"][k]) for k in keys), raised, *per[r["ticker"]]))
     L += ["", "## Флаги с уликой", ""]
     for r in rows:
@@ -727,6 +857,13 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     for t, n, code, why in lim:
         grouped.setdefault((t, code, why), []).append(n)
     L += ["- %s / %s — `%s`: %s" % (t, ", ".join(ns), code, why) for (t, code, why), ns in grouped.items()] or ["- нет"]
+    for title, items in (("NOT_APPLICABLE — показатель не определён математически", na_cells),
+                         ("OUT_OF_SCOPE_FORM — эмитент без годового 10-K", oos_cells)):
+        L += ["", "## %s (%d)" % (title, len(items)), ""]
+        g2 = {}
+        for t, n, code, why in items:
+            g2.setdefault((t, why), []).append(n)
+        L += ["- %s / %s: %s" % (t, ", ".join(ns), why) for (t, why), ns in g2.items()] or ["- нет"]
     L += ["", "## Базисы и провенанс", "",
           "Каждое число в CSV сопровождается колонкой `prov_accessions` (accession SEC ФГ-фактов) и для цен — датой Tiingo в basis. "
           "Определения полей — в докстринге `tools/floor1_card.py`. FCF = OCF − capex(PP&E); EPS вычислен как NI/разводнённые акции; "
@@ -751,6 +888,9 @@ class LiveSource:
         out = self.ad.read_as_of(ticker=ticker, cik=cik, as_of=self.as_of, loader=self.loader)
         facts = None if out.get("_errors") else self.ef._filter_facts_as_of(self.ef._companyfacts(cik), self.as_of)
         return out, facts, cik
+
+    def listing(self, cik):
+        return self.loader.listing(cik)
 
 
 def read_watchlist(path):

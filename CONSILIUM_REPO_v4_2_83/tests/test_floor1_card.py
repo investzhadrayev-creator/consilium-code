@@ -48,6 +48,9 @@ class FixtureSource:
         out = AD.read_as_of(ticker=ticker, cik=cik, as_of=self.as_of, loader=LOADER)
         return out, EF._filter_facts_as_of(EF._companyfacts(cik), self.as_of), cik
 
+    def listing(self, cik):
+        return LOADER.listing(cik)
+
 
 def card(ticker, as_of=CHECK_DATE):
     return fc.build_name(ticker, as_of, FixtureSource(as_of), None, {}, "no prices in this layer")
@@ -245,7 +248,7 @@ class TestProperties(unittest.TestCase):
 
     def test_f1_15_cagr_of_a_non_positive_boundary_is_undefined_not_a_number(self):
         r = fc.cagr(yearly([-5, 1, 2, 3]), 3, "ni")
-        self.assertEqual(r["refused"], "CAGR_UNDEFINED")
+        self.assertEqual(r["refused"], "NOT_APPLICABLE")      # K1.1 ч.2: математически не определено -> класс, не пробел
         self.assertAlmostEqual(fc.cagr(yearly([100, 110, 121, 133.1]), 3, "rev")["value"], 0.10, places=9)
 
     def test_f1_16_a_confirmed_split_inside_the_window_refuses_the_share_change(self):
@@ -340,7 +343,7 @@ class TestProperties(unittest.TestCase):
                     self.assertIsNotNone(f["value"], "%s %s" % (t, name))
                     self.assertEqual(f["value"], f["value"], "NaN %s %s" % (t, name))
             for name, f in r["flags"].items():
-                self.assertIn(f["state"], ("RAISED", "CLEAR", "UNDETERMINED"))
+                self.assertIn(f["state"], ("RAISED", "CLEAR", "UNDETERMINED", "NOT_APPLICABLE"))
                 self.assertTrue(f["evidence"].strip(), "%s %s: флаг без улики" % (t, name))
 
 
@@ -375,9 +378,11 @@ class TestOutputs(unittest.TestCase):
             self.assertIsNotNone(G.FLOOR1_RE.match("FLOOR1_%s.md" % CHECK_DATE))
             with open(os.path.join(td, names[0]), encoding="utf-8") as fh:
                 recs = list(csv.DictReader(fh))
-            self.assertEqual([r["ticker"] for r in recs], ["INTC", "MU", "META", "GOOG"])   # VOO -- бенчмарк, не строка
+            self.assertEqual([r["ticker"] for r in recs if not r["ticker"].startswith("_")], ["INTC", "MU", "META", "GOOG"])
+            self.assertEqual(recs[-1]["ticker"], "_TOTAL")   # VOO -- бенчмарк, не строка
             md = open(os.path.join(td, names[1]), encoding="utf-8").read()
-            self.assertIn("Покрытие полей", md)
+            self.assertIn("Покрытие (А)", md)
+            self.assertIn("Покрытие (Б)", md)
             self.assertIn("Named limitations", md)
 
     def test_f1_28_without_credentials_no_card_is_written(self):
@@ -599,6 +604,139 @@ class TestSplitAdjustment(unittest.TestCase):
         self.assertAlmostEqual(F["shares_chg_3y"]["value"], 1030 / 1000 - 1, places=12)   # 2022..2025 целиком пост-сплит
         self.assertNotIn("split_adjusted", F["shares_chg_3y"])
         self.assertTrue(fc.is_ok(F["eps_latest"]))
+
+
+class StubSource:
+    """Источник без сети: SEC-данных нет (пустые ряды), список подач задан тестом -- проверка правила scope."""
+    ef, ad = EF, AD
+
+    def __init__(self, listing_rows, boom=False):
+        self.rows, self.boom = listing_rows, boom
+
+    def read(self, ticker):
+        return {"revenue": [], "net_income": []}, {"facts": {"dei": {}}}, "0000000001"
+
+    def listing(self, cik):
+        if self.boom:
+            raise RuntimeError("sec listing down")
+        return self.rows
+
+
+def filing(form, date="2022-03-01"):
+    return {"accession": "0000000001-22-%06d" % abs(hash((form, date)) % 999999), "form": form, "filing_date": date,
+            "period_of_report": "2021-12-31"}
+
+
+def stub_card(ticker, listing_rows, boom=False):
+    return fc.build_name(ticker, "2022-10-12", StubSource(listing_rows, boom), None, {}, "no prices in this layer")
+
+
+def cells(codes_f, codes_fl=()):
+    """Строка для проверки счётчиков: поля с кодами отказа/значением и флаги с состоянием."""
+    f = {"f%d" % i: (fc.ok(1, "USD", "b") if c == "OK" else fc.refusal(c, "r")) for i, c in enumerate(codes_f)}
+    fl = {"F%d" % i: ({"state": c, "evidence": "e"} if c in ("RAISED", "CLEAR") else
+                      {"state": "UNDETERMINED" if c == "UNDETERMINED" else c, "code": c, "evidence": "e"})
+          for i, c in enumerate(codes_fl)}
+    return f, fl
+
+
+def mkrow(t, codes_f, codes_fl=(), scope="IN_SCOPE"):
+    f, fl = cells(codes_f, codes_fl)
+    return {"ticker": t, "fields": f, "flags": fl, "meta": {"scope": scope}}
+
+
+class TestScopeAndApplicabilityClasses(unittest.TestCase):
+    """K1.1 ч.2 п.4-5: классы по ПРАВИЛУ (список подач / математика), счётчики (А) и (Б)."""
+
+    def test_f1_43_out_of_scope_form_is_decided_by_the_filing_list_not_the_ticker(self):
+        no_10k = [filing("20-F"), filing("10-Q")]
+        r = stub_card("NBIS", no_10k)
+        self.assertEqual(r["meta"]["scope"], "OUT_OF_SCOPE_FORM")
+        for n in fc.SEC_ONLY:
+            self.assertEqual(refused(r, n), "OUT_OF_SCOPE_FORM", n)
+        self.assertTrue(all(f["state"] == "UNDETERMINED" and f["code"] == "OUT_OF_SCOPE_FORM" for f in r["flags"].values()))
+        self.assertIn("20-F", r["fields"]["rev_cagr_3y"]["reason"])
+        # тот же тикер, но в списке есть 10-K до as_of -> в scope (пробел остаётся пробелом, не классом)
+        r2 = stub_card("NBIS", [filing("10-K", "2022-02-01")])
+        self.assertEqual(r2["meta"]["scope"], "IN_SCOPE")
+        self.assertNotEqual(refused(r2, "rev_cagr_3y"), "OUT_OF_SCOPE_FORM")
+        # 10-K подан ПОСЛЕ as_of -> на дату карточки годовой формы ещё нет
+        r3 = stub_card("AAA", [filing("10-K", "2022-11-01")])
+        self.assertEqual(r3["meta"]["scope"], "OUT_OF_SCOPE_FORM")
+        # 10-K/A не годовая форма адаптера (точное совпадение)
+        self.assertEqual(stub_card("AAA", [filing("10-K/A")])["meta"]["scope"], "OUT_OF_SCOPE_FORM")
+
+    def test_f1_44_an_unreadable_filing_list_never_declares_a_name_out_of_scope(self):
+        r = stub_card("NBIS", [], boom=True)
+        self.assertEqual(r["meta"]["scope"], "IN_SCOPE")
+        self.assertNotEqual(refused(r, "rev_cagr_3y"), "OUT_OF_SCOPE_FORM")
+        self.assertEqual(fc.cell_class(r["fields"]["rev_cagr_3y"]), "GAP")
+
+    def test_f1_45_not_applicable_is_a_class_for_mathematically_undefined_metrics_with_a_reason(self):
+        for r in (fc.cagr(yearly([-5, 1, 2, 3]), 3, "ni"), fc.cagr(yearly([5, 1, 2, -3]), 3, "ni"),
+                  fc.rev_accel(yearly([100, 0, 50]))):
+            self.assertEqual(r["refused"], "NOT_APPLICABLE", r)
+            self.assertTrue(r["reason"].strip())
+        out = syn_out()
+        out["net_income"] = yearly([10] * 7 + [-4])                       # NI <= 0 на последнем ФГ
+        out["revenue"] = yearly([100] * 7 + [-5])                         # выручка <= 0 на последнем ФГ
+        F, _ = fc.sec_fields(out, {"facts": {}}, EF)
+        for n in ("fcf_to_ni", "nm_latest", "nm_med5", "rev_cagr_3y"):
+            self.assertEqual(F[n]["refused"], "NOT_APPLICABLE", (n, F[n]))
+            self.assertEqual(fc.cell_class(F[n]), "NOT_APPLICABLE")
+        # положительные значения -- по-прежнему число, не класс
+        ok_ = syn_out()
+        F, _ = fc.sec_fields(ok_, {"facts": {}}, EF)
+        self.assertTrue(fc.is_ok(F["fcf_to_ni"]))
+        # отсутствие данных -- НЕ NOT_APPLICABLE
+        self.assertEqual(fc.cell_class(fc.cagr([], 3, "revenue")), "GAP")
+
+    def test_f1_46_counters_A_and_B_follow_the_definitions(self):
+        # имя 1 (в scope): 2 заполнено, 1 пробел, 1 NOT_APPLICABLE; флаги: CLEAR, NOT_APPLICABLE, UNDETERMINED(пробел)
+        a = mkrow("A", ["OK", "OK", "MISSING_INPUT", "NOT_APPLICABLE"], ["CLEAR", "NOT_APPLICABLE", "UNDETERMINED"])
+        # имя 2 вне scope: 3 поля OUT_OF_SCOPE_FORM + цены (1 заполнено, 1 пробел): в (А) считаются, в (Б) -- нет
+        b = mkrow("B", ["OUT_OF_SCOPE_FORM"] * 3 + ["OK", "TIINGO_UNAVAILABLE"], [], scope="OUT_OF_SCOPE_FORM")
+        ab = fc.coverage_ab([a, b])
+        self.assertEqual((ab["a_num"], ab["a_den"]), (4, 12))      # NOT_APPLICABLE не в числителе (А); вне-scope в знаменателе (А)
+        self.assertEqual((ab["b_num"], ab["b_den"]), (3, 5))       # знаменатель (Б): 3 заполнено + 2 пробела (по нашей вине)
+        self.assertAlmostEqual(ab["a"], 4 / 12.0)
+        self.assertAlmostEqual(ab["b"], 0.6)
+        self.assertEqual((ab["not_applicable_cells"], ab["gap_cells"], ab["out_of_scope_names"]), (2, 3, 1))
+        per, cov, n_ok, n_all = fc.coverage([a, b])
+        self.assertEqual((n_ok, n_all), (4, 12))
+        # пустой знаменатель (Б) -- None, не 0 и не 100%
+        self.assertIsNone(fc.coverage_ab([b])["b"])
+        # пробел остаётся в знаменателе: добавление пробела снижает (Б)
+        c = mkrow("C", ["OK", "MISSING_INPUT"])
+        self.assertAlmostEqual(fc.coverage_ab([c])["b"], 0.5)
+        # а NOT_APPLICABLE (Б) не снижает
+        d = mkrow("D", ["OK", "NOT_APPLICABLE"])
+        self.assertAlmostEqual(fc.coverage_ab([d])["b"], 1.0)
+
+    def test_f1_47_limitations_exclude_the_two_classes_and_outputs_show_both_counters(self):
+        a = mkrow("A", ["OK", "MISSING_INPUT", "NOT_APPLICABLE"], ["CLEAR", "NOT_APPLICABLE"])
+        b = mkrow("B", ["OUT_OF_SCOPE_FORM"] * 2, ["UNDETERMINED"], scope="OUT_OF_SCOPE_FORM")
+        b["flags"]["F0"]["code"] = "OUT_OF_SCOPE_FORM"
+        self.assertEqual([(t, n) for t, n, _, _ in fc.limitations([a, b])], [("A", "f1")])
+        for r in (a, b):
+            r["meta"].update(fy_end=None, fy_age_days=None)
+        full = lambda r: dict(r, fields={n: r["fields"].get(n, fc.refusal("MISSING_INPUT", "x")) for n in fc.FIELD_ORDER},
+                              flags={n: r["flags"].get(n, {"state": "CLEAR", "evidence": "e"}) for n in fc.FLAG_ORDER})
+        rows = [full(a), full(b)]
+        with tempfile.TemporaryDirectory() as td:
+            base, _, _ = fc.write_outputs(rows, CHECK_DATE, td, "t", {"edgartools": "x"})
+            recs = list(csv.DictReader(open(base + ".csv", encoding="utf-8")))
+            md = open(base + ".md", encoding="utf-8").read()
+        tot = recs[-1]
+        ab = fc.coverage_ab(rows)
+        self.assertEqual(tot["ticker"], "_TOTAL")
+        self.assertEqual(tot["coverage_A_raw"], "%.1f%%" % (100.0 * ab["a_num"] / ab["a_den"]))
+        self.assertEqual(tot["coverage_B_applicable"], "%.1f%%" % (100.0 * ab["b_num"] / ab["b_den"]))
+        self.assertEqual(recs[1]["coverage_B_applicable"], "")           # вне scope: (Б) не определено
+        self.assertIn("Покрытие (А)", md)
+        self.assertIn("Покрытие (Б)", md)
+        self.assertIn("## NOT_APPLICABLE", md)
+        self.assertIn("## OUT_OF_SCOPE_FORM", md)
 
 
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)
