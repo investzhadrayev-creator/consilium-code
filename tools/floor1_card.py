@@ -326,6 +326,8 @@ DEBT_FULL_CHAIN = ["LongTermDebt", "DebtAndCapitalLeaseObligations"]
 DEBT_NONC_CHAIN = ["LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations"]
 DEBT_CUR_CHAIN = ["LongTermDebtCurrent", "DebtCurrent", "LongTermDebtAndCapitalLeaseObligationsCurrent"]
 CASH_CHAIN = ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]
+RESTRICTED_CASH_TAG = CASH_CHAIN[1]
+RESTRICTED_NOTE = "деньги включают ограниченные — чистый долг может быть занижен"
 COST_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
 
 
@@ -360,7 +362,8 @@ def net_debt_series(facts, ef):
         else:
             continue
         out.append({"end": end, "val": debt - cm[end]["val"], "accn": [r.get("accn") for r in parts + [cm[end]]],
-                    "tags": [r["tag"] for r in parts + [cm[end]]]})
+                    "tags": [r["tag"] for r in parts + [cm[end]]],
+                    "cash_includes_restricted": cm[end]["tag"] == RESTRICTED_CASH_TAG})
     if not out:
         return None, refusal("MISSING_INPUT", "нет ни одной даты, где есть и полный долг, и денежные средства")
     return out, None
@@ -477,15 +480,19 @@ def sec_fields(out, facts, ef):
         F["net_debt_latest"] = F["net_debt_chg_3y"] = nd_ref
     else:
         tags, _ = tag_note(nd[-1])
-        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг - Cash ФГ %s; теги: %s" % (nd[-1]["end"], ",".join(tags)),
-                                  accns(nd[-1]), tags=tags)
+        r_last = nd[-1].get("cash_includes_restricted", False)
+        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг - Cash ФГ %s; теги: %s%s" % (
+            nd[-1]["end"], ",".join(tags), " [%s]" % RESTRICTED_NOTE if r_last else ""),
+            accns(nd[-1]), tags=tags, cash_includes_restricted=r_last)
         a = at_offset(nd, 3)
         if a:
             tags, mixed = tag_note(a, nd[-1])
-            F["net_debt_chg_3y"] = ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s; теги: %s%s" % (
+            r_win = bool(a.get("cash_includes_restricted") or r_last)
+            F["net_debt_chg_3y"] = ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s; теги: %s%s%s" % (
                 nd[-1]["end"], a["end"], ",".join(tags),
-                " [РАЗНЫЕ ТЕГИ на концах окна: определения долга могут отличаться]" if mixed else ""),
-                accns(a, nd[-1]), tags=tags, mixed_tags=mixed)
+                " [РАЗНЫЕ ТЕГИ на концах окна: определения долга могут отличаться]" if mixed else "",
+                " [%s]" % RESTRICTED_NOTE if r_win else ""),
+                accns(a, nd[-1]), tags=tags, mixed_tags=mixed, cash_includes_restricted=r_win)
         else:
             F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
     return F, raw
@@ -548,6 +555,10 @@ def flag_debt_for_buybacks(F):
     if why:
         return _und("MISSING_INPUT", why)
     sh, dn = F["shares_chg_3y"]["value"], F["net_debt_chg_3y"]["value"]
+    if F["net_debt_chg_3y"].get("cash_includes_restricted"):
+        # точка с «деньгами с ограниченными»: уровень чистого долга занижен на неизвестную величину, изменение за окно
+        # может исказиться в любую сторону (зависит от того, какой конец окна затронут) -> ни RAISED, ни CLEAR
+        return _und("CASH_INCLUDES_RESTRICTED", "чистый долг взят через тег %s: %s; CLEAR не объявляется" % (RESTRICTED_CASH_TAG, RESTRICTED_NOTE))
     return {"state": "RAISED" if (sh < 0 and dn > 0) else "CLEAR",
             "evidence": "акции 3л %+.4f; изменение чистого долга за 3 ФГ %+d USD" % (sh, dn)}
 
@@ -779,7 +790,7 @@ def _fmt(f):
     if u == "ratio":
         return "%+.1f%%" % (v * 100) if abs(v) < 10 else "%.2f" % v
     if u == "USD":
-        return "%.2fB" % (v / 1e9)
+        return "%.2fB%s" % (v / 1e9, "†" if f.get("cash_includes_restricted") else "")
     return "%.2f" % v
 
 
@@ -852,6 +863,8 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
             f = r["flags"][n]
             if f["state"] == "RAISED":
                 L.append("- **%s** %s: %s" % (r["ticker"], n, f["evidence"]))
+    restricted = [r["ticker"] for r in rows if any(is_ok(f) and f.get("cash_includes_restricted") for f in r["fields"].values())]
+    L += ["", "† %s: %s" % (RESTRICTED_NOTE, ", ".join(restricted) or "нет таких имён")]
     L += ["", "## Named limitations (%d)" % len(lim), ""]
     grouped = {}
     for t, n, code, why in lim:

@@ -502,6 +502,42 @@ class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
         self.assertFalse(F["net_debt_chg_3y"]["mixed_tags"])
         self.assertNotIn("РАЗНЫЕ", F["net_debt_chg_3y"]["basis"])
 
+    def test_f1_48_restricted_cash_fallback_is_marked_and_never_yields_a_clear_debt_flag(self):
+        yrs = ["%d-12-31" % y for y in range(2022, 2026)]
+        debt = {"LongTermDebt": [(e, 50 + 10 * i) for i, e in enumerate(yrs)]}      # долг растёт: 50..80
+        shrink = lambda: syn_out()                                                      # noqa: E731
+        out = shrink()
+        out["shares_diluted"] = yearly([8, 7, 6, 5])                                    # акции падают
+        plain = tag_facts(dict(debt, CashAndCashEquivalentsAtCarryingValue=[(e, 10) for e in yrs]))
+        fall = tag_facts(dict(debt, CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents=[(e, 10) for e in yrs]))
+        Fp, rp = fc.sec_fields(out, plain, EF)
+        Ff, rf = fc.sec_fields(out, fall, EF)
+        # те же числа, но тег разный: значение не меняется, меняется честность пометки и флага
+        self.assertEqual(Fp["net_debt_chg_3y"]["value"], Ff["net_debt_chg_3y"]["value"])
+        self.assertFalse(Fp["net_debt_latest"]["cash_includes_restricted"])
+        self.assertEqual(fc.flag_debt_for_buybacks(Fp)["state"], "RAISED")
+        for n in ("net_debt_latest", "net_debt_chg_3y"):
+            self.assertTrue(Ff[n]["cash_includes_restricted"], n)
+            self.assertIn("ограниченные", Ff[n]["basis"])
+            self.assertNotIn("ограниченные", Fp[n]["basis"])
+        fl = fc.flag_debt_for_buybacks(Ff)
+        self.assertEqual(fl["state"], "UNDETERMINED")
+        self.assertIn("CASH_INCLUDES_RESTRICTED", fl["evidence"])
+        # и там, где без пометки был бы CLEAR (долг падает), с пометкой -- не CLEAR
+        down = tag_facts({"LongTermDebt": [(e, 80 - 10 * i) for i, e in enumerate(yrs)],
+                          "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents": [(e, 10) for e in yrs]})
+        Fd, _ = fc.sec_fields(out, down, EF)
+        self.assertEqual(fc.flag_debt_for_buybacks(Fd)["state"], "UNDETERMINED")
+        # запасной тег только на ДАТЕ НАЧАЛА окна: последняя точка чистая, но изменение за окно -- нет
+        start = tag_facts(dict(debt, CashAndCashEquivalentsAtCarryingValue=[(e, 10) for e in yrs[1:]],
+                               CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents=[(yrs[0], 10)]))
+        Fs, _ = fc.sec_fields(out, start, EF)
+        self.assertFalse(Fs["net_debt_latest"]["cash_includes_restricted"])
+        self.assertTrue(Fs["net_debt_chg_3y"]["cash_includes_restricted"])
+        self.assertEqual(fc.flag_debt_for_buybacks(Fs)["state"], "UNDETERMINED")
+        self.assertIn("†", fc._fmt(Ff["net_debt_latest"]))
+        self.assertNotIn("†", fc._fmt(Fp["net_debt_latest"]))
+
     def test_f1_36_derived_gross_profit_carries_both_accessions_from_one_report(self):
         a = "0000000000-25-000007"
         facts = dur_facts({"Revenues": [(y, 100 + y - 2018, a) for y in range(2018, 2026)],
