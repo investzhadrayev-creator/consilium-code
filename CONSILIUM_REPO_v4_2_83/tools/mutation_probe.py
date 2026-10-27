@@ -1327,6 +1327,18 @@ CASES = [
      'nd_ref = None',
      'test_floor1_card.TestMissingIsNotZero.test_f1_08_a_stale_series_is_refused_not_shown_as_the_latest_value',
      'stale net-debt series is refused'),
+    ('k11-08',
+     '../.github/workflows/panel_weekly.yml',
+     '          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}\n        run: |\n          if [ -f tools/floor1_card.py ]',
+     '        run: |\n          if [ -f tools/floor1_card.py ]',
+     'test_floor1_card.TestWorkflowReport.test_f1_32_current_main_workflow_card_failure_does_not_cancel_publication',
+     'main workflow: card step gets SEC_USER_AGENT'),
+    ('k11-09',
+     '../.github/workflows/panel_weekly.yml',
+     "        if: always() && env.ALREADY_PUBLISHED != '1'",
+     "        if: env.ALREADY_PUBLISHED != '1'",
+     'test_floor1_card.TestWorkflowReport.test_f1_32_current_main_workflow_card_failure_does_not_cancel_publication',
+     'main workflow: publish step has always()'),
 ]
 
 

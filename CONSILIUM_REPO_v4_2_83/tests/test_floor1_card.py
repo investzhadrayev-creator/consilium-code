@@ -451,14 +451,19 @@ class TestWorkflowReport(unittest.TestCase):
         self.assertIn("requirements.txt", self.new)
         self.assertNotRegex(line, r"pip install[^\n]*\bedgartools\b(?!==)[^\n]*$" if "grep" not in line else r"^\b$")
 
-    def test_f1_32_the_delivered_file_differs_from_main_only_in_the_card_step(self):
-        diff = [l for l in difflib.unified_diff(self.cur.splitlines(), self.new.splitlines(), lineterm="", n=0)
-                if l[:1] in "+-" and not l.startswith(("+++", "---"))]
-        removed = [l for l in diff if l.startswith("-")]
-        self.assertEqual(removed, ["-      - name: Карточка этажа 1 (появится после задачи К1)"], removed)
-        added = "\n".join(l for l in diff if l.startswith("+"))
-        self.assertNotIn("cron", added)
-        self.assertNotIn("concurrency", added)
+    def test_f1_32_current_main_workflow_card_failure_does_not_cancel_publication(self):
+        # СВОЙСТВО текущего main, а не сравнение с историческим отчётом (тот отстаёт от движущегося main).
+        wf = open(os.path.join(REPO, ".github", "workflows", "panel_weekly.yml"), encoding="utf-8").read()
+        steps = re.split(r"(?m)^      - (?=name:|uses:)", wf)[1:]
+        card = next(s for s in steps if "tools/floor1_card.py" in s and "name: Карточка этажа 1" in s)
+        pub = next(s for s in steps if "name: Публикация через PR" in s)
+        self.assertIn("SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}", card)
+        self.assertIn("TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}", card)
+        self.assertRegex(card, r"(?m)^        continue-on-error: true\b", "падение карточки не должно красить job до публикации")
+        cond = re.search(r"(?m)^        if: (.*)$", pub)
+        self.assertIsNotNone(cond, "у шага публикации нет условия if")
+        self.assertIn("always()", cond.group(1))
+        self.assertLess(wf.index("name: Карточка этажа 1"), wf.index("name: Публикация через PR"))
 
     def test_f1_33_the_report_admits_the_secret_name_is_an_unverified_assumption(self):
         text = open(REPORT, encoding="utf-8").read()
