@@ -775,6 +775,82 @@ class TestScopeAndApplicabilityClasses(unittest.TestCase):
         self.assertIn("## OUT_OF_SCOPE_FORM", md)
 
 
+class TestK12TagChainExtensions(unittest.TestCase):
+    """K1.2: расширенные цепочки тегов (теги найдены в companyfacts живых 10-K) и именованные отказы там, где данных нет."""
+    YRS = ["%d-12-31" % y for y in range(2022, 2026)]
+    A = "0000000000-25-000007"
+
+    def nd(self, tags):
+        F, _ = fc.sec_fields(syn_out(), tag_facts(tags), EF)
+        return F
+
+    def test_f1_49_nflx_style_noncurrent_plus_short_term_borrowings_is_summed_with_tags(self):
+        y = self.YRS
+        F = self.nd({"LongTermDebtNoncurrent": [(e, 100) for e in y], "ShortTermBorrowings": [(e, 7) for e in y],
+                     "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in y]})
+        f = F["net_debt_latest"]
+        self.assertEqual(f["value"], 100 + 7 - 30)
+        self.assertEqual(f["tags"], ["LongTermDebtNoncurrent", "ShortTermBorrowings", "CashAndCashEquivalentsAtCarryingValue"])
+        self.assertFalse(F["net_debt_chg_3y"]["mixed_tags"])
+
+    def test_f1_50_orcl_style_notes_payable_pair_and_combined_total_tag(self):
+        y = self.YRS
+        F = self.nd({"LongTermNotesPayable": [(e, 120) for e in y], "NotesPayableCurrent": [(e, 9) for e in y],
+                     "CashAndCashEquivalentsAtCarryingValue": [(e, 20) for e in y]})
+        self.assertEqual(F["net_debt_latest"]["value"], 120 + 9 - 20)
+        self.assertIn("LongTermNotesPayable", F["net_debt_latest"]["tags"])
+        F = self.nd({"DebtLongtermAndShorttermCombinedAmount": [(e, 50) for e in y],
+                     "CashAndCashEquivalentsAtCarryingValue": [(e, 20) for e in y]})
+        self.assertEqual(F["net_debt_latest"]["value"], 30)
+        self.assertEqual(F["net_debt_latest"]["tags"][0], "DebtLongtermAndShorttermCombinedAmount")
+
+    def test_f1_51_noncurrent_without_any_current_part_is_a_named_refusal_not_zero_current(self):
+        y = self.YRS
+        F = self.nd({"LongTermDebtNoncurrent": [(e, 100) for e in y], "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in y]})
+        for n in ("net_debt_latest", "net_debt_chg_3y"):
+            self.assertEqual(refused({"fields": F}, n), "MISSING_INPUT")
+        self.assertIn("не раскрыт", F["net_debt_latest"]["reason"])
+        # долг оборвался давно (PLTR): тоже отказ с причиной, а не ноль и не «последнее известное»
+        old = self.nd({"LongTermDebtNoncurrent": [("2020-12-31", 200), ("2021-12-31", 0)],
+                       "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in ["2020-12-31", "2021-12-31"] + self.YRS]})
+        self.assertNotEqual(old["net_debt_latest"].get("refused"), None)
+        self.assertIn(old["net_debt_latest"]["refused"], ("MISSING_INPUT", "STALE_SERIES"))
+
+    def test_f1_52_cost_excluding_da_gives_gross_margin_labelled_with_its_basis(self):
+        a = self.A
+        facts = dur_facts({"Revenues": [(y, 100, a) for y in range(2018, 2026)],
+                           fc.COST_EXDA_TAG: [(y, 40, a) for y in range(2018, 2026)]})
+        F, _ = fc.sec_fields(syn_out(), facts, EF)
+        g = F["gm_latest"]
+        self.assertAlmostEqual(g["value"], 0.6, places=12)
+        self.assertTrue(g["derived"])
+        self.assertIn(fc.COST_EXDA_TAG, g["tags"])
+        self.assertIn("БЕЗ амортизации", g["basis"])
+        plain = dur_facts({"Revenues": [(y, 100, a) for y in range(2018, 2026)],
+                           "CostOfRevenue": [(y, 40, a) for y in range(2018, 2026)]})
+        F, _ = fc.sec_fields(syn_out(), plain, EF)
+        self.assertNotIn("БЕЗ амортизации", F["gm_latest"]["basis"])
+
+    def test_f1_53_capex_fallback_tag_only_when_standard_capex_is_absent_and_is_marked(self):
+        a = self.A
+        facts = dur_facts({fc.CAPEX_FALLBACK_TAGS[0]: [(y, 8, a) for y in range(2018, 2026)]})
+        out = syn_out()
+        del out["capex"]
+        F, _ = fc.sec_fields(out, facts, EF)
+        self.assertEqual(F["fcf_latest"]["value"], 30 - 8)
+        self.assertIn("запасного тега", F["fcf_latest"]["basis"])
+        self.assertEqual(F["fcf_latest"]["tags"], fc.CAPEX_FALLBACK_TAGS)
+        # штатный capex есть -- запасной не используется и не подмешивается
+        F, _ = fc.sec_fields(syn_out(), facts, EF)
+        self.assertEqual(F["fcf_latest"]["value"], 30 - 5)
+        self.assertNotIn("запасного", F["fcf_latest"]["basis"])
+        # нет ни штатного, ни запасного -- отказ, не «OCF без capex»
+        out = syn_out()
+        del out["capex"]
+        F, _ = fc.sec_fields(out, dur_facts({"Revenues": [(2025, 1, a)]}), EF)
+        self.assertEqual(refused({"fields": F}, "fcf_latest"), "MISSING_INPUT")
+
+
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ User-Agent из env SEC_USER_AGENT), цены — Tiingo (env TIINGO_TOKEN).
 Провенанс (accession SEC, дата последней цены Tiingo) едет вместе с числом.
 
 Определения (всё считается здесь, из рядов адаптера, и подписано basis'ом в самой карточке):
-  * FCF = OCF - capex (capex = только PaymentsToAcquirePropertyPlantAndEquipment/ProductiveAssets);
+  * FCF = OCF - capex (capex = PaymentsToAcquirePropertyPlantAndEquipment/ProductiveAssets, а если их нет вовсе -- PaymentsToAcquireOtherPropertyPlantAndEquipment с пометкой, K1.2);
     нет capex -> отказ, а не FCF=OCF.
   * EPS = NI / средневзвешенное РАЗВОДНЁННОЕ число акций (вычислено, это НЕ отчётный EPS).
   * чистый долг = долг по ФГ (LongTermDebt, а где его нет на дате — Noncurrent+Current при наличии обоих; без
@@ -322,13 +322,24 @@ def share_change(shares, n, splits, shares_refusal):
 # (MU: LongTermDebt оборвался в FY2012, дальше DebtAndCapitalLeaseObligations). Точка берётся из ПЕРВОГО тега цепочки,
 # у которого есть эта дата; какой тег дал число -- в provenance (tags). Теги с разным смыслом (LongTermDebt vs
 # DebtAndCapitalLeaseObligations -- со своими арендами) в одном расчёте изменения помечаются mixed_tags.
-DEBT_FULL_CHAIN = ["LongTermDebt", "DebtAndCapitalLeaseObligations"]
-DEBT_NONC_CHAIN = ["LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations"]
-DEBT_CUR_CHAIN = ["LongTermDebtCurrent", "DebtCurrent", "LongTermDebtAndCapitalLeaseObligationsCurrent"]
+# K1.2: ORCL/SOFI -- DebtLongtermAndShorttermCombinedAmount (итог долга), ORCL: LongTermNotesPayable + NotesPayableCurrent
+# (= то же число, сверено по companyfacts), NFLX: LongTermDebtNoncurrent + ShortTermBorrowings (сумма = NotesPayable).
+DEBT_FULL_CHAIN = ["LongTermDebt", "DebtAndCapitalLeaseObligations", "DebtLongtermAndShorttermCombinedAmount"]
+DEBT_NONC_CHAIN = ["LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations", "LongTermNotesPayable"]
+DEBT_CUR_CHAIN = ["LongTermDebtCurrent", "DebtCurrent", "LongTermDebtAndCapitalLeaseObligationsCurrent",
+                  "NotesPayableCurrent", "ShortTermBorrowings"]
 CASH_CHAIN = ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]
 RESTRICTED_CASH_TAG = CASH_CHAIN[1]
 RESTRICTED_NOTE = "деньги включают ограниченные — чистый долг может быть занижен"
-COST_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold"]
+# K1.2: у IONQ/MP/UBER/FOUR себестоимость -- только строка «без амортизации»: валовая прибыль по ней ЗАВЫШЕНА на D&A
+# внутри себестоимости; число несёт пометку COST_EXDA_NOTE (basis travels with the number).
+COST_EXDA_TAG = "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization"
+COST_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold", COST_EXDA_TAG]
+COST_EXDA_NOTE = "себестоимость БЕЗ амортизации (D&A) — валовая маржа завышена на долю D&A в себестоимости"
+# K1.2: LLY не заполняет PaymentsToAcquirePropertyPlantAndEquipment; его строка «покупка основных средств» -- Other.
+# Берётся только когда штатных тегов capex в данных нет совсем; тег в provenance.
+CAPEX_FALLBACK_TAGS = ["PaymentsToAcquireOtherPropertyPlantAndEquipment"]
+CAPEX_FALLBACK_NOTE = "capex из запасного тега (PaymentsToAcquireOtherPropertyPlantAndEquipment)"
 
 
 def _by_end(facts, ef, chain):
@@ -351,12 +362,15 @@ def net_debt_series(facts, ef):
                              "«тег не заполнен» неотличимы, ноль не подставляется"
                              % (",".join(DEBT_FULL_CHAIN), ",".join(DEBT_NONC_CHAIN)))
     cm = _by_end(facts, ef, CASH_CHAIN)
-    out = []
+    out, no_cur = [], []
     for end in sorted(set(full) | set(nonc)):
         if end not in cm:
             continue
         if end in full:
             debt, parts = full[end]["val"], [full[end]]
+        elif end in nonc and end not in cur:
+            no_cur.append(end)
+            continue
         elif end in nonc and end in cur:
             debt, parts = nonc[end]["val"] + cur[end]["val"], [nonc[end], cur[end]]
         else:
@@ -365,7 +379,13 @@ def net_debt_series(facts, ef):
                     "tags": [r["tag"] for r in parts + [cm[end]]],
                     "cash_includes_restricted": cm[end]["tag"] == RESTRICTED_CASH_TAG})
     if not out:
-        return None, refusal("MISSING_INPUT", "нет ни одной даты, где есть и полный долг, и денежные средства")
+        last_debt = max(set(full) | set(nonc))
+        if no_cur:
+            return None, refusal("MISSING_INPUT", "долг не раскрыт полностью: нетекущая часть есть (%s), текущей части "
+                                 "в данных нет на этих датах -- «нет текущей части» != ноль, ноль не подставляется"
+                                 % ",".join(no_cur[-3:]))
+        return None, refusal("MISSING_INPUT", "долг не раскрыт: последняя точка тега долга %s, денег на тех датах нет "
+                             "или тег долга позднее не заполнен -- это не ноль" % last_debt)
     return out, None
 
 
@@ -419,6 +439,11 @@ def sec_fields(out, facts, ef):
     shares, sh_ref = current(sh_rows, fy, "shares_diluted")
     sh_ref = (out.get("_refusals") or {}).get("shares_diluted") or sh_ref
     ocf_c, ocf_ref = current(ocf, fy, "ocf")
+    capex_fb = False
+    if not capex and facts is not None:        # штатных тегов capex нет вовсе: запасной тег, с пометкой
+        cx, _, _, _ = ef._annual_merged(facts, CAPEX_FALLBACK_TAGS)
+        if cx:
+            capex, capex_fb = cx, True
     capex_c, capex_ref = current(capex, fy, "capex")
     splits = (out.get("_flags") or {}).get("confirmed_splits") or []
 
@@ -435,6 +460,8 @@ def sec_fields(out, facts, ef):
                 if is_ok(F[k]):
                     F[k]["derived"] = True
                     F[k]["tags"] = tag_note(gp_d[-1])[0]
+                    if COST_EXDA_TAG in F[k]["tags"]:
+                        F[k]["basis"] += " [%s]" % COST_EXDA_NOTE
         elif F["gm_latest"].get("refused") == "MISSING_INPUT":
             F["gm_latest"] = F["gm_med5"] = refusal("MISSING_INPUT", F["gm_latest"]["reason"] + "; " + gp_ref["reason"])
     raw["om"] = align(opi, rev)
@@ -444,14 +471,16 @@ def sec_fields(out, facts, ef):
     fcf = fcf_series(ocf_c, capex_c)
     raw["fcf"], raw["ni"] = fcf, ni
     if fcf:
-        F["fcf_latest"] = ok(fcf[-1]["val"], "USD", "OCF - capex(PP&E) ФГ %s" % fcf[-1]["end"], accns(fcf[-1]))
+        F["fcf_latest"] = ok(fcf[-1]["val"], "USD", "OCF - capex(PP&E) ФГ %s%s" % (
+            fcf[-1]["end"], "; " + CAPEX_FALLBACK_NOTE if capex_fb else ""), accns(fcf[-1]),
+            **({"tags": CAPEX_FALLBACK_TAGS} if capex_fb else {}))
     else:
         F["fcf_latest"] = ocf_ref or capex_ref or refusal(
             "MISSING_INPUT", "fcf: нет пересечения рядов OCF и capex (OCF без capex не подставляется)")
     if is_ok(F["fcf_latest"]) and ni and ni[-1]["end"] == fcf[-1]["end"]:
         if ni[-1]["val"] > 0:
-            F["fcf_to_ni"] = ok(fcf[-1]["val"] / ni[-1]["val"], "ratio", "FCF/NI ФГ %s" % ni[-1]["end"],
-                                accns(ni[-1], fcf[-1]))
+            F["fcf_to_ni"] = ok(fcf[-1]["val"] / ni[-1]["val"], "ratio", "FCF/NI ФГ %s%s" % (
+                ni[-1]["end"], "; " + CAPEX_FALLBACK_NOTE if capex_fb else ""), accns(ni[-1], fcf[-1]))
         else:
             F["fcf_to_ni"] = refusal(NOT_APPLICABLE, "FCF/NI не определено: NI <= 0 (%s)" % ni[-1]["val"])
     else:
