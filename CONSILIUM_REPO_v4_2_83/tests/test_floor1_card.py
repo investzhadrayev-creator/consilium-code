@@ -917,6 +917,82 @@ class TestK13NotReported(unittest.TestCase):
         self.assertFalse(any(fc.cell_class(f) == fc.NOT_REPORTED for f in F.values()))
 
 
+class TestK13ShortHistory(unittest.TestCase):
+    """K1.3 п.2: SHORT_HISTORY -- окну поля нужно N ФГ, а самый ранний годовой факт выручки позже начала окна. Есть ранняя
+    история, но нет конкретной точки (CELH) -- пробел, не класс."""
+    A = "0000000000-25-000007"
+
+    def short_out(self, n_years):
+        return dict(syn_out(), revenue=yearly([100] * n_years), net_income=yearly([10] * n_years),
+                    shares_diluted=yearly([5] * n_years))
+
+    def rev_facts(self, years, tag="Revenues"):
+        return dur_facts({tag: [(y, 100, self.A) for y in years]})
+
+    def test_f1_58_window_longer_than_revenue_history_is_short_history_with_dates(self):
+        F, _ = fc.sec_fields(self.short_out(2), self.rev_facts([2024, 2025]), EF)
+        for n, need in (("rev_cagr_3y", 3), ("rev_cagr_5y", 5), ("rev_accel", 2), ("nm_med5", 4)):
+            f = F[n]
+            self.assertEqual(f.get("refused"), fc.SHORT_HISTORY, n)
+            self.assertEqual(fc.cell_class(f), fc.SHORT_HISTORY)
+            self.assertEqual((f["need_fy"], f["earliest_revenue_end"], f["fy"]), (need, "2024-12-31", "2025-12-31"), n)
+            self.assertIn("2024-12-31", f["reason"])
+            self.assertIn(f["window_start"], f["reason"])
+        self.assertTrue(fc.is_ok(F["rev_cagr_3y"]) is False and fc.is_ok(F["ni_latest"]))
+
+    def test_f1_59_early_history_but_missing_point_is_a_gap_not_a_class(self):
+        # CELH: выручка есть с 2016, а точки долга за 3 ФГ назад нет -- наша дыра, не короткая история
+        facts = self.rev_facts(range(2016, 2026))
+        facts["facts"]["us-gaap"].update(tag_facts({"LongTermDebt": [("2024-12-31", 9), ("2025-12-31", 9)],
+                                                    "CashAndCashEquivalentsAtCarryingValue": [("2024-12-31", 1), ("2025-12-31", 1)]})
+                                         ["facts"]["us-gaap"])
+        F, _ = fc.sec_fields(syn_out(), facts, EF)
+        self.assertEqual(F["net_debt_chg_3y"]["refused"], "INSUFFICIENT_HISTORY")
+        self.assertEqual(fc.cell_class(F["net_debt_chg_3y"]), "GAP")
+        # то же для окна, где история короче нужной ровно в пределах допуска ФГ 52/53 недели (точка могла бы быть)
+        F, _ = fc.sec_fields(self.short_out(3), self.rev_facts([2023, 2024, 2025]), EF)
+        self.assertEqual(fc.cell_class(F["rev_cagr_3y"]), fc.SHORT_HISTORY)          # 2023-12-31 позже 2022-12-30 на 366 дн.
+        facts = self.rev_facts([2025])
+        facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"].append(
+            {"start": "2022-01-10", "end": "2023-01-10", "val": 100, "form": "10-K", "filed": "2023-02-01", "accn": self.A})
+        F, _ = fc.sec_fields(self.short_out(3), facts, EF)
+        self.assertEqual(fc.cell_class(F["rev_cagr_3y"]), "GAP")                      # 2023-01-10 - 2022-12-30 = 11 дн. <= допуска
+
+    def test_f1_60_early_revenue_history_under_any_revenue_tag_counts_as_history(self):
+        facts = self.rev_facts([2024, 2025])
+        facts["facts"]["us-gaap"].update(self.rev_facts(range(2016, 2024), tag="SalesRevenueNet")["facts"]["us-gaap"])
+        F, _ = fc.sec_fields(self.short_out(2), facts, EF)
+        self.assertEqual(fc.cell_class(F["rev_cagr_5y"]), "GAP")
+
+    def test_f1_61_short_history_needs_annual_revenue_to_prove_and_only_replaces_insufficient_history(self):
+        F, _ = fc.sec_fields(self.short_out(2), dur_facts({"NetIncomeLoss": [(2024, 1, self.A), (2025, 1, self.A)]}), EF)
+        self.assertFalse(any(fc.cell_class(f) == fc.SHORT_HISTORY for f in F.values()))    # нет выручки -- доказать нечем
+        F, _ = fc.sec_fields(self.short_out(2), self.rev_facts([2024, 2025]), EF)
+        self.assertTrue(all(fc.cell_class(F[n]) == "FILLED" for n in ("ni_latest", "eps_latest")))
+        # другой код пробела (операционная прибыль в companyfacts есть, а ряда в данных адаптера нет -> MISSING_INPUT) при
+        # короткой выручке НЕ превращается в SHORT_HISTORY: класс заменяет только INSUFFICIENT_HISTORY
+        facts = self.rev_facts([2024, 2025])
+        facts["facts"]["us-gaap"].update(dur_facts({"OperatingIncomeLoss": [(2025, 1, self.A)]})["facts"]["us-gaap"])
+        F, _ = fc.sec_fields(self.short_out(2), facts, EF)
+        self.assertEqual(F["om_med5"]["refused"], "MISSING_INPUT")
+        self.assertEqual(fc.cell_class(F["om_med5"]), "GAP")
+
+    def test_f1_62_dd_52w_short_price_series_is_short_history_with_first_quote_date(self):
+        a = "2026-10-27"
+        d0 = dt.date.fromisoformat(a)
+        short = {(d0 - dt.timedelta(days=i)).isoformat(): 10.0 + i for i in range(120)}
+        full = {(d0 - dt.timedelta(days=i)).isoformat(): 10.0 + i for i in range(400)}
+        b = full
+        F = fc.price_fields(short, {"VOO": b, "QQQ": b}, a)
+        self.assertEqual(F["dd_52w"]["refused"], fc.SHORT_HISTORY)
+        self.assertEqual(F["dd_52w"]["first_quote"], min(short))
+        self.assertIn(min(short), F["dd_52w"]["reason"])
+        self.assertTrue(fc.is_ok(fc.price_fields(full, {"VOO": b, "QQQ": b}, a)["dd_52w"]))
+
+
+import datetime as dt  # noqa: E402
+
+
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)
 
 if __name__ == "__main__":

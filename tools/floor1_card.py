@@ -491,6 +491,42 @@ def classify_not_reported(F, facts, ef, fy):
                                tags_checked=checked, window_since=since, fy=fy, was=F[name].get("refused"))
                 break
 
+# Сколько ФГ ДО последнего нужно окну поля (то же смещение, что берёт at_offset в расчёте): CAGR 3л -> точка за 3 ФГ,
+# ускорение -> за 2, медиана за 5 ФГ -> за 4, изменение акций/долга за 3 года -> за 3.
+HISTORY_NEED = {"rev_cagr_3y": 3, "rev_cagr_5y": 5, "rev_accel": 2, "gm_med5": 4, "om_med5": 4, "nm_med5": 4,
+                "shares_chg_1y": 1, "shares_chg_3y": 3, "net_debt_chg_3y": 3}
+
+
+def earliest_annual_revenue(facts, ef):
+    """Самый ранний конец ФГ с годовым фактом выручки в companyfacts (min по КАЖДОМУ тегу выручки отдельно -- ранняя
+    история под любым тегом считается историей) или None, если годовой выручки нет."""
+    ends = []
+    for tag in ef.DURATION_TAGS["revenue"]:
+        rows, _, _, _ = ef._annual_merged(facts, [tag], drop_zero=True)
+        if rows:
+            ends.append(min(r["end"] for r in rows))
+    return min(ends) if ends else None
+
+
+def classify_short_history(F, facts, ef, fy):
+    """SHORT_HISTORY: окну поля нужно N ФГ, а самый ранний годовой факт выручки позже начала окна (с допуском YEAR_TOL --
+    тем же, что у at_offset). Подменяет ТОЛЬКО INSUFFICIENT_HISTORY. Ранняя история есть, а точки нет (CELH) -- пробел.
+    Нет годовой выручки -- доказать «короткая» нечем: пробел."""
+    if not facts or not fy:
+        return
+    first = earliest_annual_revenue(facts, ef)
+    if first is None:
+        return
+    for name, n in HISTORY_NEED.items():
+        f = F.get(name)
+        if f is None or cell_class(f) != "GAP" or f.get("refused") != "INSUFFICIENT_HISTORY":
+            continue
+        need = (_d(fy) - dt.timedelta(days=round(365.25 * n))).isoformat()
+        if (_d(first) - _d(need)).days > YEAR_TOL:
+            F[name] = dict(refusal(SHORT_HISTORY, "короткая история: полю нужно %d ФГ до %s (точка около %s), а самый ранний "
+                                   "годовой факт выручки в companyfacts — ФГ %s" % (n, fy, need, first)),
+                           need_fy=n, fy=fy, window_start=need, earliest_revenue_end=first, was=f.get("refused"))
+
 
 def sec_fields(out, facts, ef):
     """Все SEC-поля одного имени + сырые ряды для флагов. out — выход адаптера."""
@@ -593,6 +629,7 @@ def sec_fields(out, facts, ef):
         else:
             F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
     classify_not_reported(F, facts, ef, fy)
+    classify_short_history(F, facts, ef, fy)
     return F, raw
 
 
@@ -730,7 +767,8 @@ def price_fields(px, bench, as_of, price_err=None):
     if (_d(as_of) - _d(d1)).days > PRICE_FRESH_DAYS:
         F["dd_52w"] = refusal("PRICE_STALE", "последний close %s старше %d дн." % (d1, PRICE_FRESH_DAYS))
     elif (_d(lo) - _d(first)).days < -PRICE_FRESH_DAYS:
-        F["dd_52w"] = refusal("INSUFFICIENT_HISTORY", "ряд цен начинается %s, окно 52н с %s" % (first, lo))
+        F["dd_52w"] = dict(refusal(SHORT_HISTORY, "короткая история: ряд цен Tiingo начинается %s, окну 52 недель нужен "
+                                   "close с %s" % (first, lo)), first_quote=first, window_start=lo, was="INSUFFICIENT_HISTORY")
     else:
         window = {d: v for d, v in px.items() if lo <= d <= as_of}
         mx_d = max(window, key=window.get)
