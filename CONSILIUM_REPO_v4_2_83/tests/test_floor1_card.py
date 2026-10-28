@@ -990,6 +990,65 @@ class TestK13ShortHistory(unittest.TestCase):
         self.assertTrue(fc.is_ok(fc.price_fields(full, {"VOO": b, "QQQ": b}, a)["dd_52w"]))
 
 
+class TestK13CoverageFlagsAndCard(unittest.TestCase):
+    """K1.3 п.3-4: новые классы вне знаменателя (Б) и вне числителя (А); зависимые флаги -- UNDETERMINED, никогда CLEAR;
+    карточка показывает (Б) и (Б без новых классов)."""
+
+    def test_f1_63_new_classes_leave_denominator_B_but_B_without_new_classes_keeps_them(self):
+        rows = [mkrow("AAA", ["OK", "OK", fc.NOT_REPORTED, fc.SHORT_HISTORY, "MISSING_INPUT"], ["CLEAR", fc.NOT_REPORTED]),
+                mkrow("BBB", ["OK", fc.NOT_REPORTED], [], scope="OUT_OF_SCOPE_FORM")]
+        ab = fc.coverage_ab(rows)
+        self.assertEqual((ab["b_num"], ab["b_den"]), (3, 4))            # OK,OK,CLEAR / + GAP; классы вне знаменателя
+        self.assertEqual((ab["b_num"], ab["b0_den"]), (3, 7))           # без новых классов: + 2 поля + 1 флаг в классах
+        self.assertEqual((ab["not_reported_cells"], ab["short_history_cells"]), (2, 1))   # вне scope BBB не считается
+        self.assertEqual(ab["a_num"] + 0, 4)                            # (А): числитель не вырос
+        self.assertEqual(ab["a_den"], 9)                                # (А): знаменатель — все ячейки всех имён
+        self.assertLess(ab["b0"], ab["b"])
+        self.assertEqual(fc.limitations(rows)[0][1:3], ("f4", "MISSING_INPUT"))
+        self.assertEqual(len(fc.limitations(rows)), 1)                  # классы — не «пробел»
+
+    def test_f1_64_flags_depending_on_a_classed_field_are_undetermined_never_clear(self):
+        # исходно флаги вычислимы и дали бы CLEAR/RAISED; поле-зависимость в классе -> класс перекрывает
+        raised_or_clear = {n: {"state": "CLEAR", "evidence": "e"} for n in fc.FLAG_ORDER}
+        expected = {"CYCLE_PEAK": ("om_latest", "om_med5"), "CASH_CONV_DIVERGENCE": ("fcf_latest", "ni_latest"),
+                    "BUYBACK_EPS": ("shares_chg_3y", "eps_latest"), "DEBT_FOR_BUYBACKS": ("shares_chg_3y", "net_debt_chg_3y")}
+        for cls in fc.NEW_CLASSES:
+            F = {d: fc.ok(1, "ratio", "b") for deps in expected.values() for d in deps}
+            for flag, deps in expected.items():
+                G = dict(F)
+                G[deps[-1]] = fc.refusal(cls, "причина")
+                out = fc.flags_with_classes(raised_or_clear, G)
+                self.assertEqual(out[flag]["state"], "UNDETERMINED", (cls, flag))
+                self.assertEqual(out[flag]["code"], cls)
+                self.assertEqual(fc.cell_class(out[flag]), cls)
+                for other in fc.FLAG_ORDER:
+                    if deps[-1] not in expected[other]:
+                        self.assertEqual(out[other]["state"], "CLEAR", (flag, other))   # чужие флаги не задеты
+        # через настоящий sec_fields: операционной прибыли нет ни в одном теге -> CYCLE_PEAK не CLEAR
+        F, raw = fc.sec_fields(syn_out(), dur_facts({"Revenues": [(y, 100, "0000000000-25-000007") for y in range(2021, 2026)]}), EF)
+        self.assertEqual(F["om_med5"]["refused"], fc.NOT_REPORTED)
+        fl = fc.flags_for(F, dict(raw, om=yearly([0.2] * 8)))             # даже если бы сырой ряд позволил посчитать
+        self.assertEqual((fl["CYCLE_PEAK"]["state"], fl["CYCLE_PEAK"]["code"]), ("UNDETERMINED", fc.NOT_REPORTED))
+
+    def test_f1_65_card_shows_both_B_numbers_and_separate_class_sections_with_tags_and_dates(self):
+        r = card("META")
+        r["fields"]["om_latest"] = r["fields"]["om_med5"] = dict(fc.refusal(fc.NOT_REPORTED, "не представлено компанией: "
+            "операционная прибыль, проверены теги OperatingIncomeLoss; нет фактов"))
+        r["fields"]["rev_cagr_5y"] = dict(fc.refusal(fc.SHORT_HISTORY, "короткая история: самый ранний годовой факт выручки — ФГ 2024-12-31"))
+        with tempfile.TemporaryDirectory() as td:
+            fc.write_outputs([r], CHECK_DATE, td, "test", {"edgartools": AD.EDGARTOOLS_PIN})
+            md = open(os.path.join(td, "FLOOR1_%s.md" % CHECK_DATE), encoding="utf-8").read()
+            with open(os.path.join(td, "FLOOR1_%s.csv" % CHECK_DATE), encoding="utf-8") as fh:
+                tot = [x for x in csv.DictReader(fh) if x["ticker"] == "_TOTAL"][0]
+        self.assertIn("Покрытие (Б), применимое:", md)
+        self.assertIn("Покрытие (Б) без новых классов:", md)
+        self.assertIn("## NOT_REPORTED", md)
+        self.assertIn("## SHORT_HISTORY", md)
+        self.assertIn("не представлено компанией: операционная прибыль, проверены теги OperatingIncomeLoss", md)
+        self.assertIn("ФГ 2024-12-31", md)
+        self.assertNotEqual(tot["coverage_B_applicable"], tot["coverage_B_without_new_classes"])
+
+
 import datetime as dt  # noqa: E402
 
 

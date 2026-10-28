@@ -698,9 +698,27 @@ def flag_debt_for_buybacks(F):
             "evidence": "акции 3л %+.4f; изменение чистого долга за 3 ФГ %+d USD" % (sh, dn)}
 
 
+# K1.3: от каких полей зависит флаг. Если хоть одно из них в новом классе (NOT_REPORTED / SHORT_HISTORY), флаг не может
+# быть определён по существу: UNDETERMINED с тем же кодом класса, НИКОГДА CLEAR (и не RAISED), и вне знаменателя (Б).
+FLAG_DEPS = {"CYCLE_PEAK": ("om_latest", "om_med5"), "CASH_CONV_DIVERGENCE": ("fcf_latest", "ni_latest"),
+             "BUYBACK_EPS": ("shares_chg_3y", "eps_latest"), "DEBT_FOR_BUYBACKS": ("shares_chg_3y", "net_debt_chg_3y")}
+
+
+def flags_with_classes(flags, F):
+    out = dict(flags)
+    for name, deps in FLAG_DEPS.items():
+        for cls in NEW_CLASSES:
+            hit = [d for d in deps if d in F and cell_class(F[d]) == cls]
+            if hit:
+                out[name] = {"state": "UNDETERMINED", "code": cls, "evidence": "%s: %s" % (cls, "; ".join(
+                    "%s — %s" % (d, F[d]["reason"]) for d in hit))}
+                break
+    return out
+
+
 def flags_for(F, raw):
-    return {"CYCLE_PEAK": flag_cycle_peak(raw), "CASH_CONV_DIVERGENCE": flag_cash_conv(raw),
-            "BUYBACK_EPS": flag_buyback_eps(F, raw), "DEBT_FOR_BUYBACKS": flag_debt_for_buybacks(F)}
+    return flags_with_classes({"CYCLE_PEAK": flag_cycle_peak(raw), "CASH_CONV_DIVERGENCE": flag_cash_conv(raw),
+                               "BUYBACK_EPS": flag_buyback_eps(F, raw), "DEBT_FOR_BUYBACKS": flag_debt_for_buybacks(F)}, F)
 
 
 # ----------------------------------------------------------------------------- prices
@@ -873,10 +891,12 @@ def coverage(rows):
 
 def coverage_ab(rows):
     """(А) = заполнено / все ячейки всех имён.
-    (Б) = заполнено / применимые ячейки имён в scope (scope = имя не OUT_OF_SCOPE_FORM; применимая = не NOT_APPLICABLE).
+    (Б) = заполнено / применимые ячейки имён в scope (scope = имя не OUT_OF_SCOPE_FORM; применимая = не NOT_APPLICABLE,
+    не NOT_REPORTED, не SHORT_HISTORY -- K1.3).
+    (Б без новых классов) = заполнено / (то же + ячейки NOT_REPORTED и SHORT_HISTORY): влияние решения видно каждую неделю.
     Пробел (GAP) остаётся в знаменателе (Б). Пустой знаменатель -> None, не 0 и не 100%."""
     a_num = a_den = b_num = b_den = 0
-    n_na = n_oos_cells = n_gap = n_oos_names = 0
+    n_na = n_oos_cells = n_gap = n_oos_names = n_nr = n_sh = 0
     for r in rows:
         c = row_counts(r)
         a_num, a_den = a_num + c["FILLED"], a_den + sum(c.values())
@@ -885,15 +905,20 @@ def coverage_ab(rows):
             n_oos_names += 1
             n_oos_cells += sum(c.values())
             continue
+        n_nr, n_sh = n_nr + c[NOT_REPORTED], n_sh + c[SHORT_HISTORY]
         b_num, b_den = b_num + c["FILLED"], b_den + c["FILLED"] + c["GAP"]
+    # (Б без новых классов) = как если бы решения о NOT_REPORTED / SHORT_HISTORY не было: эти ячейки остаются в знаменателе
+    b0_den = b_den + n_nr + n_sh
     return {"a_num": a_num, "a_den": a_den, "a": a_num / a_den if a_den else None,
             "b_num": b_num, "b_den": b_den, "b": b_num / b_den if b_den else None,
+            "b0_den": b0_den, "b0": b_num / b0_den if b0_den else None,
+            "not_reported_cells": n_nr, "short_history_cells": n_sh,
             "not_applicable_cells": n_na, "gap_cells": n_gap, "out_of_scope_names": n_oos_names,
             "out_of_scope_cells": n_oos_cells}
 
 
 def classified(rows, cls):
-    """[(ticker, поле, код, причина)] ячеек данного класса (NOT_APPLICABLE / OUT_OF_SCOPE_FORM)."""
+    """[(ticker, поле, код, причина)] ячеек данного класса (NOT_APPLICABLE / OUT_OF_SCOPE_FORM / NOT_REPORTED / SHORT_HISTORY)."""
     out = []
     for r in rows:
         for n, f in list(r["fields"].items()) + list(r["flags"].items()):
@@ -936,6 +961,7 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     ab = coverage_ab(rows)
     lim = limitations(rows)
     na_cells, oos_cells = classified(rows, NOT_APPLICABLE), classified(rows, OUT_OF_SCOPE_FORM)
+    nr_cells, sh_cells = classified(rows, NOT_REPORTED), classified(rows, SHORT_HISTORY)
     base = os.path.join(out_dir, "FLOOR1_%s" % as_of)
     cols = ["ticker", "fy_end", "fy_age_days"]
     for n in FIELD_ORDER:
@@ -943,7 +969,8 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     for n in FLAG_ORDER:
         cols += [n, n + "__evidence"]
     cols += ["prov_accessions", "scope", "cells_filled", "cells_gap", "cells_not_applicable", "cells_out_of_scope",
-             "coverage_A_raw", "coverage_B_applicable"]
+             "cells_not_reported", "cells_short_history", "coverage_A_raw", "coverage_B_applicable",
+             "coverage_B_without_new_classes"]
     with open(base + ".csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(cols)
@@ -961,7 +988,9 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
             c = row_counts(r)
             in_sc = r["meta"].get("scope") != OUT_OF_SCOPE_FORM
             line += [r["meta"].get("scope", "IN_SCOPE"), c["FILLED"], c["GAP"], c[NOT_APPLICABLE], c[OUT_OF_SCOPE_FORM],
-                     _pct(c["FILLED"], sum(c.values())), _pct(c["FILLED"], c["FILLED"] + c["GAP"]) if in_sc else ""]
+                     c[NOT_REPORTED], c[SHORT_HISTORY],
+                     _pct(c["FILLED"], sum(c.values())), _pct(c["FILLED"], c["FILLED"] + c["GAP"]) if in_sc else "",
+                     _pct(c["FILLED"], c["FILLED"] + c["GAP"] + c[NOT_REPORTED] + c[SHORT_HISTORY]) if in_sc else ""]
             w.writerow(line)
         # итоговая строка: ticker начинается с «_», в ряд имён не входит; (А)/(Б) по всей карточке
         tot = [""] * len(cols)
@@ -971,8 +1000,11 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
         tot[cols.index("cells_gap")] = ab["gap_cells"]
         tot[cols.index("cells_not_applicable")] = ab["not_applicable_cells"]
         tot[cols.index("cells_out_of_scope")] = ab["out_of_scope_cells"]
+        tot[cols.index("cells_not_reported")] = ab["not_reported_cells"]
+        tot[cols.index("cells_short_history")] = ab["short_history_cells"]
         tot[cols.index("coverage_A_raw")] = _pct(ab["a_num"], ab["a_den"])
         tot[cols.index("coverage_B_applicable")] = _pct(ab["b_num"], ab["b_den"])
+        tot[cols.index("coverage_B_without_new_classes")] = _pct(ab["b_num"], ab["b0_den"])
         w.writerow(tot)
     L = ["# FLOOR1 — карточка этажа 1, %s" % as_of, "",
          "Сгенерировано `tools/floor1_card.py` (К1, #44/#90). as_of SEC = %s; SEC через адаптер К2 (edgartools==%s); цены — Tiingo adjClose." % (as_of, run_info["edgartools"]),
@@ -982,9 +1014,14 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
          "**Покрытие (Б), применимое: %d/%d = %s** — заполнено / применимые поля имён в scope "
          "(scope = имя не OUT_OF_SCOPE_FORM; применимое = не NOT_APPLICABLE; пробел по нашей вине остаётся в знаменателе)." % (
              ab["b_num"], ab["b_den"], _pct(ab["b_num"], ab["b_den"])),
+         "**Покрытие (Б) без новых классов: %d/%d = %s** — то же, но ячейки NOT_REPORTED (%d) и SHORT_HISTORY (%d) остаются в "
+         "знаменателе как пробелы; показывается рядом с (Б) каждую неделю, чтобы влияние решения о классах было видно." % (
+             ab["b_num"], ab["b0_den"], _pct(ab["b_num"], ab["b0_den"]), ab["not_reported_cells"], ab["short_history_cells"]),
          "Цель ≥%d%% ИЛИ named limitation; пробелов (GAP) %d — все названы ниже. Не пробел и не «заполнено»: NOT_APPLICABLE — %d ячеек, "
-         "OUT_OF_SCOPE_FORM — %d имён (%d ячеек)." % (COVERAGE_TARGET * 100, len(lim), ab["not_applicable_cells"],
-                                                       ab["out_of_scope_names"], ab["out_of_scope_cells"]), ""]
+         "OUT_OF_SCOPE_FORM — %d имён (%d ячеек); новые классы K1.3 (вне знаменателя Б): NOT_REPORTED — %d ячеек, "
+         "SHORT_HISTORY — %d ячеек." % (COVERAGE_TARGET * 100, len(lim), ab["not_applicable_cells"],
+                                        ab["out_of_scope_names"], ab["out_of_scope_cells"],
+                                        ab["not_reported_cells"], ab["short_history_cells"]), ""]
     keys = ["rev_cagr_3y", "rev_cagr_5y", "rev_accel", "om_latest", "om_med5", "fcf_to_ni", "shares_chg_3y",
             "net_debt_latest", "rs_voo_13w", "rs_qqq_13w", "dd_52w"]
     L += ["| тикер | ФГ | " + " | ".join(keys) + " | флаги | покрытие |", "|" + "---|" * (len(keys) + 4)]
@@ -1007,7 +1044,10 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
         grouped.setdefault((t, code, why), []).append(n)
     L += ["- %s / %s — `%s`: %s" % (t, ", ".join(ns), code, why) for (t, code, why), ns in grouped.items()] or ["- нет"]
     for title, items in (("NOT_APPLICABLE — показатель не определён математически", na_cells),
-                         ("OUT_OF_SCOPE_FORM — эмитент без годового 10-K", oos_cells)):
+                         ("OUT_OF_SCOPE_FORM — эмитент без годового 10-K", oos_cells),
+                         ("NOT_REPORTED — не представлено компанией (ни одного факта по тегам цепочки за последний ФГ и 3 "
+                          "предшествующих; вне знаменателя Б)", nr_cells),
+                         ("SHORT_HISTORY — короткая история (окно поля длиннее истории; вне знаменателя Б)", sh_cells)):
         L += ["", "## %s (%d)" % (title, len(items)), ""]
         g2 = {}
         for t, n, code, why in items:
