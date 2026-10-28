@@ -182,8 +182,10 @@ class TestMissingIsNotZero(unittest.TestCase):
     def test_f1_08_a_stale_series_is_refused_not_shown_as_the_latest_value(self):
         # Единственный тег долга оборвался в FY2020, карточка на FY2025: долг 2020 года -- не «текущий». (На реальном
         # MU LongTermDebt оборвался в 2012, но теперь есть DebtAndCapitalLeaseObligations -- см. f1_34.)
-        facts = tag_facts({"LongTermDebt": [("2020-12-31", 90)], "CashAndCashEquivalentsAtCarryingValue":
-                           [("%d-12-31" % y, 10) for y in range(2020, 2026)]})
+        # ConvertibleDebtCurrent=0 на 2025 -- факт «долговой» группы в окне 4 ФГ: K1.3 NOT_REPORTED не срабатывает, тег долга
+        # LongTermDebt по-прежнему оборван -> STALE_SERIES (отказ «по нашей вине», не класс)
+        facts = tag_facts({"LongTermDebt": [("2020-12-31", 90)], "ConvertibleDebtCurrent": [("2025-12-31", 0)],
+                           "CashAndCashEquivalentsAtCarryingValue": [("%d-12-31" % y, 10) for y in range(2020, 2026)]})
         F, _ = fc.sec_fields(syn_out(), facts, EF)
         self.assertEqual(refused({"fields": F}, "net_debt_latest"), "STALE_SERIES")
         self.assertIn("2020", F["net_debt_latest"]["reason"])
@@ -232,7 +234,7 @@ class TestMissingIsNotZero(unittest.TestCase):
             with open(os.path.join(td, "FLOOR1_%s.csv" % CHECK_DATE), encoding="utf-8") as fh:
                 rec = next(csv.DictReader(fh))
         self.assertEqual(rec["net_debt_latest"], "")
-        self.assertIn("MISSING_INPUT", rec["net_debt_latest__reason"])
+        self.assertIn("NOT_REPORTED", rec["net_debt_latest__reason"])      # K1.3: у META в окне 4 ФГ нет ни одного долгового тега
         self.assertEqual(rec["rs_voo_4w"], "")
         self.assertIn("TIINGO_UNAVAILABLE", rec["rs_voo_4w__reason"])
         self.assertNotEqual(rec["ni_latest"], "0")
@@ -561,8 +563,9 @@ class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
         self.assertIsNone(gp)
         self.assertEqual(ref["refused"], "MISSING_INPUT")
         F, _ = fc.sec_fields(syn_out(), only_rev, EF)
-        self.assertEqual(refused({"fields": F}, "gm_latest"), "MISSING_INPUT")
-        self.assertEqual(refused({"fields": F}, "gm_med5"), "MISSING_INPUT")
+        # K1.3: ни GrossProfit, ни одного тега себестоимости за 4 ФГ -> NOT_REPORTED (по-прежнему отказ, не ноль и не выручка)
+        self.assertEqual(refused({"fields": F}, "gm_latest"), "NOT_REPORTED")
+        self.assertEqual(refused({"fields": F}, "gm_med5"), "NOT_REPORTED")
         a = "0000000000-25-000007"          # себестоимости за последний ФГ нет: он не «ноль», маржа за него не считается
         no_last_cost = dur_facts({"Revenues": [(y, 100, a) for y in years],
                                   "CostOfRevenue": [(y, 40, a) for y in years if y < 2025]})
@@ -811,7 +814,7 @@ class TestK12TagChainExtensions(unittest.TestCase):
             self.assertEqual(refused({"fields": F}, n), "MISSING_INPUT")
         self.assertIn("не раскрыт", F["net_debt_latest"]["reason"])
         # долг оборвался давно (PLTR): тоже отказ с причиной, а не ноль и не «последнее известное»
-        old = self.nd({"LongTermDebtNoncurrent": [("2020-12-31", 200), ("2021-12-31", 0)],
+        old = self.nd({"LongTermDebtNoncurrent": [("2020-12-31", 200), ("2021-12-31", 0)], "ConvertibleDebtCurrent": [("2025-12-31", 0)],
                        "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in ["2020-12-31", "2021-12-31"] + self.YRS]})
         self.assertNotEqual(old["net_debt_latest"].get("refused"), None)
         self.assertIn(old["net_debt_latest"]["refused"], ("MISSING_INPUT", "STALE_SERIES"))
@@ -848,7 +851,70 @@ class TestK12TagChainExtensions(unittest.TestCase):
         out = syn_out()
         del out["capex"]
         F, _ = fc.sec_fields(out, dur_facts({"Revenues": [(2025, 1, a)]}), EF)
+        self.assertEqual(refused({"fields": F}, "fcf_latest"), "NOT_REPORTED")   # K1.3: capex-тегов в окне нет вовсе
+        # capex-тег есть, но не на последний ФГ (факт 2023 в окне 4 ФГ) -- класса нет, прежний отказ по нашей части
+        F, _ = fc.sec_fields(out, dur_facts({"PaymentsToAcquirePropertyPlantAndEquipment": [(2023, 1, a)],
+                                                         "NetCashProvidedByUsedInOperatingActivities": [(2025, 30, a)]}), EF)
         self.assertEqual(refused({"fields": F}, "fcf_latest"), "MISSING_INPUT")
+
+
+class TestK13NotReported(unittest.TestCase):
+    """K1.3 п.1: NOT_REPORTED -- по ПРАВИЛУ над companyfacts: ни одного факта по тегам цепочки поля за последний ФГ карточки
+    и 3 предшествующих. Хоть один факт в окне -- класса нет (пробел по нашей вине)."""
+    A = "0000000000-25-000007"
+    CASH = {"CashAndCashEquivalentsAtCarryingValue": [("%d-12-31" % y, 10) for y in range(2021, 2026)]}
+
+    def fields(self, facts, out=None):
+        F, _ = fc.sec_fields(out or syn_out(), facts, EF)
+        return F
+
+    def test_f1_54_no_fact_in_four_fiscal_years_is_not_reported_and_names_every_checked_tag(self):
+        F = self.fields(tag_facts(self.CASH))          # долговых тегов в companyfacts нет вовсе
+        for n in ("net_debt_latest", "net_debt_chg_3y"):
+            self.assertEqual(refused({"fields": F}, n), fc.NOT_REPORTED, n)
+            self.assertEqual(fc.cell_class(F[n]), fc.NOT_REPORTED)
+        r = F["net_debt_latest"]
+        for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_CUR_CHAIN + [fc.CONVERTIBLE_PREFIX + "*"]:
+            self.assertIn(tag, r["tags_checked"])      # проверены ВСЕ долговые теги цепочки и ConvertibleDebt*
+            self.assertIn(tag, r["reason"])
+        self.assertIn("не представлено компанией: долг", r["reason"])
+        self.assertEqual(r["fy"], "2025-12-31")
+        # выручка не отчитана -> и рост, и все шесть маржей: NOT_REPORTED (OKLO)
+        F = self.fields(dur_facts({"NetIncomeLoss": [(y, 10, self.A) for y in range(2021, 2026)]}), dict(syn_out(), revenue=None))
+        for n in ("rev_cagr_3y", "rev_cagr_5y", "rev_accel", "gm_latest", "gm_med5", "om_latest", "om_med5", "nm_latest", "nm_med5"):
+            self.assertEqual(fc.cell_class(F[n]), fc.NOT_REPORTED, n)
+            self.assertIn("выручка", F[n]["reason"], n)
+
+    def test_f1_55_a_single_fact_in_any_of_the_four_fiscal_years_means_a_gap_not_a_class(self):
+        # окно: ФГ 2025 и 3 предыдущих => end >= 2022-12-10; факт 2022-12-31 (3 ФГ назад) -- в окне; 2021-12-31 -- вне
+        inside = tag_facts(dict(self.CASH, LongTermDebtNoncurrent=[("2022-12-31", 5)]))
+        outside = tag_facts(dict(self.CASH, LongTermDebtNoncurrent=[("2021-12-31", 5)]))
+        self.assertNotEqual(fc.cell_class(self.fields(inside)["net_debt_latest"]), fc.NOT_REPORTED)
+        self.assertEqual(fc.cell_class(self.fields(outside)["net_debt_latest"]), fc.NOT_REPORTED)
+        # SHOP: единственный долговой факт -- ConvertibleDebtCurrent = 0 на последний ФГ: это факт, значит пробел, не класс
+        shop = self.fields(tag_facts(dict(self.CASH, ConvertibleDebtCurrent=[("2025-12-31", 0)])))
+        for n in ("net_debt_latest", "net_debt_chg_3y"):
+            self.assertEqual(fc.cell_class(shop[n]), "GAP", n)
+        # запасной тег цепочки (не первый) тоже считается: NotesPayableCurrent
+        fb = self.fields(tag_facts(dict(self.CASH, NotesPayableCurrent=[("2024-12-31", 1)])))
+        self.assertEqual(fc.cell_class(fb["net_debt_latest"]), "GAP")
+
+    def test_f1_56_class_only_for_absence_refusals_never_for_our_own_decision_refusals(self):
+        # GOOG: акции раскрыты по классам, отказ MULTI_CLASS_NOT_SUMMED -- наш. Тегов общего числа акций в companyfacts нет,
+        # но это НЕ «компания не представила»: класс не ставится
+        out = syn_out()
+        del out["shares_diluted"]
+        out["_refusals"] = {"shares_diluted": fc.refusal("MULTI_CLASS_NOT_SUMMED", "акции по классам не суммируются")}
+        F = self.fields(dur_facts({"Revenues": [(y, 100, self.A) for y in range(2021, 2026)]}), out)
+        for n in ("eps_latest", "shares_chg_1y", "shares_chg_3y"):
+            self.assertEqual(F[n]["refused"], "MULTI_CLASS_NOT_SUMMED", n)
+
+    def test_f1_57_a_filled_cell_and_a_missing_companyfacts_are_never_reclassified(self):
+        F = self.fields(dur_facts({"Revenues": [(y, 100, self.A) for y in range(2021, 2026)]}))
+        self.assertTrue(fc.is_ok(F["rev_cagr_3y"]))
+        # нет companyfacts вообще (чтение не удалось) -- ничего не объявляем «не представлено»
+        F, _ = fc.sec_fields(dict(syn_out(), revenue=None), None, EF)
+        self.assertFalse(any(fc.cell_class(f) == fc.NOT_REPORTED for f in F.values()))
 
 
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)

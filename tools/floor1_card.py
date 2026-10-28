@@ -66,17 +66,27 @@ def is_ok(f):
 #                         первого 10-K): имя вне scope, не «заполнено» и не «пробел».
 NOT_APPLICABLE = "NOT_APPLICABLE"
 OUT_OF_SCOPE_FORM = "OUT_OF_SCOPE_FORM"
+# K1.3 (DECISION_2026-10-28_FLOOR1_CLASSES, вступает с одобрением оператора). Два класса по ОБЪЕКТИВНОМУ правилу над
+# данными SEC/Tiingo, не по имени тикера; оба -- вне знаменателя (Б), вне числителя (А), показываются отдельными разделами:
+#   NOT_REPORTED  -- ни один тег цепочки поля не имеет НИ ОДНОГО факта в companyfacts за последний ФГ карточки и 3
+#                    предшествующих. Хоть один факт за эти 4 ФГ -- класса нет, это пробел по нашей вине (GAP);
+#   SHORT_HISTORY -- окну поля нужно N ФГ (или 52 недели цен), а самый ранний годовой факт выручки (или первая котировка)
+#                    позже начала окна. Ранняя история есть, а точки нет (CELH) -- пробел, не класс.
+NOT_REPORTED = "NOT_REPORTED"
+SHORT_HISTORY = "SHORT_HISTORY"
+NEW_CLASSES = (NOT_REPORTED, SHORT_HISTORY)
+CLASS_CODES = (NOT_APPLICABLE, OUT_OF_SCOPE_FORM) + NEW_CLASSES
 
 
 def cell_class(item):
-    """-> FILLED | GAP | NOT_APPLICABLE | OUT_OF_SCOPE_FORM для поля (dict с value/refused) или флага (dict со state)."""
+    """-> FILLED | GAP | NOT_APPLICABLE | OUT_OF_SCOPE_FORM | NOT_REPORTED | SHORT_HISTORY для поля (dict с value/refused) или флага (dict со state)."""
     if "state" in item:                                  # флаг
         if item["state"] in ("RAISED", "CLEAR"):
             return "FILLED"
-        return item.get("code") if item.get("code") in (NOT_APPLICABLE, OUT_OF_SCOPE_FORM) else "GAP"
+        return item.get("code") if item.get("code") in CLASS_CODES else "GAP"
     if is_ok(item):
         return "FILLED"
-    return item.get("refused") if item.get("refused") in (NOT_APPLICABLE, OUT_OF_SCOPE_FORM) else "GAP"
+    return item.get("refused") if item.get("refused") in CLASS_CODES else "GAP"
 
 
 def micro_dir():
@@ -423,6 +433,64 @@ def gross_profit_derived(facts, ef):
                                    "дате в одном accession (разные отчёты не склеиваются)")
     return gp, rv, None
 
+# ----------------------------------------------------------------------------- K1.3: классы NOT_REPORTED / SHORT_HISTORY
+
+# Класс применяется ТОЛЬКО к отказам «данных нет». Отказ по нашему решению (MULTI_CLASS_NOT_SUMMED у GOOG: акции
+# раскрыты по классам, SPLIT_IN_WINDOW, SHARES_UNDEFINED...) -- не «компания не представила», класс там был бы ложью.
+ABSENCE_REFUSALS = ("MISSING_INPUT", "STALE_SERIES", "DEBT_TAG_ABSENT")
+NR_LOOKBACK_FY = 3                       # последний ФГ карточки + 3 предшествующих
+CONVERTIBLE_PREFIX = "ConvertibleDebt"   # K1.3: для долга -- ещё и ВСЕ теги us-gaap с этим префиксом
+
+
+def field_requirements(ef):
+    """{поле: [(группа, [теги], [префиксы])]}: что должно быть представлено компанией, чтобы поле вообще могло быть
+    посчитано. Поле NOT_REPORTED, если у ЛЮБОЙ группы все теги (и префиксы) без единого факта в окне 4 ФГ."""
+    rev = ("выручка", list(ef.DURATION_TAGS["revenue"]), [])
+    gp = ("валовая прибыль/себестоимость", ["GrossProfit"] + COST_TAGS, [])
+    opi = ("операционная прибыль", list(ef.DURATION_TAGS["operating_income"]), [])
+    ni = ("чистая прибыль", list(ef.DURATION_TAGS["net_income"]), [])
+    ocf = ("операционный денежный поток", list(ef.DURATION_TAGS["ocf"]), [])
+    cap = ("capex", list(ef.DURATION_TAGS["capex"]) + CAPEX_FALLBACK_TAGS, [])
+    sh = ("акции (разводнённые)", list(ef.DURATION_TAGS["shares_diluted"]), [])
+    debt = ("долг", DEBT_FULL_CHAIN + DEBT_NONC_CHAIN + DEBT_CUR_CHAIN, [CONVERTIBLE_PREFIX])
+    req = {"rev_cagr_3y": [rev], "rev_cagr_5y": [rev], "rev_accel": [rev],
+           "ni_latest": [ni], "eps_latest": [ni, sh], "fcf_latest": [ocf, cap], "fcf_to_ni": [ocf, cap, ni],
+           "shares_chg_1y": [sh], "shares_chg_3y": [sh], "net_debt_latest": [debt], "net_debt_chg_3y": [debt]}
+    for key, num in (("gm", gp), ("om", opi), ("nm", ni)):
+        req[key + "_latest"] = req[key + "_med5"] = [rev, num]
+    return req
+
+
+def facts_since(facts, tags, prefixes, since):
+    """Теги us-gaap (из tags и по префиксам), у которых есть хоть один факт любой формы с end >= since."""
+    gaap = ((facts or {}).get("facts") or {}).get("us-gaap") or {}
+    names = [t for t in tags if t in gaap] + [t for t in gaap if any(t.startswith(p) for p in prefixes) and t not in tags]
+    hit = []
+    for t in names:
+        for rows in ((gaap[t] or {}).get("units") or {}).values():
+            if any(r.get("end") and r["end"] >= since for r in rows or []):
+                hit.append(t)
+                break
+    return hit
+
+
+def classify_not_reported(F, facts, ef, fy):
+    """NOT_REPORTED по правилу: подменяет ТОЛЬКО пробелы (GAP). Нет companyfacts или ФГ -> ничего не объявляем."""
+    if not facts or not fy:
+        return
+    since = (_d(fy) - dt.timedelta(days=round(365.25 * NR_LOOKBACK_FY) + YEAR_TOL)).isoformat()
+    for name, groups in field_requirements(ef).items():
+        if name not in F or cell_class(F[name]) != "GAP" or F[name].get("refused") not in ABSENCE_REFUSALS:
+            continue
+        for gname, tags, prefixes in groups:
+            if not facts_since(facts, tags, prefixes, since):
+                checked = tags + [p + "*" for p in prefixes]
+                F[name] = dict(refusal(NOT_REPORTED, "не представлено компанией: %s, проверены теги %s; в companyfacts нет "
+                                       "ни одного факта с end >= %s (последний ФГ карточки %s и %d предшествующих)"
+                                       % (gname, ", ".join(checked), since, fy, NR_LOOKBACK_FY)),
+                               tags_checked=checked, window_since=since, fy=fy, was=F[name].get("refused"))
+                break
+
 
 def sec_fields(out, facts, ef):
     """Все SEC-поля одного имени + сырые ряды для флагов. out — выход адаптера."""
@@ -524,6 +592,7 @@ def sec_fields(out, facts, ef):
                 accns(a, nd[-1]), tags=tags, mixed_tags=mixed, cash_includes_restricted=r_win)
         else:
             F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
+    classify_not_reported(F, facts, ef, fy)
     return F, raw
 
 
@@ -747,7 +816,7 @@ def build_name(ticker, as_of, source, px, bench, price_err=None):
 
 def row_counts(r):
     """Число ячеек (поля + флаги) имени по классам."""
-    c = {"FILLED": 0, "GAP": 0, NOT_APPLICABLE: 0, OUT_OF_SCOPE_FORM: 0}
+    c = {"FILLED": 0, "GAP": 0, NOT_APPLICABLE: 0, OUT_OF_SCOPE_FORM: 0, NOT_REPORTED: 0, SHORT_HISTORY: 0}
     for item in list(r["fields"].values()) + list(r["flags"].values()):
         c[cell_class(item)] += 1
     return c
