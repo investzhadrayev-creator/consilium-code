@@ -802,5 +802,113 @@ class TestBridgeAgeWatchdog(Base):
         self.assertRegex(self.sent[-1], r"проблем — см\. письмо")
 
 
+class TestReportFalseAlarms(Base):
+    """Issue #146: the daily report's «Пропущенные запуски» must not cry wolf (Saturday 2026-10-31)."""
+    NOW = at(2026, 10, 31, 19, 30)
+
+    def rows(self, **kw):
+        return {r["name"]: r for r in G.watch(self.now, **kw)}
+
+    def test_a_the_report_being_built_is_not_missing(self):
+        r = self.rows(wait=G.REPORT_WAIT, self_name="daily-report")["daily-report"]
+        self.assertEqual((r["state"], r["alert"], r["period"]), (G.THIS_REPORT, None, "2026-10-31"))
+        md, _ = G.watch_section(self.now, notify=False, wait=G.REPORT_WAIT, self_name="daily-report")
+        self.assertRegex(md, r"\| daily-report \|.*\| этот отчёт \|")
+
+    def test_a_without_self_name_the_missing_day_is_still_missing(self):
+        # the watchdog (no self_name) must keep its teeth: the exemption is only for the report's own line
+        r = self.rows()["daily-report"]
+        self.assertEqual(r["state"], G.MISSING)
+
+    def test_a_self_exemption_does_not_cover_other_workflows(self):
+        rows = self.rows(wait=G.REPORT_WAIT, self_name="daily-report")
+        self.assertNotEqual(rows["daily-audit"]["state"], G.THIS_REPORT)
+        self.assertNotEqual(rows["daily-audit"]["state"], G.PUBLISHED)
+
+    def test_b_audit_waits_for_a_delayed_github_cron(self):
+        r = self.rows(wait=G.REPORT_WAIT)["daily-audit"]       # slots 16:07, 17:37; now 19:30 = 1 h 53 min after
+        self.assertEqual((r["state"], r["alert"]), (G.WAITING, None))
+        self.assertIn("ждём (задержка GitHub", r["detail"])
+        _, n = G.watch_section(self.now, only="daily-audit", notify=False, wait=G.REPORT_WAIT)
+        self.assertEqual(n, 0)
+
+    def test_b_audit_is_missing_only_after_six_hours_past_the_last_slot(self):
+        self.now = at(2026, 10, 31, 23, 36)                      # 17:37 + 6 h = 23:37
+        self.assertEqual(self.rows(wait=G.REPORT_WAIT)["daily-audit"]["state"], G.WAITING)
+        self.now = at(2026, 10, 31, 23, 38)
+        r = self.rows(wait=G.REPORT_WAIT)["daily-audit"]
+        self.assertEqual(r["state"], G.MISSING)
+        self.assertTrue(r["alert"])
+
+    def test_b_before_the_last_slot_it_says_not_yet(self):
+        self.now = at(2026, 10, 31, 16, 30)
+        r = self.rows(wait=G.REPORT_WAIT)["daily-audit"]
+        self.assertEqual((r["state"], r["alert"]), (G.WAITING, None))
+        self.assertIn("ещё не время", r["detail"])
+
+    def test_b_a_published_audit_is_published_not_waiting(self):
+        self.publish_day("2026-10-31")
+        self.assertEqual(self.rows(wait=G.REPORT_WAIT)["daily-audit"]["state"], G.PUBLISHED)
+
+    def test_b_a_short_wait_cannot_undercut_the_one_hour_grace(self):
+        self.now = at(2026, 10, 31, 18, 7)                       # 17:37 + 30 min: inside the grace
+        r = self.rows(wait=dt.timedelta(0))["daily-audit"]
+        self.assertEqual((r["state"], r["alert"]), (G.WAITING, None))
+
+    def test_b_default_wait_keeps_the_old_one_hour_grace(self):
+        r = self.rows()["daily-audit"]                           # no wait= -> watchdog semantics
+        self.assertEqual(r["state"], G.MISSING)
+
+    def test_c_panel_checks_the_latest_started_week_not_the_previous_one(self):
+        self.w.add_panel_row("2026-10-31")                       # published Saturday; week of 10-26
+        r = self.rows(wait=G.REPORT_WAIT)["panel-weekly"]
+        self.assertEqual((r["state"], r["period"], r["alert"]), (G.PUBLISHED, "2026-10-26", None))
+
+    def test_c_missed_earlier_weeks_are_not_a_current_alarm(self):
+        self.w.add_panel_row("2026-10-31")                       # nothing for 10-19 on purpose
+        md, n = G.watch_section(self.now, only="panel-weekly", notify=False, wait=G.REPORT_WAIT)
+        self.assertEqual(n, 0, md)
+        self.assertNotIn("2026-10-19", md)
+
+    def test_c_this_weeks_row_still_missing_while_slots_remain_is_waiting_not_missing(self):
+        r = self.rows(wait=G.REPORT_WAIT)["panel-weekly"]        # Sat 19:30, Sunday 05:07 slot ahead
+        self.assertEqual((r["state"], r["alert"]), (G.WAITING, None))
+        self.assertIn("ещё не время", r["detail"])
+
+    def test_c_sunday_watchdog_still_names_the_missing_saturday_card(self):
+        self.now = at(2026, 11, 1, 7, 37)                        # the real watchdog slot, GRACE semantics
+        self.w.add_panel_row("2026-10-24")                       # last week only
+        with quiet():
+            rc = G.main(["x", "watch", "--only", "panel-weekly", "--notify"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("2026-10-26", self.sent[0])
+
+    def test_c_sunday_watchdog_with_k1_and_no_card_is_missing(self):
+        self.now = at(2026, 11, 1, 7, 37)
+        self.w.k1 = True
+        self.w.add_panel_row("2026-10-31")                       # row yes, card no
+        r = self.rows()["panel-weekly"]
+        self.assertEqual(r["state"], G.MISSING)
+        self.assertIn("FLOOR1_", r["detail"])
+        self.assertTrue(r["alert"])
+
+    def test_consumers_pass_the_report_wait(self):
+        seen = []
+        self.patch(G, "watch_section", lambda *a, **k: seen.append(k) or ("md", 0))
+        import audit_facts
+        audit_facts.missed_runs_section()
+        self.assertEqual(seen[-1].get("wait"), G.REPORT_WAIT)
+        # daily_report.main(): the section it embeds must be built with the report wait and its own name
+        self.now = at(2026, 10, 31, 19, 30)
+        self.patch(R, "sh", lambda *a: "- коммит (abc, bot)\n")
+        self.patch(R.F, "failed_runs", lambda limit=20: ([], 0, ""))
+        os.makedirs("journal/digests")
+        with quiet():
+            R.main()
+        self.assertEqual(seen[-1].get("wait"), G.REPORT_WAIT)
+        self.assertEqual(seen[-1].get("self_name"), "daily-report")
+
+
 if __name__ == "__main__":
     unittest.main()

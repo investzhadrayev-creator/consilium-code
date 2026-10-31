@@ -27,6 +27,9 @@ GRACE = dt.timedelta(minutes=60)            # прогон последнего 
 NOTIFY_WINDOW = dt.timedelta(hours=26)      # о пропуске периода сообщаем один раз, не неделю подряд
 RUN_LIMIT = 200
 PUBLISHED, MISSING, NOT_REQUIRED, UNKNOWN = "PUBLISHED", "MISSING", "NOT_REQUIRED", "UNKNOWN"
+WAITING = "WAITING"                         # слоты периода не кончились / GitHub ещё может запустить слот
+THIS_REPORT = "этот отчёт"                  # строка самого формируемого отчёта: он не может «пропустить» себя
+REPORT_WAIT = dt.timedelta(hours=6)         # GitHub задерживает cron до ~5 ч (слот 15:37 -> публикация 20:04)
 BRIDGE_MAX_AGE = dt.timedelta(hours=6)      # старше — мост считается незапущенным (issue #94)
 BRIDGE_URL = "https://github.com/investzhadrayev-creator/consilium-code/actions/workflows/mail_bridge.yml"
 FLOOR1_RE = re.compile(r"^FLOOR1_(\d{4}-\d{2}-\d{2})\.md$")
@@ -184,6 +187,19 @@ def latest_closed_period(name, now):
             return p, s[-1] + GRACE
         p = previous_period(kind, p)
     raise ScheduleError(f"{name}: нет закрытого периода за последние 4 (cron не даёт слотов?)")
+
+
+def latest_started_period(name, now):
+    """Последний НАСТУПИВШИЙ период: тот, чей первый слот уже был (для недели с сб-слотами это неделя
+    по последнюю прошедшую субботу). Закрыт он или ещё ждёт слотов — решает вызывающий."""
+    kind = SPECS[name]["period"]
+    p = period_start(kind, now.date())
+    for _ in range(4):
+        s = period_slots(name, p)
+        if s and s[0] <= now:
+            return p, s[0], s[-1]
+        p = previous_period(kind, p)
+    raise ScheduleError(f"{name}: нет наступившего периода за последние 4 (cron не даёт слотов?)")
 
 
 # ---------------------------------------------------------------- facts from main -------------
@@ -360,8 +376,10 @@ def panel_row_published(now=None):
 
 
 # ---------------------------------------------------------------- watchdog --------------------
-def watch(now=None, only=None):
-    """-> list[dict] по workflow: name, expected, actual, truncated, period, state, detail, alert."""
+def watch(now=None, only=None, wait=GRACE, self_name=None):
+    """-> list[dict] по workflow: name, expected, actual, truncated, period, state, detail, alert.
+    wait — сколько ждать после ПОСЛЕДНЕГО слота периода, прежде чем отсутствие результата = MISSING
+    (сторож вс 07:37 — GRACE; отчёты — REPORT_WAIT). self_name — workflow, чей отчёт сейчас формируется."""
     now = now or utcnow()
     names = [only] if only else list(SPECS)
     err = ensure_main()
@@ -389,12 +407,22 @@ def watch(now=None, only=None):
                         row["state"], row["detail"], row["alert"] = bridge_check(
                             runs, (now - dt.timedelta(hours=24)).date().isoformat(), now)
                 continue
-            p, deadline = latest_closed_period(name, now)
+            p, first, last = latest_started_period(name, now)
             row["period"] = str(p)
+            if self_name == name and spec["period"] == "day" and p == now.date():
+                row["state"], row["detail"] = THIS_REPORT, "результат этого периода формирует текущий прогон"
+                continue
             if err and not spec.get("by_runs"):
                 row["state"], row["detail"] = UNKNOWN, err
                 continue
             row["state"], row["detail"] = result_state(name, p, check_activity=True)
+            deadline = last + GRACE                  # с него идёт окно оповещения NOTIFY_WINDOW
+            ready = last + max(wait, GRACE)          # раньше этого отсутствие результата ещё не MISSING
+            if row["state"] == MISSING and now < ready:
+                why = ("ещё не время: последний слот периода " f"{last:%Y-%m-%d %H:%M}Z впереди" if now < last else
+                       f"ждём (задержка GitHub до {int(wait.total_seconds() // 3600)} ч): "
+                       f"последний слот {last:%Y-%m-%d %H:%M}Z, MISSING после {ready:%H:%M}Z")
+                row["state"], row["detail"] = WAITING, f"{why}; {row['detail']}"
             if row["state"] == MISSING and now - deadline <= NOTIFY_WINDOW:
                 row["alert"] = f"результат периода {p} не опубликован ни одним слотом"
         except ScheduleError as e:
@@ -423,10 +451,10 @@ def alert_text(r):
             f"Run workflow (workflow_dispatch).")
 
 
-def watch_section(now=None, only=None, notify=True):
+def watch_section(now=None, only=None, notify=True, wait=GRACE, self_name=None):
     """-> (markdown, число проблем). Telegram — по каждому пропуску; UNKNOWN — одним сообщением."""
     now = now or utcnow()
-    rows = watch(now, only)
+    rows = watch(now, only, wait, self_name)
     if notify:
         for r in rows:
             if r["alert"]:
