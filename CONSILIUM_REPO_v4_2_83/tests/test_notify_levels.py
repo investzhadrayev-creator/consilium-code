@@ -22,6 +22,8 @@ sys.path.insert(0, TOOLS)
 import autocommit        # noqa: E402
 import daily_audit as D  # noqa: E402
 import daily_report as R  # noqa: E402
+R.REAL_manual_runs_line = R.manual_runs_line
+R.manual_runs_line = lambda now: '- (test: gh unavailable by design)'  # #144: no real gh in tests
 import llm_clients as L  # noqa: E402
 import mail_bridge as B  # noqa: E402
 import notify_failure as NF  # noqa: E402
@@ -171,7 +173,7 @@ class TestCallersPickTheLevel(Base):
         self.patch(G, "watch_section", lambda *a, **k: ("stub\n", 0))
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
-        self.assertEqual([lv for lv, t in got if "всё зелёно" in t], [L.INFO])
+        self.assertEqual([lv for lv, t in got if "По плану, от тебя ничего не нужно" in t], [L.INFO])
 
 
 class FakeGh:
