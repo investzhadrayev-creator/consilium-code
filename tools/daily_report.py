@@ -56,7 +56,7 @@ def main():
     # Напоминание оператору — раньше «пустого дня»: тихий день не повод молчать о ждущих PR.
     # Повтор раз в сутки: skip_if_published выше отсекает второй слот расписания.
     _, remind_err = OP.remind()
-    missed, n_missed = G.watch_section()
+    missed, n_missed = G.watch_section(wait=G.REPORT_WAIT, self_name="daily-report")
     commits = sh("git", "log", "--since=26 hours ago", "--format=- %s (%h, %an)").strip()
     if not commits:
         print("пустой день")
