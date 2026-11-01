@@ -153,7 +153,7 @@ def missed_runs_section():
     (алерты шлёт сам сторож/daily_report). Недоступный сторож — именованный отказ."""
     try:
         import schedule_guard
-        md, _ = schedule_guard.watch_section(notify=False)
+        md, _ = schedule_guard.watch_section(notify=False, wait=schedule_guard.REPORT_WAIT)
         return md
     except Exception as e:
         return f"## Пропущенные запуски\n\nUNAVAILABLE (schedule_guard): {e!r}\n"
