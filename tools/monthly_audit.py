@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
 import schedule_guard as G
+import daily_audit as D
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
@@ -41,6 +42,9 @@ def main():
             red = red or "VERDICT: RED" in r["text"]
         except L.Unavailable as e:
             out += [f"## {provider}", f"REVIEW_UNAVAILABLE: {e}", ""]
+            D.notify_unavailable(provider, e, ym + " (месячный)",
+                                 already=D._already_reported(
+                                     f"journal/audits/MONTHLY_ARCHITECT_AUDIT_{ym}.md"))
     path = f"journal/audits/MONTHLY_ARCHITECT_AUDIT_{ym}.md"
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")

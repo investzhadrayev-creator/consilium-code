@@ -302,6 +302,10 @@ class TestOperatorReminder(Base):
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
         self.assertFalse(any("всё зелёно" in t for _, t in got), got)
+        # the old line is gone for good, so the check above alone is vacuous: pin the property itself --
+        # an unreadable PR list must surface as an ALARM line, never as "nothing needed"
+        self.assertFalse(any("По плану" in t for _, t in got), got)
+        self.assertTrue(any(lv == L.ALARM and "Тревога" in t for lv, t in got), got)
 
 
 class TestBridgeLevels(Base):
@@ -327,7 +331,7 @@ class TestBridgeLevels(Base):
 
     def test_refused_merge_of_a_protected_pr_asks_the_operator(self):
         got = self.recorder()
-        self.patch(B, "sh", lambda *a, **k: "CLAUDE.md\n" if "--jq" in a else "")
+        self.patch(B, "sh", lambda *a, **k: '{"files":[{"path":"CLAUDE.md"}]}' if a[:3] == ("gh", "pr", "view") else "")
         self.patch(B, "repo_url", lambda: "https://github.com/o/r")
         with self.assertRaises(B.CommandFailed):
             B.do_merge("PR#5", "")
