@@ -30,19 +30,27 @@ OK_CHECKS = {"total_count": 2, "check_runs": [
 
 def pr(**kw):
     d = {"files": [{"path": "tools/notify_failure.py"}], "author": {"login": "claude[bot]", "is_bot": True},
-         "body": GOOD_BODY, "title": "Fix thing", "mergeable": "MERGEABLE", "headRefOid": "abc123"}
+         "body": GOOD_BODY, "title": "Fix thing", "mergeable": True, "headRefOid": "abc123"}
     d.update(kw)
     return d
 
 
 class Harness(unittest.TestCase):
-    def run_merge(self, prdata, checks=OK_CHECKS, now=WED):
+    def run_merge(self, prdata, checks=OK_CHECKS, now=WED, rest=None):
         """Real do_merge(); fakes for gh. -> (merged_cmd or None, notifications, refused_exc or None)."""
-        notes, calls = [], []
+        notes, calls, sleeps = [], [], []
+        # REST mergeable answers, one per request to pulls/N; default = the PR dict's own value, every time.
+        seq = list(rest) if rest is not None else None
+        self.rest_requests = 0
         def fake_sh(*a, **k):
             calls.append(a)
             if a[:3] == ("gh", "pr", "view"):
-                return json.dumps(prdata)
+                self.assertNotIn("mergeable", a[-1], "GraphQL mergeable must not be requested")
+                return json.dumps({k: v for k, v in prdata.items() if k != "mergeable"})
+            if a[:2] == ("gh", "api") and re.search(r"/pulls/\d+$", a[2]):
+                self.rest_requests += 1
+                val = (seq.pop(0) if len(seq) > 1 else seq[0]) if seq is not None else prdata.get("mergeable")
+                return json.dumps({"mergeable": val, "mergeable_state": "x"})
             if a[:2] == ("gh", "api"):
                 return json.dumps(checks)
             return ""
@@ -51,8 +59,9 @@ class Harness(unittest.TestCase):
             if cmd[:3] == ["gh", "pr", "merge"]:
                 merged.append(cmd)
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
-        saved = (B.sh, B.subprocess.run, L.notify, B.repo_url)
+        saved = (B.sh, B.subprocess.run, L.notify, B.repo_url, B.time.sleep)
         B.sh, B.subprocess.run = fake_sh, fake_run
+        B.time.sleep = lambda s: sleeps.append(s)
         L.notify = lambda text, level=L.INFO: notes.append((level, text)) or True
         B.repo_url = lambda: "https://github.com/o/r"
         exc = None
@@ -61,8 +70,8 @@ class Harness(unittest.TestCase):
         except B.CommandFailed as e:
             exc = e
         finally:
-            B.sh, B.subprocess.run, L.notify, B.repo_url = saved
-        self.last_calls = calls
+            B.sh, B.subprocess.run, L.notify, B.repo_url, B.time.sleep = saved
+        self.last_calls, self.sleeps = calls, sleeps
         return (merged[0] if merged else None), notes, exc
 
     def assertRefused(self, prdata, needle, **kw):
@@ -111,9 +120,32 @@ class TestMergeConditions(Harness):
         self.assertRefused(pr(), "suite=completed/failure", checks={"total_count": 1, "check_runs": [
             {"name": "suite", "status": "completed", "conclusion": "failure"}]})
 
-    def test_iv_conflicts_and_unknown_mergeable_refused(self):
-        self.assertRefused(pr(mergeable="CONFLICTING"), "mergeable=CONFLICTING")
-        self.assertRefused(pr(mergeable="UNKNOWN"), "mergeable=UNKNOWN")
+    def test_iv_conflicts_refused(self):
+        self.assertRefused(pr(mergeable=False), "конфликты")
+        self.assertEqual(self.rest_requests, 1)      # a definite false is not retried
+
+    def test_iv_null_then_true_merges_after_pause(self):
+        merged, _, exc = self.run_merge(pr(), rest=[None, True])
+        self.assertIsNone(exc)
+        self.assertIsNotNone(merged)
+        self.assertEqual(self.rest_requests, 2)
+        self.assertEqual(self.sleeps, [5])
+
+    def test_iv_null_forever_is_named_refusal_after_four_retries(self):
+        self.assertRefused(pr(mergeable=None), "mergeable не вычислен GitHub")
+        self.assertEqual(self.rest_requests, 5)      # first request + 4 retries
+        self.assertEqual(self.sleeps, [5, 5, 5, 5])
+
+    def test_iv_null_then_false_refused_as_conflicts(self):
+        self.assertRefused(pr(), "конфликты", rest=[None, False])
+
+    def test_iv_garbage_mergeable_is_not_a_pass(self):
+        self.assertRefused(pr(), "mergeable не вычислен GitHub", rest=["true"])
+
+    def test_iv_graphql_mergeable_not_used(self):
+        with open(B.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotRegex(src, r'"files,author,body,title,[^"]*mergeable')
 
     def test_v_freeze_window_boundaries_for_freeze_files(self):
         U = dt.timezone.utc
