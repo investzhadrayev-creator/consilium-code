@@ -25,7 +25,7 @@ jobs:
       contains(github.event.issue.body, '@claude') ||
       contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -56,7 +56,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
-            --allowed-tools "Bash,Read,Write,Edit,Grep,Glob" --max-turns 120 --permission-mode acceptEdits
+            --allowed-tools "Bash,Read,Write,Edit,Grep,Glob" --max-turns 200 --permission-mode acceptEdits
           prompt: |
             Ты работаешь в проекте Consilium Spine — автоматизированный equity research
             под философией Грэма-Додда. Правила проекта обязательны к исполнению:
@@ -107,3 +107,12 @@ jobs:
           name: claude-session-log
           path: /home/runner/work/_temp/claude-execution-output.json
           if-no-files-found: warn
+
+      - name: Уведомить карточку, если бот не успел или упал
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="$(git branch --show-current 2>/dev/null || true)"
+          gh issue comment ${{ github.event.issue.number || github.event.pull_request.number }} \
+            --body "бот не успел/упал, сделанное — в ветке ${BRANCH:-<ветка не определена>}, см. прогон ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

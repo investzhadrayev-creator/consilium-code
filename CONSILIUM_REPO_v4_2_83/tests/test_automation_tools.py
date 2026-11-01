@@ -27,6 +27,8 @@ import audit_facts as F  # noqa: E402
 import calibrate_auditor as C  # noqa: E402
 import daily_audit as D  # noqa: E402
 import daily_report as R  # noqa: E402
+R.REAL_manual_runs_line = R.manual_runs_line
+R.manual_runs_line = lambda now: '- (test: gh unavailable by design)'  # #144: no real gh in tests
 import llm_clients as L  # noqa: E402
 import mail_bridge as B  # noqa: E402
 import notify_failure as NF  # noqa: E402
@@ -698,11 +700,13 @@ class TestDailyReportFailures(Patched):
         self.patch(G, "watch_section", lambda *a, **k: ("## Пропущенные запуски\nstub\n", 0))
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
-        self.assertTrue(sent[-1].endswith("всё зелёно"), sent)
+        self.assertIn("По плану, от тебя ничего не нужно", sent[-1])
+        self.assertEqual(self.levels[-1], L.INFO)
         self.patch(F, "failed_runs", lambda limit=20: (None, None, "UNAVAILABLE"))
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
-        self.assertIn("проблем — см. письмо", sent[-1])
+        self.assertIn("🟠 Тревога", sent[-1])
+        self.assertEqual(self.levels[-1], L.ALARM)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -749,7 +753,8 @@ class TestKnownPlatformLimit(Patched):
         self.patch(R, "sh", lambda *cmd: "0" if cmd[-1] == ".jobs|length" else "- коммит\n")
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
-        self.assertTrue(sent[-1].endswith("всё зелёно"), sent)
+        self.assertIn("По плану, от тебя ничего не нужно", sent[-1])
+        self.assertEqual(self.levels[-1], L.INFO)
 
     def test_88_each_missing_condition_makes_it_a_problem(self):
         cases = {

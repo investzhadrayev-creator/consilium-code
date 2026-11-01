@@ -5,20 +5,66 @@
 1) append-only: в журнальных файлах нет удалённых/изменённых строк;
 2) существующие файлы mailbox/ не редактируются (новые — можно);
 3) новые строки PANEL_LOG.csv: 22 поля, голоса в {1,-1,NA}, дата ISO, без дублей недели;
-4) автокоммиты github-actions затрагивают только разрешённые пути.
+4) автокоммиты github-actions затрагивают только разрешённые пути; DECISION_/PREREG_/MANDATE_ — только
+   если коммит = squash-слияние PR, слитого владельцем (gh api; нет ответа API -> нарушение «не проверено»).
 Выход 0 = чисто; 1 = нарушение (список в stdout). Запуск: BASE=<sha> python3 tools/validate_artifacts.py
 """
-import os, re, subprocess, sys
+import json, os, re, subprocess, sys
 
 APPEND_ONLY = ("journal/PANEL_LOG.csv", "journal/architect_commands.log")
 APPEND_ONLY_DIRS = ("journal/audits/", "journal/digests/", "mailbox/")
 BOT_ALLOWED = ("journal/", "Reports/", "mailbox/")  # автокоммитам можно только сюда
 BOT_FORBIDDEN = ("mailbox/DECISION_", "mailbox/PREREG_", "mailbox/MANDATE_")  # законы — только оператор
+REPO_OWNER = "investzhadrayev-creator"  # единственный, чьё слияние делает DECISION/PREREG/MANDATE законом
 VOTES = {"1", "-1", "NA"}
 fails = []
 
 def sh(*cmd):
     return subprocess.run(cmd, capture_output=True, text=True).stdout
+
+def gh_api(path):
+    """-> (json|None, причина|None). Отказ API называется, а не превращается в «пусто»."""
+    try:
+        r = subprocess.run(("gh", "api", path), capture_output=True, text=True)
+    except OSError as e:
+        return None, f"gh недоступен: {e}"
+    if r.returncode != 0:
+        return None, f"gh api {path}: rc={r.returncode} {r.stderr.strip()[:120]}"
+    try:
+        return json.loads(r.stdout), None
+    except ValueError as e:
+        return None, f"gh api {path}: ответ не JSON: {e!r}"
+
+def repo_slug():
+    slug = os.environ.get("GITHUB_REPOSITORY", "")
+    if slug:
+        return slug
+    m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?\s*$",
+                  sh("git", "remote", "get-url", "origin").strip())
+    return m.group(1) if m else ""
+
+def operator_merge(sha):
+    """Коммит github-actions в BOT_FORBIDDEN допустим только как squash-слияние PR, слитого владельцем.
+    -> (True, None) | (False, причина). Нет ответа API -> (False, «не проверено: API недоступен»)."""
+    slug = repo_slug()
+    if not slug:
+        return False, "не проверено: API недоступен (репозиторий не определён)"
+    prs, why = gh_api(f"repos/{slug}/commits/{sha}/pulls")
+    if prs is None or not isinstance(prs, list):
+        return False, f"не проверено: API недоступен ({why})"
+    for pr in prs:
+        if not isinstance(pr, dict) or pr.get("merge_commit_sha") != sha or not pr.get("number"):
+            continue                         # PR, в который коммит лишь входил, — не его слияние
+        full, why = gh_api(f"repos/{slug}/pulls/{pr['number']}")
+        if not isinstance(full, dict):
+            return False, f"не проверено: API недоступен ({why})"
+        if not full.get("merged_at"):
+            continue
+        who = (full.get("merged_by") or {}).get("login")
+        if who == REPO_OWNER:
+            return True, None
+        return False, f"PR #{pr['number']} слит не владельцем (merged_by={who})"
+    return False, "нет PR, слитого этим коммитом (не squash-слияние PR)"
 
 def main():
     base = os.environ.get("BASE", "")
@@ -76,10 +122,16 @@ def main():
     for c in sh("git", "log", "--format=%H|%ae", rng).splitlines():
         sha, _, email = c.partition("|")
         if "github-actions" in email or "actions@github.com" in email:
+            verdict = None                   # проверка слияния — один раз на коммит, и только если нужна
             for p in sh("git", "show", "--name-only", "--format=", sha).split():
-                if p and (not any(p.startswith(a) for a in BOT_ALLOWED)
-                          or any(p.startswith(f) for f in BOT_FORBIDDEN)):
+                if not p:
+                    continue
+                if not any(p.startswith(a) for a in BOT_ALLOWED):
                     fails.append(f"BOT PATH VIOLATION: автокоммит {sha[:8]} трогает {p}")
+                elif any(p.startswith(f) for f in BOT_FORBIDDEN):
+                    verdict = verdict or operator_merge(sha)
+                    if not verdict[0]:
+                        fails.append(f"BOT PATH VIOLATION: автокоммит {sha[:8]} трогает {p} ({verdict[1]})")
 
     if fails:
         print("ВАЛИДАЦИЯ ПРОВАЛЕНА:")
