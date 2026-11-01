@@ -17,6 +17,7 @@ jobs:
       - name: Контролёр данных (append-only, схема, пути бота)
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          GH_TOKEN: ${{ github.token }}   # валидатор проверяет через gh api, кем слит PR с DECISION
         run: python3 tools/validate_artifacts.py
       - name: Тревога при нарушении на main
         if: failure() && github.event_name == 'push'

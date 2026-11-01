@@ -31,6 +31,8 @@ jobs:
         run: python3 tools/daily_report.py
       - name: Валидатор данных на main за 26 ч (замена PR-проверке, которая не стартует на auto/* PR)
         if: always() && env.ALREADY_PUBLISHED != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}   # валидатор проверяет через gh api, кем слит PR с DECISION
         run: |
           BASE=$(git rev-list -1 --before="26 hours ago" origin/main || true)
           if [ -z "$BASE" ]; then echo "BASE не определён: история короче 26 ч — проверка не выполнена"; exit 1; fi
