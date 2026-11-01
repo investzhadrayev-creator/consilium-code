@@ -10,6 +10,7 @@
   TestEvidence       -- улика RED содержит accession каждого числа; диагностика за 5 ФГ, неопределимое -- None.
   TestExam           -- экзамен/контроли на подставном источнике: метаданные подачи, воспроизводимость, доля ложных RED.
 """
+import json
 import os
 import sys
 import tempfile
@@ -485,6 +486,84 @@ class TestExam(unittest.TestCase):
                 rc = ex.main(["--out-dir", d, "--run-date", "2026-11-02"], source=FakeSource(table, NFLX_LISTING))
             self.assertEqual(rc, 0)
             self.assertEqual(sorted(os.listdir(d)), ["CASH_DECAY_CONTROLS_2026-11-02.md", "NFLX_FY2019_2026-11-02.md"])
+
+    # ---- доводка PR #175 (issue #176): пины на tools/exam_nflx.py, мутации ex-NN в tools/mutation_probe.py ----
+
+    def test_cd_75_late_filed_fy2019_10k_means_exam_not_run_with_recorded_reason(self):
+        late = [dict(NFLX_LISTING[0], filing_date="2020-02-16"), NFLX_LISTING[1]]
+        src = FakeSource({("NFLX", AS_OF): RED_FACTS}, late)
+        res = ex.run_exam(src)
+        self.assertEqual(res["verdict"], cd.UNDEFINED)
+        self.assertFalse(res["meta"]["ok"])
+        self.assertIn("экзамен не проводился", res["reason"])
+        self.assertIn("2018-12-31", res["reason"])           # причина записана: подходящий 10-K относится не к ФГ2019
+        self.assertEqual(src.asked, [])                      # данные не читались
+        self.assertTrue(ex.gate_line(res).startswith("ГЕЙТ: ПРОВАЛ"))
+        # граница: подан РОВНО в as_of -- экзамен проводится
+        ok = [dict(NFLX_LISTING[0], filing_date=AS_OF), NFLX_LISTING[1]]
+        self.assertTrue(ex.check_filing_metadata(FakeSource({}, ok), "c", AS_OF, "2019")["ok"])
+
+    def test_cd_76_metadata_requires_the_fiscal_year_not_just_any_10k(self):
+        wrong_fy = [dict(NFLX_LISTING[0], period_of_report="2018-12-31")]
+        m = ex.check_filing_metadata(FakeSource({}, wrong_fy), "c", AS_OF, "2019")
+        self.assertFalse(m["ok"])
+        self.assertTrue(m["reason"])
+
+    def test_cd_77_report_verdict_line_equals_guard_verdict_for_every_verdict(self):
+        cases = {cd.RED: RED_FACTS, cd.OK: OK_FACTS, cd.AMBER: mk({**healthy(2018), **{2019: (100, 60, 30)}}),
+                 cd.NOT_APPLICABLE: mk({**healthy(2018), **{2019: (-1, 1, 1)}}), cd.UNDEFINED: {"ni": []}}
+        for want, facts in cases.items():
+            res = ex.run_exam(FakeSource({("NFLX", AS_OF): facts}, NFLX_LISTING))
+            self.assertEqual(res["verdict"], want)
+            text = ex.render_exam(res, "2026-11-02", "cmd")
+            lines = [l for l in text.splitlines() if l.startswith("ВЕРДИКТ:")]
+            self.assertEqual(lines, ["ВЕРДИКТ: %s" % want])
+
+    def test_cd_78_gate_passes_only_for_red_with_evidence_reproducible_in_limit(self):
+        base = ex.run_exam(FakeSource({("NFLX", AS_OF): RED_FACTS}, NFLX_LISTING))
+        self.assertTrue(ex.gate_line(base).startswith("ГЕЙТ: ПРОЙДЕН"))
+        for v in (cd.AMBER, cd.OK, cd.NOT_APPLICABLE, cd.UNDEFINED):
+            self.assertTrue(ex.gate_line(dict(base, verdict=v)).startswith("ГЕЙТ: ПРОВАЛ"), v)
+        self.assertTrue(ex.gate_line(dict(base, evidence=None)).startswith("ГЕЙТ: ПРОВАЛ"))
+        self.assertTrue(ex.gate_line(dict(base, reproducible=False)).startswith("ГЕЙТ: ПРОВАЛ"))
+        self.assertTrue(ex.gate_line(dict(base, reproducible=None)).startswith("ГЕЙТ: ПРОВАЛ"))
+        self.assertTrue(ex.gate_line(dict(base, within_limit=False)).startswith("ГЕЙТ: ПРОВАЛ"))
+
+    def test_cd_79_false_red_share_numerator_is_red_count_denominator_is_all_controls(self):
+        vs = [cd.RED] * 3 + [cd.AMBER] * 2 + [cd.UNDEFINED] * 3 + [cd.OK] * 2
+        rows = [{"verdict": v, "ticker": "T%d" % i, "as_of": AS_OF} for i, v in enumerate(vs)]
+        self.assertEqual(ex.false_red_share(rows), (3, 10))
+        self.assertEqual(ex.false_red_share([]), (0, 0))
+        text = ex.render_controls(rows, "2026-11-02", "cmd")
+        self.assertIn("ДОЛЯ ЛОЖНЫХ RED: 3/10 = 30%", text)
+        self.assertIn("НЕ_ОПРЕДЕЛЁН: 3/10", text)
+
+    def test_cd_80_snapshot_does_not_use_facts_filed_after_its_own_as_of(self):
+        # источник отдаёт ряд, где ФГ2019 подан 2020-03-01 (после as_of экзамена) -- он не должен определить вердикт
+        late = mk({**healthy(2018), **{2019: (100, -50, 10)}})
+        for f in late:
+            for r in late[f]:
+                if r["end"] == "2019-12-31":
+                    r["filed"] = "2020-03-01"
+        row = ex.run_snapshot(FakeSource({("NFLX", AS_OF): late}), "NFLX", AS_OF)
+        self.assertNotEqual(row["verdict"], cd.RED)
+        self.assertNotIn(accn(2019, "ocf"), json.dumps(row, ensure_ascii=False, default=str))
+        # тот же ряд на более позднем as_of -- факт используется (снимок берёт СВОЙ as_of)
+        row2 = ex.run_snapshot(FakeSource({("NFLX", "2020-04-01"): late}), "NFLX", "2020-04-01")
+        self.assertEqual(row2["verdict"], cd.RED)
+
+    def test_cd_81_red_in_latest_year_is_not_blocked_by_gaps_in_median_window(self):
+        # порядок evaluate (PREREG §3): RED проверяется раньше медианы; пробелы 2015-2016 вердикт RED не гасят
+        yrs = {2017: (100, 150, 50), 2018: (100, 70, 30), 2019: (100, 60, 30)}
+        self.assertEqual(cd.evaluate(mk(yrs), AS_OF)["rule"], "R2")
+        yrs = {2018: (100, 150, 50), 2019: (100, 60, 30)}
+        self.assertEqual(cd.evaluate(mk(yrs), AS_OF)["rule"], "AMBER_ONE_YEAR")
+
+    def test_cd_82_undefined_reason_for_median_gap_names_ok_amber_indistinguishable(self):
+        yrs = {2018: (100, 150, 50), 2019: (100, 150, 50)}
+        r = cd.evaluate(mk(yrs), AS_OF)
+        self.assertEqual(r["verdict"], cd.UNDEFINED)
+        self.assertIn("OK и AMBER неразличимы", r["reason"])
 
 
 if __name__ == "__main__":
