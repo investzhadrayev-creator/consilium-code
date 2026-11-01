@@ -6,7 +6,7 @@
 Аудитор дня: чётный день месяца → OpenAI, нечётный → Gemini. Вердикт коммитится, минуя
 архитектора. ПОДТВЕРЖДЁННОЕ НАРУШЕНИЕ → письмо оператору. Пустой день → выход без коммита.
 Протокол: mailbox/PROTOCOL_DAILY_AUDIT_v1.md (draft; открытые вопросы — оператору)."""
-import datetime as dt, os, subprocess, sys
+import datetime as dt, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
@@ -61,6 +61,57 @@ def build_packet(day, g):
             f"{F.missed_runs_section()}\n\n"
             f"{F.fact_sections(7)}")
 
+BILLING_MARKERS = ("402", "resource_exhausted", "credits", "quota", "billing")
+AUTH_MARKERS = ("401", "403")
+PROVIDER_TEXT = {"gemini": ("Gemini", "Google AI Studio (ai.studio → Billing)", "GEMINI_API_KEY"),
+                 "openai": ("OpenAI", "OpenAI Platform (platform.openai.com → Billing)", "OPENAI_API_KEY")}
+
+def _scrub_secrets(text):
+    """Значения секретов и токены бота никогда не попадают в Telegram (в т.ч. из тела ошибки API)."""
+    text = str(text)
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN"):
+        v = os.environ.get(name) or ""
+        if v:
+            text = text.replace(v, "***")
+    text = re.sub(r"([?&]key=)[^&\s\"']+", r"\1***", text)
+    text = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._-]{8,}", r"\1***", text)
+    return L._scrub(text, os.environ.get("TELEGRAM_BOT_TOKEN") or "")
+
+def classify_unavailable(provider, err):
+    """-> (level, текст оператору). Приоритет: 401/403 (ключ) не путаем с оплатой; прочее — ALARM
+    с первой строкой ошибки (missing != default: причина называется, не подменяется общей фразой)."""
+    name, where, secret = PROVIDER_TEXT.get(provider, (provider, provider, "API-ключ"))
+    low = str(err).lower()
+    if any(m in low for m in BILLING_MARKERS) and not low.startswith(("http 401", "http 403")):
+        return L.ACTION, (f"🔴 Аудитор {name} не работает: закончились оплаченные кредиты. "
+                          f"Что сделать: пополнить баланс в {where}. "
+                          "Пока не пополнено — аудит в нечётные дни не проводится."
+                          if provider == "gemini" else
+                          f"🔴 Аудитор {name} не работает: закончились оплаченные кредиты. "
+                          f"Что сделать: пополнить баланс в {where}. "
+                          "Пока не пополнено — аудит в чётные дни не проводится.")
+    if any(low.startswith(f"http {m}") or f"http {m}" in low for m in AUTH_MARKERS):
+        return L.ACTION, (f"🔴 Аудитор {name} не работает: ключ API отклонён. "
+                          f"Что сделать: проверить секрет {secret} (GEMINI_API_KEY/OPENAI_API_KEY).")
+    first = (str(err).strip().splitlines() or ["(пустая ошибка)"])[0][:300]
+    return L.ALARM, f"Аудитор {name} недоступен: {first}"
+
+def notify_unavailable(provider, err, day, already=False):
+    """Громко сообщает оператору, что рецензент недоступен. already=True (в этот день уже
+    сообщали) -> молчим: не чаще раза в сутки. -> True если отправлено."""
+    if already:
+        return False
+    level, text = classify_unavailable(provider, err)
+    return L.notify(_scrub_secrets(f"{text} (аудит {day})"), level)
+
+def _already_reported(path):
+    """Файл аудита этого дня уже фиксирует недоступность -> второй слот не дублирует уведомление."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return "REVIEW_UNAVAILABLE" in f.read()
+    except OSError:
+        return False
+
 def main():
     if G.skip_if_published("daily-audit"):
         return
@@ -78,6 +129,8 @@ def main():
         r1 = L.call(provider, p1, system=L.AUDITOR_PERSONA)
     except L.Unavailable as e:
         md = (f"# DAILY AUDIT {today}\n\nREVIEW_UNAVAILABLE ({provider}): {e}\n")
+        notify_unavailable(provider, e, today,
+                           already=_already_reported(f"journal/audits/DAILY_AUDIT_{today}.md"))
         write_commit(today, md, red=False, unavailable=True)
         return
 
