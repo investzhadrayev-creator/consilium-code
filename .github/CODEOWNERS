@@ -1,6 +1,14 @@
 # Файлы правил: изменения требуют одобрения оператора (ruleset: require code owner review)
 /.github/           @investzhadrayev-creator
-/tools/             @investzhadrayev-creator
+/tools/validate_artifacts.py @investzhadrayev-creator
+/tools/autocommit.py @investzhadrayev-creator
+/tools/mail_bridge.py @investzhadrayev-creator
+/tools/schedule_guard.py @investzhadrayev-creator
+/tools/llm_clients.py @investzhadrayev-creator
+/tools/daily_audit.py @investzhadrayev-creator
+/tools/monthly_audit.py @investzhadrayev-creator
+/tools/audit_facts.py @investzhadrayev-creator
+/tools/calibrate_auditor.py @investzhadrayev-creator
 /CODEOWNERS         @investzhadrayev-creator
 /CLAUDE.md          @investzhadrayev-creator
 /mailbox/DECISION_* @investzhadrayev-creator

@@ -327,7 +327,7 @@ class TestBridgeLevels(Base):
 
     def test_refused_merge_of_a_protected_pr_asks_the_operator(self):
         got = self.recorder()
-        self.patch(B, "sh", lambda *a, **k: "CLAUDE.md\n" if "--jq" in a else "")
+        self.patch(B, "sh", lambda *a, **k: '{"files":[{"path":"CLAUDE.md"}]}' if a[:3] == ("gh", "pr", "view") else "")
         self.patch(B, "repo_url", lambda: "https://github.com/o/r")
         with self.assertRaises(B.CommandFailed):
             B.do_merge("PR#5", "")
