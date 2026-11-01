@@ -4,6 +4,8 @@ on:
     - cron: '37 15 * * *'   # основной слот, 20:37 Астана
     - cron: '7 17 * * *'    # резерв: GitHub пропускает запуски под нагрузкой
   workflow_dispatch:
+  repository_dispatch:            # внешний будильник (cron-job.org): GitHub-cron ненадёжен, он остаётся резервом
+    types: [cron-daily-report]
 permissions:
   contents: write
   pull-requests: write
