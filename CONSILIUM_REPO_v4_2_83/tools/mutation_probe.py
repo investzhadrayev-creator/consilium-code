@@ -1557,6 +1557,13 @@ CASES = [
      '"DEBT_FOR_BUYBACKS": ("shares_chg_3y",)',
      'test_floor1_card.TestK13CoverageFlagsAndCard.test_f1_64_flags_depending_on_a_classed_field_are_undetermined_never_clear',
      'DEBT_FOR_BUYBACKS ignores its net-debt dependency'),
+    ('unav-01', '../tools/daily_audit.py', 'return L.ACTION, (f"🔴 Аудитор {name} не работает: закончились', 'return L.ALARM, (f"🔴 Аудитор {name} не работает: закончились', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_402_is_action_with_top_up_instructions', '402/credits is an ACTION with top-up text'),
+    ('unav-02', '../tools/daily_audit.py', 'ключ API отклонён', 'ключ отвергнут', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_401_is_action_about_the_key', '401 tells the operator to check the key'),
+    ('unav-03', '../tools/daily_audit.py', 'return L.ALARM, f"Аудитор {name} недоступен: {first}"', 'return L.INFO, f"Аудитор {name} недоступен: {first}"', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_timeout_is_alarm_with_first_error_line', 'any other failure is a loud ALARM naming the error'),
+    ('unav-04', '../tools/daily_audit.py', '    text = re.sub(r"([?&]key=)', '    return text\n    text = re.sub(r"([?&]key=)', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_key_in_url_is_scrubbed_even_when_not_in_env', 'a key in the error body is scrubbed from Telegram text'),
+    ('unav-05', '../tools/daily_audit.py', '    if already:\n        return False', '    if False:\n        return False', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_second_slot_of_the_same_day_does_not_duplicate', 'the second slot of a day does not repeat the notice'),
+    ('unav-06', '../tools/daily_audit.py', '        notify_unavailable(provider, e, today,', '        (lambda *a, **k: None)(provider, e, today,', 'test_auditor_unavailable.TestDailyAuditUnavailable.test_402_is_action_with_top_up_instructions', 'daily_audit actually calls the unavailable notice'),
+    ('unav-07', '../tools/monthly_audit.py', '            D.notify_unavailable(provider, e, ym', '            (lambda *a, **k: None)(provider, e, ym', 'test_auditor_unavailable.TestMonthlyAuditUnavailable.test_each_unavailable_provider_is_reported', 'monthly_audit reports every unavailable provider'),
 ]
 
 
