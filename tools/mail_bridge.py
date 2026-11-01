@@ -13,7 +13,8 @@ Message-ID (он пишется в строку журнала; для стар�
 
 Команды (Subject):
   [CONSILIUM-TASK] <название>        → тело письма становится GitHub Issue для claude[bot]
-  [CONSILIUM-MERGE] PR#<N>           → merge PR N; ОТКАЗ, если PR трогает защищённые пути
+  [CONSILIUM-MERGE] PR#<N>           → merge PR N; ОТКАЗ при путях оператора и при невыполнении условий
+                                        автопилота КОД (merge_refusal)
   [CONSILIUM-FILE] <путь>            → тело (внутри ``` ```) коммитится файлом;
                                         DECISION_/PREREG_/MANDATE_ → только ветка+PR (замок оператора)
   [CONSILIUM-NOTIFY] <заголовок>     → лог, затем тело уходит оператору в Telegram
@@ -170,26 +171,97 @@ def do_task(title, body):
     if out.returncode != 0:
         raise CommandFailed(f"TASK: issue не создан: {out.stderr.strip()[:300]}")
 
-def do_merge(subject, body):
+# Контрольная плоскость оператора (DECISION_2026-11-01_KOD_AUTOPILOT, п. 1а): РОВНО эти пути для MERGE.
+# Запись на «/» или «_» — префикс (каталог / семейство файлов), остальное — точное имя файла.
+MERGE_PROTECTED = (".github/", "CODEOWNERS", "CLAUDE.md",
+                   "mailbox/DECISION_", "mailbox/PREREG_", "mailbox/MANDATE_",
+                   "tools/validate_artifacts.py", "tools/autocommit.py", "tools/mail_bridge.py",
+                   "tools/schedule_guard.py", "tools/llm_clients.py", "tools/daily_audit.py",
+                   "tools/monthly_audit.py", "tools/audit_facts.py", "tools/calibrate_auditor.py")
+# Заморозка перед субботней публикацией (п. 1в): пятница 00:00 UTC .. воскресенье 08:00 UTC.
+FREEZE_PATHS = ("tools/floor1_card.py", "tools/panel_axes.py", "config/")
+TESTS_CHECK = "suite"        # имя job в .github/workflows/tests.yml (workflow «suite» = тесты)
+BOT_LOGINS = ("claude[bot]", "claude", "app/claude")
+TYPE_CODE_RE = re.compile(r"^\s*[-*]?\s*Тип:\s*КОД\b", re.M)
+TYPE_LAW_RE = re.compile(r"^\s*[-*]?\s*Тип:\s*ЗАКОН\b", re.M)
+
+def _is_protected(path, protected):
+    return any(path.startswith(p) if p.endswith(("/", "_")) else path == p for p in protected)
+
+def in_freeze(now):
+    """now — aware datetime. Пт 00:00 UTC (вкл.) .. вс 08:00 UTC (искл.)."""
+    now = now.astimezone(dt.timezone.utc)
+    wd = now.weekday()
+    return wd in (4, 5) or (wd == 6 and now.hour < 8)
+
+def _refuse_merge(n, reason):
+    sh("gh", "pr", "comment", n, "--body", f"Мост отказал в merge: {reason}", check=False)
+    L.notify(f"Мост отказал в merge PR #{n}: {reason[:200]}. "
+             f"{repo_url()}/pull/{n}", L.ACTION)
+    raise CommandFailed(f"MERGE REFUSED pr#{n}: {reason}")
+
+def merge_refusal(pr, checks, now):
+    """Чистая проверка условий (i)–(v) и путей. -> текст причины отказа либо None (можно сливать).
+    Неизвестное (нет поля, нет check-runs, mergeable=UNKNOWN) — отказ, не «наверное можно»."""
+    files = [f.get("path", "") for f in (pr.get("files") or [])]
+    if not files:
+        return "список файлов PR пуст или не получен"
+    bad = [f for f in files if _is_protected(f, MERGE_PROTECTED)]
+    if bad:
+        return f"PR трогает защищённые пути ({', '.join(bad[:5])}). Требуется одобрение оператора в GitHub."
+    au = pr.get("author") or {}
+    if not (au.get("login") == "claude[bot]" or (au.get("login") in BOT_LOGINS and au.get("is_bot") is True)):
+        return f"автор PR — {au.get('login')!r}, не claude[bot]"
+    body = pr.get("body") or ""
+    if TYPE_LAW_RE.search(body):
+        return "в теле PR «Тип: ЗАКОН» — одобряет оператор"
+    if not TYPE_CODE_RE.search(body):
+        return "в теле PR нет строки «Тип: КОД»"
+    runs = (checks or {}).get("check_runs") or []
+    if not runs:
+        return "тесты не запускались (у головного коммита нет check-runs)"
+    if (checks or {}).get("total_count", len(runs)) > len(runs):
+        return "список check-runs неполон — статус проверок неизвестен"
+    if not any(r.get("name") == TESTS_CHECK for r in runs):
+        return "тесты не запускались (среди check-runs нет workflow tests)"
+    notok = [f"{r.get('name')}={r.get('status')}/{r.get('conclusion')}" for r in runs
+             if not (r.get("status") == "completed" and r.get("conclusion") == "success")]
+    if notok:
+        return f"проверки не завершены или не успешны ({', '.join(notok[:5])})"
+    if pr.get("mergeable") != "MERGEABLE":
+        return f"PR не готов к слиянию без конфликтов (mergeable={pr.get('mergeable')})"
+    if in_freeze(now):
+        frozen = [f for f in files if _is_protected(f, FREEZE_PATHS)]
+        if frozen:
+            return (f"заморозка перед субботней публикацией (пт 00:00 — вс 08:00 UTC): "
+                    f"{', '.join(frozen[:5])}")
+    return None
+
+def do_merge(subject, body, now=None):
     m = re.search(r"PR#?(\d+)", subject)
     if not m:
         raise CommandFailed("MERGE: номер PR не найден в теме")
     n = m.group(1)
-    files = sh("gh", "pr", "view", n, "--json", "files",
-               "--jq", ".files[].path").split()
-    bad = [f for f in files if any(f.startswith(p) or f == p for p in PROTECTED)]
-    if bad:
-        sh("gh", "pr", "comment", n, "--body",
-           "Мост отказал в merge: PR трогает защищённые пути "
-           f"({', '.join(bad[:5])}). Требуется одобрение оператора в GitHub.", check=False)
-        L.notify(f"Мост отказал в merge PR #{n}: защищённые пути ({', '.join(bad[:3])}). "
-                 f"{repo_url()}/pull/{n}", L.ACTION)
-        raise CommandFailed(f"MERGE REFUSED pr#{n}: protected paths {bad}")
-    r = subprocess.run(["gh", "pr", "merge", n, "--squash", "--delete-branch"],
+    import json
+    pr = json.loads(sh("gh", "pr", "view", n, "--json",
+                       "files,author,body,title,mergeable,headRefOid") or "{}")
+    sha = pr.get("headRefOid") or ""
+    checks = {}
+    if sha:
+        checks = json.loads(sh("gh", "api", f"repos/{{owner}}/{{repo}}/commits/{sha}/check-runs?per_page=100") or "{}")
+    why = merge_refusal(pr, checks, now or dt.datetime.now(dt.timezone.utc))
+    if why:
+        _refuse_merge(n, why)
+    title = pr.get("title") or f"PR #{n}"
+    r = subprocess.run(["gh", "pr", "merge", n, "--squash", "--delete-branch",
+                        "--match-head-commit", sha,
+                        "--subject", f"[CONSILIUM-MERGE] {title} (#{n})",
+                        "--body", "Слит мостом без оператора (DECISION_2026-11-01_KOD_AUTOPILOT)."],
                        capture_output=True, text=True)
     print(r.stdout)
     if r.returncode != 0:
         raise CommandFailed(f"MERGE pr#{n} не выполнен: {r.stderr.strip()[:300]}")
+    L.notify(f"слит PR #{n}: {title}", L.INFO)
 
 def operator_pr_body(content):
     """Тело PR моста начинается с блока «## ДЛЯ ОПЕРАТОРА» (CLAUDE.md, issue #92): блок берётся из

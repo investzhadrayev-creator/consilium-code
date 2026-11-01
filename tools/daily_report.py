@@ -245,6 +245,7 @@ SUBJ_AUDIT = re.compile(r"^daily audit (\d{4}-\d{2}-\d{2})( \[RED\])?")
 SUBJ_BRIDGE = re.compile(r"^bridge: log architect command")
 COMMIT_RE = re.compile(r"^- (.*) \(([0-9a-f]+), (.*)\)$")
 PR_SUFFIX = re.compile(r"\s*\(#\d+\)$")
+SUBJ_AUTOMERGE = re.compile(r"^\[CONSILIUM-MERGE\]\s+(.*)$")  # тема squash-коммита, который делает мост
 
 def panel_event(d, root="."):
     try:
@@ -302,6 +303,8 @@ def day_events(commits):
             ev.append(f"- {audit_event(a.group(1), bool(a.group(2)))}")
         elif SUBJ_BRIDGE.match(subj):
             ev.append(f"- Архитектор поставил задачу боту: {bridge_title(sha)}")
+        elif (am := SUBJ_AUTOMERGE.match(subj)):
+            ev.append(f"- Слит мостом без оператора: {PR_SUFFIX.sub('', am.group(1))}")
         elif PR_SUFFIX.search(subj) and any(b in author.lower() for b in BOT_NAMES):
             ev.append(f"- Слита работа бота: {PR_SUFFIX.sub('', subj)}")
         else:
