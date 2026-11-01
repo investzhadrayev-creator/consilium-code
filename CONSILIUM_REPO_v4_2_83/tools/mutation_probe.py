@@ -1557,6 +1557,18 @@ CASES = [
      '"DEBT_FOR_BUYBACKS": ("shares_chg_3y",)',
      'test_floor1_card.TestK13CoverageFlagsAndCard.test_f1_64_flags_depending_on_a_classed_field_are_undetermined_never_clear',
      'DEBT_FOR_BUYBACKS ignores its net-debt dependency'),
+    ('hum-b-01', '../tools/daily_report.py', 'B_MIN = 95.0', 'B_MIN = 90.0', 'test_daily_human.TestStreak.test_sources_coverage_threshold_is_95_and_unparsable_card_is_unknown', 'week counts only with coverage (Б) >= 95.0'),
+    ('hum-dispatch-01', '../tools/daily_report.py', 'if any(r["event"] == "workflow_dispatch" for r in win):', 'if False:', 'test_daily_human.TestStreak.test_workflow_dispatch_in_the_window_disqualifies_even_with_a_green_schedule_run', 'manual panel run in the window disqualifies the week'),
+    ('hum-pending-01', '../tools/daily_report.py', 'if now < dt.datetime.combine(s, dt.time(0, 0), dt.timezone.utc) + CLOSE:', 'if False:', 'test_daily_human.TestStreak.test_saturday_before_sunday_0800_is_pending_not_a_miss_and_not_counted', 'an open Saturday is pending, not a miss'),
+    ('hum-unknown-01', '../tools/daily_report.py', '        if ok is None:\n            return "UNKNOWN", why', '        if ok is None:\n            continue', 'test_daily_human.TestStreak.test_undeterminable_is_named_and_not_counted', 'an undeterminable condition is not a pass'),
+    ('hum-valid-01', '../tools/daily_report.py', 'if "failure" in states:', 'if False:', 'test_daily_human.TestStreak.test_validator_step_red_wins_over_green_and_missing_is_unknown', 'a red validator step makes the week not counted'),
+    ('hum-size-01', '../tools/daily_report.py', "round(float(row['size_multiplier']) * 100)", "round(float(row['size_multiplier']) * 10)", 'test_daily_human.TestEventsAndVerdict.test_panel_event_numbers_come_from_panel_log_and_card', "position size in the day's line comes from PANEL_LOG x100"),
+    ('hum-regime-01', '../tools/daily_report.py', 'elif row.get("regime") in REGIMES:', 'elif True:', 'test_daily_human.TestEventsAndVerdict.test_panel_event_unknown_regime_and_missing_files_are_named_refusals', 'unknown regime is a named refusal, not a default'),
+    ('hum-level-01', '../tools/daily_report.py', 'return f"🔴 Нужно твоё действие: PR, ждущих тебя — {len(items)}", L.ACTION', 'return f"🔴 Нужно твоё действие: PR, ждущих тебя — {len(items)}", L.INFO', 'test_daily_human.TestEventsAndVerdict.test_verdict_and_level', 'an operator PR makes the day ACTION'),
+    ('hum-subject-01', '../tools/daily_report.py', 'L.send_mail(f"Консилиум {today}: {verdict}", md)', 'L.send_mail(f"[CONSILIUM] Отчёт {today}", md)', 'test_daily_human.TestMainEndToEnd.test_quiet_day_layout_subject_level_and_technical_part_below_the_line', "mail subject carries the day's verdict"),
+    ('hum-tech-01', '../tools/daily_report.py', '    md = top + tech\n', '    md = top\n', 'test_daily_human.TestMainEndToEnd.test_quiet_day_layout_subject_level_and_technical_part_below_the_line', 'technical sections survive below the line'),
+    ('hum-manual-01', '../tools/daily_report.py', 'and (r.get("actor") or "").lower() not in OP.BOT_LOGINS]', 'and True]', 'test_daily_human.TestEventsAndVerdict.test_manual_runs_count_only_non_bot_dispatches_within_7_days', 'bot dispatches are not operator manual runs'),
+    ('hum-prlist-01', '../tools/daily_report.py', 'if prs is None and not remind_err:', 'if False:', 'test_daily_human.TestMainEndToEnd.test_unavailable_pr_list_is_not_nothing_needed', "unavailable PR list is not 'nothing needed'"),
 ]
 
 

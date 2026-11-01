@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 import autocommit        # noqa: E402
 import daily_audit as D  # noqa: E402
 import daily_report as R  # noqa: E402
+R.REAL_manual_runs_line = R.manual_runs_line
+R.manual_runs_line = lambda now: '- (test: gh unavailable by design)'  # #144: no real gh in tests
 import llm_clients as L  # noqa: E402
 import monthly_audit as M  # noqa: E402
 import panel_axes as P   # noqa: E402
@@ -593,8 +595,8 @@ class TestWatchdog(Base):
             md = f.read()
         self.assertIn("## Пропущенные запуски", md)
         self.assertIn("daily-audit", md)
-        self.assertRegex(self.sent[-1], r"проблем — см\. письмо")
-        self.assertNotIn("всё зелёно", self.sent[-1])
+        self.assertIn("🟠 Тревога", self.sent[-1])
+        self.assertNotIn("По плану", self.sent[-1])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -799,7 +801,7 @@ class TestBridgeAgeWatchdog(Base):
         self.assertIn("mail-bridge", md)
         self.assertIn("MISSING", md)
         self.assertEqual(len(self.msgs()), 1, self.sent)
-        self.assertRegex(self.sent[-1], r"проблем — см\. письмо")
+        self.assertIn("🟠 Тревога", self.sent[-1])
 
 
 if __name__ == "__main__":
