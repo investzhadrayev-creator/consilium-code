@@ -228,14 +228,34 @@ def merge_refusal(pr, checks, now):
              if not (r.get("status") == "completed" and r.get("conclusion") == "success")]
     if notok:
         return f"проверки не завершены или не успешны ({', '.join(notok[:5])})"
-    if pr.get("mergeable") != "MERGEABLE":
-        return f"PR не готов к слиянию без конфликтов (mergeable={pr.get('mergeable')})"
+    # pr["mergeable"] — REST-значение: True / False / None (GitHub ещё не посчитал). Не GraphQL.
+    if pr.get("mergeable") is False:
+        return "конфликты: PR не сливается без конфликтов (REST mergeable=false)"
+    if pr.get("mergeable") is not True:
+        return "mergeable не вычислен GitHub (REST mergeable=null после повторов)"
     if in_freeze(now):
         frozen = [f for f in files if _is_protected(f, FREEZE_PATHS)]
         if frozen:
             return (f"заморозка перед субботней публикацией (пт 00:00 — вс 08:00 UTC): "
                     f"{', '.join(frozen[:5])}")
     return None
+
+MERGEABLE_RETRIES = 4     # повторов после первого запроса, если REST отдал null
+MERGEABLE_PAUSE = 5       # секунд между повторами (сам запрос запускает расчёт на стороне GitHub)
+
+def rest_mergeable(n):
+    """Признак конфликтов из REST (gh api pulls/N -> mergeable: true/false/null), не из GraphQL:
+    `gh pr view --json mergeable` из Actions стабильно отдаёт UNKNOWN. null -> до MERGEABLE_RETRIES
+    повторов с паузой; после них возвращаем None (именованный отказ), не True."""
+    import json
+    val = None
+    for attempt in range(MERGEABLE_RETRIES + 1):
+        if attempt:
+            time.sleep(MERGEABLE_PAUSE)
+        val = json.loads(sh("gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{n}") or "{}").get("mergeable")
+        if val is not None:
+            break
+    return val   # не-bool (мусор) отсекает merge_refusal: is not True -> отказ
 
 def do_merge(subject, body, now=None):
     m = re.search(r"PR#?(\d+)", subject)
@@ -244,7 +264,8 @@ def do_merge(subject, body, now=None):
     n = m.group(1)
     import json
     pr = json.loads(sh("gh", "pr", "view", n, "--json",
-                       "files,author,body,title,mergeable,headRefOid") or "{}")
+                       "files,author,body,title,headRefOid") or "{}")
+    pr["mergeable"] = rest_mergeable(n)
     sha = pr.get("headRefOid") or ""
     checks = {}
     if sha:
