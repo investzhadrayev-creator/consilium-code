@@ -32,3 +32,5 @@
 2026-11-01T15:11:19Z | FILE | [CONSILIUM-FILE] mailbox/PREREG_2026-11-01_ROUND9_RISK_ENGINE_v2.md | body_sha=f47092907cdd4185 | msgid=<CAPaEdTLq=qFATHY_BxXHoPq7pA5opQCb7bS5k_vSCRq4PKrPHw@mail.gmail.com>
 2026-11-01T15:11:30Z | TASK | [CONSILIUM-TASK] Закрыть без слияния PR черновика PREREG рискового движка (заменён v2) | body_sha=4ca3caf5a6ff88d5 | msgid=<CAPaEdT+Zi-880pcisf8Lu6xP=bvfZrvvpBZtRdAYvp5i77oEzw@mail.gmail.com>
 2026-11-01T15:11:39Z | TASK | [CONSILIUM-TASK] Автопилот КОД: слияние мостом без оператора для обычного кода (решение оператора 2026-11-01) | body_sha=57460d3f8edc7b7d | msgid=<CAPaEdTLfUycF8TdX3mOhCSHR7i0zth=yNczh8AyhEW9m0gpOng@mail.gmail.com>
+2026-11-01T15:11:47Z | TASK | [CONSILIUM-TASK] СРОЧНО: main красный (suite) после #148 — 5 мутаций NOT VERIFIED; плюс уборка node_modules и __pycache__ | body_sha=d5fdec77c8ef3ad9 | msgid=<CAPaEdTJk1ztyXvSjEgc7ezeon3-_=B9u=UeoCVBasA0mpjCLMw@mail.gmail.com>
+2026-11-01T15:21:45Z | FILE | [CONSILIUM-FILE] mailbox/PREREG_2026-11-01_K4_NFLX_CASH_DECAY.md | body_sha=0e664b00c1ff5f4a | msgid=<CAPaEdTJKEd+8jmKXZdcr0=m93q0qGGQMiej7HMg+AZpYN2nobw@mail.gmail.com>
