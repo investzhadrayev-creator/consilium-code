@@ -302,6 +302,10 @@ class TestOperatorReminder(Base):
         with contextlib.redirect_stdout(io.StringIO()):
             R.main()
         self.assertFalse(any("всё зелёно" in t for _, t in got), got)
+        # the old line is gone for good, so the check above alone is vacuous: pin the property itself --
+        # an unreadable PR list must surface as an ALARM line, never as "nothing needed"
+        self.assertFalse(any("По плану" in t for _, t in got), got)
+        self.assertTrue(any(lv == L.ALARM and "Тревога" in t for lv, t in got), got)
 
 
 class TestBridgeLevels(Base):
