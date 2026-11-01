@@ -4,6 +4,8 @@ on:
     - cron: '7 16 * * *'    # основной слот, 21:07 Астана, после отчёта (15:37)
     - cron: '37 17 * * *'   # резерв, после резерва отчёта (17:07)
   workflow_dispatch:
+  repository_dispatch:            # внешний будильник (cron-job.org): GitHub-cron ненадёжен, он остаётся резервом
+    types: [cron-daily-audit]
 permissions:
   contents: write
   pull-requests: write
