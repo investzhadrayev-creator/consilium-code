@@ -64,6 +64,41 @@ def load_ivc():
     return m.ivc
 
 
+# ----------------------------------------------------------------------------- сырые факты чистого долга
+
+def debt_raw(facts, ef, nd_field):
+    """Сырые факты, из которых карточка собрала net_debt_latest: каждое слагаемое долга и cash с тегом, accession,
+    концом периода и значением; плюс остальные теги цепочек долга, у которых на ТОМ ЖЕ конце периода есть значение
+    (показаны, не используются: чтобы расхождение тегов было видно читателю, а не угадывалось). Ничего не выбирается
+    заново: отбор слагаемых -- логика net_debt_series карточки (повторена по тем же цепочкам, затем сверена с числом
+    карточки; не сошлось -- отказ RAW_MISMATCH, а не подгонка).
+    -> dict | отказ."""
+    if is_ref(nd_field):
+        return nd_field
+    if facts is None:
+        return refusal("NOT_IN_SOURCE", "нет фактов SEC для разбора слагаемых чистого долга")
+    series, ref = fc.net_debt_series(facts, ef)
+    if ref:
+        return ref
+    end = series[-1]["end"]
+    full, nonc, cur, cm = (fc._by_end(facts, ef, c) for c in (fc.DEBT_FULL_CHAIN, fc.DEBT_NONC_CHAIN, fc.DEBT_CUR_CHAIN, fc.CASH_CHAIN))
+    parts = [full[end]] if end in full else [nonc[end], cur[end]]
+    cash = cm[end]
+    total = sum(r["val"] for r in parts) - cash["val"]
+    if total != nd_field["value"]:
+        return refusal("RAW_MISMATCH", "слагаемые на %s дают %s, а карточка — %s: сырые факты не показаны" % (end, total, nd_field["value"]))
+    used = {r["tag"] for r in parts} | {cash["tag"]}
+    unused = []
+    for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_CUR_CHAIN + fc.CASH_CHAIN:
+        if tag in used:
+            continue
+        rows, _ = ef._annual_instant_series(facts, [tag])
+        for r in rows:
+            if r["end"] == end:
+                unused.append(r)
+    return {"end": end, "debt": parts, "cash": cash, "total": total, "unused": unused}
+
+
 # ----------------------------------------------------------------------------- чистая арифметика
 
 def _annual(ratio, years):
@@ -236,6 +271,7 @@ def build(ticker, as_of, source, fetch, started=None):
         D["raw"] = {k: D["sec_error"] for k, _ in SEC_FIELDS}
         D["rev_series"] = []
     D["nd"] = D["card"]["fields"]["net_debt_latest"]
+    D["nd_raw"] = debt_raw(facts, source.ef, D["nd"]) if sec_ok else D["sec_error"]
     D["guard"] = _guard(source, ticker, as_of)
     D["seconds"] = round(time.monotonic() - t0, 1)
     D["input_hash"] = input_hash(D, ticker, as_of)
@@ -387,6 +423,28 @@ def sec_b(D):
             L.append("| %s | %s | %s | %s | %s |" % (name, f["value"], f["unit"], f["basis"], "; ".join(f["prov"]) or "—"))
         else:
             L.append("| %s | — | — | %s | — |" % (name, ref_text(f)))
+    L += sec_b_debt(D)
+    return L
+
+
+def sec_b_debt(D):
+    """Сырые факты net_debt_latest: слагаемые долга, cash, формула; прочие теги долга на той же дате -- справочно."""
+    L = ["", "**Чистый долг — сырые факты** (поле net_debt_latest)", ""]
+    r = D.get("nd_raw")
+    if is_ref(r):
+        return L + ["- " + ref_text(r)]
+    L += ["| Роль | Тег | Accession | Конец периода | Значение, USD |", "|---|---|---|---|---|"]
+    for p in r["debt"]:
+        L.append("| долг | %s | %s | %s | %s |" % (p["tag"], p.get("accn"), p["end"], format(round(p["val"]), ",")))
+    c = r["cash"]
+    L.append("| cash | %s | %s | %s | %s |" % (c["tag"], c.get("accn"), c["end"], format(round(c["val"]), ",")))
+    L += ["", "Формула: net_debt = %s − cash = %s − %s = %s USD" % (
+        " + ".join(format(round(p["val"]), ",") for p in r["debt"]), format(round(sum(p["val"] for p in r["debt"])), ","),
+        format(round(c["val"]), ","), format(round(r["total"]), ","))]
+    if r["unused"]:
+        L += ["", "Другие теги цепочек долга/cash со значением на %s (в расчёте НЕ использованы; показаны для сверки читателем):" % r["end"]]
+        for p in r["unused"]:
+            L.append("- %s = %s USD (accession %s)" % (p["tag"], format(round(p["val"]), ","), p.get("accn")))
     return L
 
 
