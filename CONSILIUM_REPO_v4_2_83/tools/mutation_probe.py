@@ -1657,6 +1657,25 @@ CASES = [
     ('ex-09', '../tools/exam_nflx.py', 'return sum(1 for r in rows if r["verdict"] == cd.RED), len(rows)', 'return sum(1 for r in rows if r["verdict"] == cd.RED), len(rows) - sum(1 for r in rows if r["verdict"] == cd.UNDEFINED)', 'test_cash_decay.TestExam.test_cd_79_false_red_share_numerator_is_red_count_denominator_is_all_controls', 'undefined snapshots stay in the denominator'),
     ('ex-10', '../tools/exam_nflx.py', '    source.as_of = as_of          #', '    pass          #', 'test_cash_decay.TestExam.test_cd_67_each_snapshot_is_read_at_its_own_as_of', 'each snapshot is read at its own as_of'),
     ('ex-11', '../tools/exam_nflx.py', 'res = cd.evaluate(facts, as_of)', 'res = cd.evaluate(facts, "9999-12-31")', 'test_cash_decay.TestExam.test_cd_80_snapshot_does_not_use_facts_filed_after_its_own_as_of', 'a snapshot evaluates at its own as_of (filed > as_of excluded)'),
+    # ---- K6 part A: dossier generator (tools/dossier.py) ----
+    ('dos-01', '../tools/dossier.py', 'eq_t = mult * rev0 * (1 + g) ** years - net_debt', 'eq_t = mult * rev0 * (1 + g) ** years + net_debt', 'test_dossier.TestArithmetic.test_dos_01_ev_s_grid_hand_examples', 'net debt is subtracted from exit EV'),
+    ('dos-02', '../tools/dossier.py', '    if eq_t <= 0:', '    if False:', 'test_dossier.TestArithmetic.test_dos_02_negative_equity_is_a_refusal_not_minus_100', 'negative exit equity is a refusal'),
+    ('dos-03', '../tools/dossier.py', 'if ni0 is None or ni0 <= 0:', 'if ni0 is None:', 'test_dossier.TestArithmetic.test_dos_03_pe_grid_hand_and_nonpositive_ni', 'NI<=0 refuses the P/E grid'),
+    ('dos-04', '../tools/dossier.py', 'ev_t = price * shares * (1 + hurdle) ** years + net_debt', 'ev_t = price * shares * (1 + hurdle) ** years - net_debt', 'test_dossier.TestArithmetic.test_dos_04_required_growth_hand_and_roundtrip', 'required growth adds net debt to target EV'),
+    ('dos-05', '../tools/dossier.py', 'if i < 1 or pts[i - 1]["val"] <= 0:', 'if False:', 'test_dossier.TestArithmetic.test_dos_05_last_growths_by_fiscal_year', 'too few fiscal years -> no growth, not a wrapped index'),
+    ('dos-06', '../tools/dossier.py', '    if base is None or base <= 0:', '    if base is None:', 'test_dossier.TestReverseDCF.test_dos_12_nonpositive_base_is_refused_by_name', 'non-positive base is named refusal'),
+    ('dos-07', '../tools/dossier.py', '    if v_hi < tgt:', '    if False:', 'test_dossier.TestReverseDCF.test_dos_13_unreachable_growth_is_out_of_bounds_not_a_number', 'unreachable growth is OUT_OF_BOUNDS'),
+    ('dos-08', '../tools/dossier.py', 'd, p = fc._at_or_before(px, as_of)', 'd, p = fc._at_or_before(px, "9999-12-31")', 'test_dossier.TestPrices.test_dos_20_price_uses_only_closes_up_to_as_of', 'price never from after as_of'),
+    ('dos-09', '../tools/dossier.py', '    if (fc._d(as_of) - fc._d(d)).days > fc.PRICE_FRESH_DAYS:', '    if False:', 'test_dossier.TestPrices.test_dos_21_stale_price_is_a_refusal', 'stale price is a refusal'),
+    ('dos-10', '../tools/dossier.py', '"annual": _annual(1 + t[0], n)', '"annual": t[0]', 'test_dossier.TestPrices.test_dos_22_passive_return_is_annualised_and_windowed', 'passive return is annualised'),
+    ('dos-11', '../tools/dossier.py', 'd["fcf"] = None if ocf is None or cx is None else ocf - cx', 'd["fcf"] = None if cx is None else (ocf or 0) - cx', 'test_dossier.TestMissingIsNotZero.test_dos_31_missing_ocf_gives_no_fcf_and_no_ratio', 'missing OCF is not zero'),
+    ('dos-12', '../tools/dossier.py', 'None if d["fcf"] is None or not ni or ni <= 0 else d["fcf"] / ni', 'None if d["fcf"] is None or not ni else d["fcf"] / ni', 'test_dossier.TestMissingIsNotZero.test_dos_33_nonpositive_ni_refuses_pe_grid_and_fcf_ni', 'FCF/NI undefined for NI<=0'),
+    ('dos-13', '../tools/dossier.py', '    return cd.evaluate(facts, as_of)', '    return cd.evaluate(facts, "9999-12-31")', 'test_dossier.TestMissingIsNotZero.test_dos_34_guard_slices_by_as_of', 'guard sliced by as_of'),
+    ('dos-14', '../tools/dossier.py', '        thr = gr - 0.05', '        thr = gr', 'test_dossier.TestReports.test_dos_44_refute_block_changes_with_inputs', 'refute threshold is required growth minus 5pp'),
+    ('dos-15', '../tools/dossier.py', 'for fn in (sec_a, sec_b, sec_c, sec_g, sec_d, sec_e):', 'for fn in (sec_a, sec_b, sec_c, sec_g, sec_d):', 'test_dossier.TestReports.test_dos_40_all_six_sections_exist_even_when_everything_is_refused', 'all six sections are present'),
+    ('dos-16', '../tools/dossier.py', 'refusal("NON_GAAP_NOT_CHECKED"', 'refusal("NON_GAAP_OK"', 'test_dossier.TestReports.test_dos_42_non_gaap_is_named_not_checked', 'non-GAAP is named not-checked'),
+    ('dos-17', '../tools/dossier.py', '"nd": D["nd"], "spot": spot,', '"nd": D["nd"], "spot": None,', 'test_dossier.TestCli.test_dos_50_hash_is_stable_and_depends_on_inputs', 'input hash covers price'),
+    ('dos-18', '../tools/dossier.py', 'with open(path, "x", encoding="utf-8")', 'with open(path, "w", encoding="utf-8")', 'test_dossier.TestCli.test_dos_51_existing_dossier_is_not_overwritten', 'dossier files are append-only'),
 ]
 
 
