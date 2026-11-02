@@ -293,6 +293,39 @@ class TestBridgeMain(Patched):
         self.run_main()
         self.assertEqual(len(self.calls), 1, "same Message-ID executed twice")
 
+    def test_msgid_committed_to_origin_main_by_a_parallel_run_is_skipped(self):
+        # race 2026-11-01: our checkout (B.LOG) predates the other run's journal commit; origin/main has it
+        self.add(b"1", self.task_mail(msgid="<race@x>"))
+        self.patch(B, "origin_journal_text",
+                   lambda: "2026-11-01T18:00:31Z | TASK | [CONSILIUM-TASK] Сделай X | body_sha=0 | msgid=<race@x>\n")
+        code, out = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.calls, [], "command already journaled on origin/main was executed again")
+        self.assertIn("SKIP", out)
+
+    def test_origin_is_re_read_before_each_command_not_once_at_start(self):
+        self.add(b"1", self.task_mail(msgid="<m1@x>", subject="[CONSILIUM-TASK] Один"))
+        self.add(b"2", self.task_mail(msgid="<m2@x>", subject="[CONSILIUM-TASK] Два"))
+        reads = []
+        def origin():
+            reads.append(1)
+            # a parallel run journals m2 while we are busy with m1 (visible from the 2nd read on)
+            return ("2026-11-01T18:00:31Z | TASK | [CONSILIUM-TASK] Два | body_sha=0 | msgid=<m2@x>\n"
+                    if len(reads) >= 2 else "")
+        self.patch(B, "origin_journal_text", origin)
+        self.run_main()
+        self.assertGreaterEqual(len(reads), 2)
+        self.assertEqual([c[1] for c in self.calls], ["Один"])
+
+    def test_unreadable_origin_journal_is_a_named_failure_not_an_empty_journal(self):
+        self.add(b"1", self.task_mail())
+        def boom():
+            raise RuntimeError("fetch failed")
+        self.patch(B, "origin_journal_text", boom)
+        code, out = self.run_main()
+        self.assertEqual(self.calls, [], "executed without being able to check the journal")
+        self.assertEqual(code, 1)
+
     def test_parse_command_accepts_exactly_the_four_tags_at_the_start(self):
         for k in ("TASK", "MERGE", "FILE", "NOTIFY"):
             self.assertEqual(B.parse_command(f"[CONSILIUM-{k}] x")[0], k)
