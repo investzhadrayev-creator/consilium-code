@@ -315,6 +315,74 @@ def _v(D, k):
     return D["raw"][k]["val"]
 
 
+class TestDebtRaw(unittest.TestCase):
+    """Сырые факты чистого долга (К6 ч. B): слагаемые, а не только итог; расхождение тегов видно читателю."""
+    @staticmethod
+    def facts(rows):
+        """{тег: {год: значение}} -> companyfacts-подобный dict (годовые instant-факты 10-K)."""
+        return {"facts": {"us-gaap": {tag: {"units": {"USD": [
+            {"end": "%d-12-31" % y, "val": v, "accn": "0000000000-%02d-%06d" % ((y + 1) % 100, i), "fy": y, "fp": "FY",
+             "form": "10-K", "filed": "%d-02-10" % (y + 1)} for y, v in sorted(vals.items())]}} for i, (tag, vals) in enumerate(rows.items(), 1)}}}
+
+    def nd(self, facts):
+        series, ref = fc.net_debt_series(facts, EF)
+        self.assertIsNone(ref)
+        last = series[-1]
+        return fc.ok(last["val"], "USD", "тест", last["accn"], tags=last["tags"])
+
+    def test_dos_60_raw_parts_are_the_exact_terms_of_the_card_number(self):
+        f = self.facts({"LongTermDebt": {2018: 100, 2019: 700}, "CashAndCashEquivalentsAtCarryingValue": {2018: 30, 2019: 250}})
+        r = dos.debt_raw(f, EF, self.nd(f))
+        self.assertEqual([(p["tag"], p["val"], p["end"]) for p in r["debt"]], [("LongTermDebt", 700, "2019-12-31")])
+        self.assertEqual((r["cash"]["tag"], r["cash"]["val"]), ("CashAndCashEquivalentsAtCarryingValue", 250))
+        self.assertEqual(r["total"], 450)
+        self.assertEqual(sum(p["val"] for p in r["debt"]) - r["cash"]["val"], r["total"])
+
+    def test_dos_61_nonprimary_tag_on_same_date_is_shown_but_not_used(self):
+        # NFLX 2019: LongTermDebt = «итого обязательств по долгу» (с процентами), баланс -- LongTermDebtNoncurrent
+        f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
+                        "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
+        r = dos.debt_raw(f, EF, self.nd(f))
+        self.assertEqual(r["total"], 450)                        # число не подменено «правдоподобным» тегом
+        self.assertEqual([(p["tag"], p["val"]) for p in r["unused"]], [("LongTermDebtNoncurrent", 480)])
+
+    def test_dos_62_split_debt_shows_both_terms(self):
+        f = self.facts({"LongTermDebtNoncurrent": {2019: 500}, "LongTermDebtCurrent": {2019: 40},
+                        "CashAndCashEquivalentsAtCarryingValue": {2019: 100}})
+        r = dos.debt_raw(f, EF, self.nd(f))
+        self.assertEqual(sorted(p["val"] for p in r["debt"]), [40, 500])
+        self.assertEqual(r["total"], 440)
+
+    def test_dos_63_mismatch_with_card_is_a_refusal_not_a_fit(self):
+        f = self.facts({"LongTermDebt": {2019: 700}, "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
+        r = dos.debt_raw(f, EF, fc.ok(451, "USD", "тест", ["x"]))
+        self.assertTrue(dos.is_ref(r))
+        self.assertEqual(r["refused"], "RAW_MISMATCH")
+
+    def test_dos_64_refused_net_debt_gives_refusal_not_empty_table(self):
+        ref = fc.refusal("NOT_REPORTED", "нет тегов долга")
+        self.assertIs(dos.debt_raw(self.facts({}), EF, ref), ref)
+        self.assertEqual(dos.debt_raw(None, EF, fc.ok(1, "USD", "т", ["x"]))["refused"], "NOT_IN_SOURCE")
+
+    def test_dos_65_report_prints_terms_formula_and_accession(self):
+        f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
+                        "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
+        D = make(nd=None)
+        D["nd"] = self.nd(f)
+        D["nd_raw"] = dos.debt_raw(f, EF, D["nd"])
+        b = dos.render_machine(D).split("## (б)")[1].split("## (в)")[0]
+        sec = b.split("Чистый долг — сырые факты")[1]
+        self.assertIn("700 − cash = 700 − 250 = 450", sec)
+        self.assertEqual(len(ACCN_RE.findall(sec.split("Формула")[0])), 2)    # accession у долга и у cash
+        self.assertIn("LongTermDebtNoncurrent", sec)
+
+    def test_dos_66_report_names_refusal_when_raw_facts_unavailable(self):
+        D = make(nd=None)
+        D["nd_raw"] = fc.refusal("NOT_REPORTED", "нет тегов долга")
+        sec = dos.render_machine(D).split("Чистый долг — сырые факты")[1].split("## (в)")[0]
+        self.assertIn("ОТКАЗ NOT_REPORTED", sec)
+
+
 class TestCli(unittest.TestCase):
     def test_dos_50_hash_is_stable_and_depends_on_inputs(self):
         h1, h2 = make()["input_hash"], make()["input_hash"]

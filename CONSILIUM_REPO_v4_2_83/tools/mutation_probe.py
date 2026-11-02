@@ -1679,6 +1679,12 @@ CASES = [
     ('dos-16', '../tools/dossier.py', 'refusal("NON_GAAP_NOT_CHECKED"', 'refusal("NON_GAAP_OK"', 'test_dossier.TestReports.test_dos_42_non_gaap_is_named_not_checked', 'non-GAAP is named not-checked'),
     ('dos-17', '../tools/dossier.py', '"nd": D["nd"], "spot": spot,', '"nd": D["nd"], "spot": None,', 'test_dossier.TestCli.test_dos_50_hash_is_stable_and_depends_on_inputs', 'input hash covers price'),
     ('dos-18', '../tools/dossier.py', 'with open(path, "x", encoding="utf-8")', 'with open(path, "w", encoding="utf-8")', 'test_dossier.TestCli.test_dos_51_existing_dossier_is_not_overwritten', 'dossier files are append-only'),
+    # ---- K6 part B: raw net-debt facts in the dossier ----
+    ('dos-19', '../tools/dossier.py', '    if total != nd_field["value"]:', '    if False:', 'test_dossier.TestDebtRaw.test_dos_63_mismatch_with_card_is_a_refusal_not_a_fit', 'raw terms that do not sum to the card number are refused, not shown'),
+    ('dos-20', '../tools/dossier.py', 'else [nonc[end], cur[end]]', 'else [nonc[end]]', 'test_dossier.TestDebtRaw.test_dos_62_split_debt_shows_both_terms', 'split debt shows both terms'),
+    ('dos-21', '../tools/dossier.py', '        if tag in used:\n            continue', '        if False:\n            continue', 'test_dossier.TestDebtRaw.test_dos_61_nonprimary_tag_on_same_date_is_shown_but_not_used', 'other debt tags are listed only if not used in the number'),
+    ('dos-22', '../tools/dossier.py', '"Формула: net_debt = %s − cash', '"Формула: net_debt = %s + cash', 'test_dossier.TestDebtRaw.test_dos_65_report_prints_terms_formula_and_accession', 'report prints the debt minus cash formula'),
+    ('dos-23', '../tools/dossier.py', '    if is_ref(nd_field):\n        return nd_field', '    if False:\n        return nd_field', 'test_dossier.TestDebtRaw.test_dos_64_refused_net_debt_gives_refusal_not_empty_table', 'refused net debt gives refused raw facts'),
 ]
 
 
