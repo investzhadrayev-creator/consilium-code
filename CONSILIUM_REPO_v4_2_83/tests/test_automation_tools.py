@@ -173,8 +173,15 @@ class FakeIMAP:
     def login(self, *a):
         pass
 
+    refuse = ()          # boxes the server answers NO to
+    listing = []         # LIST response lines
+
     def select(self, box, readonly=False):
         FakeIMAP.selected.append((box, readonly))
+        return ("NO", [b"nope"]) if box in FakeIMAP.refuse else ("OK", [b"1"])
+
+    def list(self):
+        return "OK", FakeIMAP.listing
 
     def search(self, charset, crit):
         FakeIMAP.searches.append(crit)
@@ -200,6 +207,7 @@ class TestBridgeMain(Patched):
             f.write("# header\n")
         self.env(GMAIL_ADDRESS="op@example.com", GMAIL_APP_PASSWORD="x", MAIL_AUTH_TOKEN="TOK")
         FakeIMAP.mails, FakeIMAP.searches, FakeIMAP.stored, FakeIMAP.selected = {}, [], [], []
+        FakeIMAP.refuse, FakeIMAP.listing = (), []
         self.patch(B.imaplib, "IMAP4_SSL", FakeIMAP)
         self.patch(B, "sh", lambda *a, **k: "")
         self.patch(autocommit, "publish", lambda *a, **k: True)
@@ -237,6 +245,39 @@ class TestBridgeMain(Patched):
         self.assertNotIn("UNSEEN", FakeIMAP.searches[0], "must not depend on the unread flag")
         self.assertIn("SINCE", FakeIMAP.searches[0])
         self.assertIn("PEEK", FakeIMAP.fetched)
+
+    def test_all_mail_is_selected_so_a_mail_filtered_out_of_inbox_is_executed(self):
+        # FakeIMAP serves the same mails for any box; the property: the box actually read is All Mail
+        self.add(b"1", self.task_mail())
+        code, _ = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertEqual(FakeIMAP.selected, [('"[Gmail]/All Mail"', True)])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_localized_all_mail_found_by_all_attribute(self):
+        FakeIMAP.refuse = ('"[Gmail]/All Mail"',)
+        FakeIMAP.listing = [b'(\\HasNoChildren) "/" "INBOX"',
+                            b'(\\All \\HasNoChildren) "/" "[Gmail]/\xd0\x92\xd1\x81\xd0\xb5 \xd0\xbf\xd0\xbe\xd1\x87\xd1\x82\xd0\xb0"']
+        self.add(b"1", self.task_mail())
+        self.run_main()
+        self.assertEqual(FakeIMAP.selected[-1], ('"[Gmail]/Все почта"', True))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_select_refused_falls_back_to_inbox_with_warning(self):
+        FakeIMAP.refuse = ('"[Gmail]/All Mail"',)
+        self.add(b"1", self.task_mail())
+        code, out = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertEqual(FakeIMAP.selected[-1], ("INBOX", True))
+        self.assertIn("WARN", out)
+        self.assertIn("bridge: mailbox INBOX", out, "the folder actually read must be reported")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_nothing_selectable_is_a_named_failure_not_silent_empty(self):
+        FakeIMAP.refuse = ('"[Gmail]/All Mail"', "INBOX")
+        with self.assertRaises(B.CommandFailed):
+            with contextlib.redirect_stdout(io.StringIO()):
+                B.main()
 
     def test_already_read_message_is_still_executed(self):
         # a manually-read mail is indistinguishable server-side for our purposes: we never ask for \Unseen

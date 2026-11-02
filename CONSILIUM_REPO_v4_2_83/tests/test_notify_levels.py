@@ -349,7 +349,7 @@ class TestBridgeLevels(Base):
                 b"From: op@example.com\r\nSubject: [CONSILIUM-FILE] x.md\r\nMessage-ID: <z@x>\r\n\r\nno block\r\n"),
             "[CONSILIUM-FILE] x.md")])
         self.patch(B.imaplib, "IMAP4_SSL", lambda host: types.SimpleNamespace(
-            login=lambda *a: None, select=lambda *a, **k: None, logout=lambda: None))
+            login=lambda *a: None, select=lambda *a, **k: ("OK", [b"1"]), logout=lambda: None))
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
             B.main()
         self.assertIn(L.ALARM, [lv for lv, _ in got])

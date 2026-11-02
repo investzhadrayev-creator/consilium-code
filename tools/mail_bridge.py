@@ -348,6 +348,41 @@ def do_notify(title, body):
     if not L.notify(text, level):
         raise CommandFailed("NOTIFY: Telegram не принял сообщение (нет секретов или ошибка отправки)")
 
+ALL_MAIL = '"[Gmail]/All Mail"'
+
+def _select_ok(M, box):
+    """select readonly; True только при ответе OK (imaplib при отказе сервера возвращает 'NO', не бросает)."""
+    try:
+        typ, _ = M.select(box, readonly=True)
+    except imaplib.IMAP4.error:
+        return False
+    return typ == "OK"
+
+def open_mailbox(M):
+    """Команды могут быть убраны из INBOX фильтром оператора -> читаем «All Mail».
+    1) "[Gmail]/All Mail"; 2) папка с атрибутом \\All из LIST (другой язык интерфейса);
+    3) откат на INBOX с WARN. -> имя выбранной папки. Только readonly."""
+    if _select_ok(M, ALL_MAIL):
+        return ALL_MAIL
+    try:
+        typ, boxes = M.list()
+    except imaplib.IMAP4.error:
+        typ, boxes = "NO", []
+    for raw in (boxes or []) if typ == "OK" else []:
+        line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+        m = re.match(r'\((?P<attrs>[^)]*)\)\s+(?:"[^"]*"|NIL)\s+(?P<name>.+)$', line)
+        if m and "\\All" in m.group("attrs").split():
+            name = m.group("name").strip()
+            if not name.startswith('"'):
+                name = '"' + name + '"'
+            if _select_ok(M, name):
+                return name
+    print(f"WARN: не удалось выбрать {ALL_MAIL} и папку с атрибутом \\All; откат на INBOX "
+          "(команды, убранные фильтром из входящих, не будут видны)")
+    if not _select_ok(M, "INBOX"):
+        raise CommandFailed("IMAP: не удалось выбрать ни All Mail, ни INBOX")
+    return "INBOX"
+
 def recent_commands(M, days=WINDOW_DAYS):
     """Письма за N дней с тегом в теме. Флаг UNSEEN не используется; PEEK — флаги не меняются.
     IMAP SUBJECT — подстрока, поэтому точный отбор делается на клиенте (parse_command)."""
@@ -368,7 +403,8 @@ def main():
     sh("git", "config", "user.name", "consilium-bridge")
     sh("git", "config", "user.email", "actions@github.com")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
-    M.login(addr, pwd); M.select("INBOX", readonly=True)
+    M.login(addr, pwd); box = open_mailbox(M)
+    print(f"bridge: mailbox {box}")
     cands = recent_commands(M)
     M.logout()
     print(f"bridge: {len(cands)} command-subject message(s) in last {WINDOW_DAYS}d")
