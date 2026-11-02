@@ -65,8 +65,14 @@ def body_sha(raw, token=""):
         raw = raw.replace(f"AUTH: {token}", "")
     return hashlib.sha256(raw.strip().encode()).hexdigest()[:16]
 
+def one_line(s):
+    """Поле журнала -> одна физическая строка: \r, \n, табы и повторные пробелы -> один пробел.
+    Свёрнутая (RFC 2047/5322 folding) тема раньше ломала строку журнала надвое (issue #229)."""
+    return re.sub(r"\s+", " ", s or "").strip()
+
 def log_command(kind, subject, raw, msgid="", token=""):
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    subject, msgid = one_line(subject), one_line(msgid)
     entry = f"{ts} | {kind} | {subject} | body_sha={body_sha(raw, token)} | msgid={msgid or 'НЕТ'}"
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
@@ -76,6 +82,20 @@ def log_command(kind, subject, raw, msgid="", token=""):
         raise RuntimeError("лог команды не прошёл проверку — команда НЕ исполняется")
     print("logged:", entry)
 
+def log_result(kind, subject, msgid, result):
+    """Строка RESULT в журнал (append-only): исход команды, не являющийся ни успехом, ни ошибкой
+    (напр. SKIP). Не пишет body_sha -> в legacy-ключи дедупа не попадает; msgid тот же."""
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    entry = (f"{ts} | RESULT | {one_line(subject)} | {one_line(result)} | "
+             f"msgid={one_line(msgid) or 'НЕТ'}")
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+    import autocommit
+    if not autocommit.publish([LOG], f"bridge: result {kind}", author="consilium-bridge"):
+        print(f"WARN: RESULT не опубликован: {entry}")
+        return
+    print("logged:", entry)
+
 def _decode_chunk(s, c):
     try:
         return s.decode(c or "utf-8", errors="replace")
@@ -83,19 +103,19 @@ def _decode_chunk(s, c):
         return s.decode("utf-8", errors="replace")
 
 def decode_hdr(h):
-    return "".join(_decode_chunk(s, c) if isinstance(s, bytes) else s
-                   for s, c in email.header.decode_header(h or ""))
+    joined = "".join(_decode_chunk(s, c) if isinstance(s, bytes) else s
+                     for s, c in email.header.decode_header(h or ""))
+    return one_line(joined)   # unfold: свёрнутая тема -> одна строка (issue #229)
 
 def parse_journal(text):
     """Текст журнала -> (Message-ID'ы, (вид, тема, body_sha) для старых строк без Message-ID)."""
-    ids, legacy = set(), set()
+    # msgid ищем по ВСЕМУ тексту: «разбитые» старые записи (тема с переводом строки) тоже считаются
+    ids, legacy = set(re.findall(r"msgid=(<[^>]+>)", text or "")), set()
     for ln in (text or "").splitlines():
         parts = [p.strip() for p in ln.split(" | ")]
         if len(parts) < 4 or ln.startswith("#"):
             continue
         kv = dict(p.split("=", 1) for p in parts[3:] if "=" in p)
-        if kv.get("msgid") and kv["msgid"] != "НЕТ":
-            ids.add(kv["msgid"])
         if kv.get("body_sha"):
             legacy.add((parts[1], parts[2], kv["body_sha"]))
     return ids, legacy
@@ -332,7 +352,9 @@ def do_file(subject, body):
         raise CommandFailed(f"FILE: нет содержимого в ``` ``` или плохой путь (path={path!r})")
     protected = any(path.startswith(p) for p in PROTECTED)
     if os.path.exists(path) and path.startswith("mailbox/"):
-        raise CommandFailed(f"FILE REFUSED: {path} существует; mailbox неизменяем — новый файл с supersedes")
+        msg = f"SKIP: файл уже на main: {path} (mailbox неизменяем; изменение — новым файлом с supersedes)"
+        print(msg)
+        return msg
     if protected:
         br = f"architect/{int(time.time())}"
         sh("git", "checkout", "-b", br)
@@ -463,10 +485,12 @@ def main():
             failures.append(f"{kind} {subject}: лог не записан ({e})")
             continue
         try:
-            {"TASK": lambda: do_task(rest or "Задача архитектора", body),
-             "MERGE": lambda: do_merge(subject, body),
-             "FILE": lambda: do_file(subject, body),
-             "NOTIFY": lambda: do_notify(rest, body)}[kind]()
+            result = {"TASK": lambda: do_task(rest or "Задача архитектора", body),
+                      "MERGE": lambda: do_merge(subject, body),
+                      "FILE": lambda: do_file(subject, body),
+                      "NOTIFY": lambda: do_notify(rest, body)}[kind]()
+            if isinstance(result, str) and result.startswith("SKIP"):
+                log_result(kind, subject, msgid, result)
         except Exception as e:
             print(f"EXEC ERROR [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: {e}")

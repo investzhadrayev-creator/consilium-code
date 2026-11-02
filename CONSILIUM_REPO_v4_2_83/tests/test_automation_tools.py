@@ -372,6 +372,59 @@ class TestBridgeMain(Patched):
         self.assertEqual(code, 1, "a refused command must not leave a green job")
         self.assertTrue(any("не исполнено" in s for s in self.sent), self.sent)
 
+    FOLDED = ("[CONSILIUM-FILE]\r\n mailbox/DECISION_2026-11-02_ARCHITECT_DIRECT_ACCESS.md")
+
+    def test_folded_subject_gives_one_journal_line_and_dedups_by_msgid(self):
+        # issue #229: folded subject left a newline inside the journal entry -> msgid unfindable -> 13 executions
+        self.patch(B, "do_file", lambda s, b: self.calls.append(("FILE", s, b)))
+        self.add(b"1", self.task_mail(msgid="<fold@x>", subject=self.FOLDED, body="```\nx\n```"))
+        self.run_main()
+        with open(B.LOG, encoding="utf-8") as f:
+            lines = [l for l in f.read().splitlines() if "msgid=<fold@x>" in l]
+        self.assertEqual(len(lines), 1, "journal entry split across physical lines")
+        self.assertIn("[CONSILIUM-FILE] mailbox/DECISION_2026-11-02_ARCHITECT_DIRECT_ACCESS.md", lines[0])
+        self.assertEqual(self.calls[0][1], "[CONSILIUM-FILE] mailbox/DECISION_2026-11-02_ARCHITECT_DIRECT_ACCESS.md")
+        self.run_main()
+        self.assertEqual(len(self.calls), 1, "folded-subject command executed twice")
+
+    def test_corrupted_two_line_journal_record_still_marks_msgid_executed(self):
+        broken = ("2026-11-02T04:42:00Z | FILE | [CONSILIUM-FILE]\n"
+                  " mailbox/DECISION_X.md | body_sha=abc | msgid=<old@x>\n")
+        ids, _ = B.parse_journal(broken)
+        self.assertIn("<old@x>", ids)
+        with open(B.LOG, "a", encoding="utf-8") as f:
+            f.write(broken)
+        self.add(b"1", self.task_mail(msgid="<old@x>"))
+        self.run_main()
+        self.assertEqual(self.calls, [], "command with a msgid in a corrupted record was re-executed")
+
+    def test_log_command_never_writes_a_multiline_entry(self):
+        B.log_command("FILE", "a\r\n\tb\n  c", "raw", "<m\n1@x>")
+        with open(B.LOG, encoding="utf-8") as f:
+            last = f.read().splitlines()[-1]
+        self.assertIn("| a b c |", last)
+        self.assertIn("msgid=<m 1@x>", last)
+
+    def test_file_for_existing_mailbox_path_is_named_skip_with_result_line_not_exception(self):
+        self.patch(B, "do_file", B.do_file)
+        os.makedirs("mailbox")
+        with open("mailbox/REPORT_exists.md", "w", encoding="utf-8") as f:
+            f.write("old")
+        pub = []
+        self.patch(autocommit, "publish", lambda paths, msg, author="": pub.append(paths) or True)
+        self.add(b"1", self.task_mail(msgid="<ex@x>", subject="[CONSILIUM-FILE] mailbox/REPORT_exists.md",
+                                      body="```\nnew\n```"))
+        code, out = self.run_main()
+        self.assertEqual(code, 0, out)
+        self.assertFalse(any("не исполнено" in s for s in self.sent), self.sent)
+        with open("mailbox/REPORT_exists.md", encoding="utf-8") as f:
+            self.assertEqual(f.read(), "old", "append-only: existing file was overwritten")
+        with open(B.LOG, encoding="utf-8") as f:
+            res = [l for l in f.read().splitlines() if " | RESULT | " in l]
+        self.assertEqual(len(res), 1)
+        self.assertIn("SKIP", res[0])
+        self.assertIn("msgid=<ex@x>", res[0])
+
     def test_file_real_sample_end_to_end_writes_exact_content(self):
         pub = []
         self.patch(autocommit, "publish", lambda paths, msg, author="": pub.append(paths) or True)
