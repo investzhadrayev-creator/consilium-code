@@ -362,8 +362,113 @@ def _by_end(facts, ef, chain):
     return out
 
 
+# DECISION_2026-11-02_DEBT_CHAIN §1: долг собирается из балансовых частей ОДНОЙ подачи (accession) на одну дату.
+DEBT_NONC_TAG = "LongTermDebtNoncurrent"
+DEBT_CUR_FIRST = ["LongTermDebtCurrent", "DebtCurrent"]          # текущая часть: первый размеченный из двух
+DEBT_CUR_SUM = ["ShortTermBorrowings", "CommercialPaper"]        # иначе сумма этих двух (каждая -- если размечена)
+DEBT_CUR_TAGS = DEBT_CUR_FIRST + DEBT_CUR_SUM
+DEBT_CROSS_TAG = "LongTermDebt"
+DEBT_INCONSISTENT_PCT = 0.10
+DEBT_FLAG = "DEBT_TAG_INCONSISTENT"
+FALLBACK_BASIS = "полный тег, балансовые части не размечены"
+ZERO_CUR_BASIS = "текущая часть не размечена ни под одним тегом в этой подаче = 0 (DECISION_2026-11-02 §1)"
+
+
+def _rows_by_end_accn(facts, ef, tags):
+    """{end: {accn: {tag: row}}}: все 10-K факты тегов, раздельно по подачам (accession). Нужна одна подача на дату."""
+    out = {}
+    for tag in tags:
+        units = ef._concept(facts, "us-gaap", tag)
+        key = ef._pick_unit(units) if units else None
+        for f in (units or {}).get(key, []) if key else []:
+            if not f.get("form", "").startswith("10-K") or not f.get("end") or f.get("val") is None:
+                continue
+            row = {"end": f["end"], "val": f["val"], "accn": f.get("accn"), "filed": f.get("filed", ""), "tag": tag}
+            cell = out.setdefault(f["end"], {}).setdefault(f.get("accn"), {})
+            if tag not in cell or row["filed"] > cell[tag]["filed"]:
+                cell[tag] = row
+    return out
+
+
+def _balance_point(end, by_accn):
+    """-> (parts, flag_info, basis, cur_zero, refusal_text). Балансовые части на дату из одной подачи (DECISION §1)."""
+    with_nonc = [a for a, c in by_accn.items() if DEBT_NONC_TAG in c]
+    if not with_nonc:
+        return None, None, None, False, "на %s есть только текущая часть без нетекущей: «нет нетекущей части» != ноль" % end
+    accn = max(with_nonc, key=lambda a: by_accn[a][DEBT_NONC_TAG]["filed"])
+    cell = by_accn[accn]
+    parts = [cell[DEBT_NONC_TAG]]
+    first = next((t for t in DEBT_CUR_FIRST if t in cell), None)
+    cur_zero = False
+    if first:
+        parts.append(cell[first])
+    elif any(t in cell for t in DEBT_CUR_SUM):
+        parts += [cell[t] for t in DEBT_CUR_SUM if t in cell]
+    else:
+        other = sorted({t for a, c in by_accn.items() if a != accn for t in DEBT_CUR_TAGS if t in c})
+        if other:
+            return None, None, None, False, ("на %s текущая часть (%s) размечена только в другой подаче, чем нетекущая (%s): "
+                                             "одна подача нарушена, ноль не подставляется" % (end, ",".join(other), accn))
+        cur_zero = True
+    total = sum(p["val"] for p in parts)
+    flag = None
+    x = cell.get(DEBT_CROSS_TAG)
+    if x is not None and abs(x["val"] - total) > DEBT_INCONSISTENT_PCT * abs(total):
+        flag = {"end": end, "full_tag": DEBT_CROSS_TAG, "full_val": x["val"], "parts_sum": total, "accn": accn}
+    basis = "балансовые части: %s" % "+".join(p["tag"] for p in parts)
+    if cur_zero:
+        basis += "; " + ZERO_CUR_BASIS
+    return parts, flag, basis, cur_zero, None
+
+
 def net_debt_series(facts, ef):
-    """-> (series, refusal). Долг на дате ФГ: полный долг (цепочка DEBT_FULL_CHAIN), а если его на этой дате нет --
+    """-> (series, refusal). НОВАЯ цепочка (DECISION_2026-11-02_DEBT_CHAIN §1). Долг на дате ФГ = LongTermDebtNoncurrent +
+    текущая часть ТОЙ ЖЕ подачи (LongTermDebtCurrent -> DebtCurrent -> ShortTermBorrowings+CommercialPaper); текущая часть = 0
+    только если её нет ни под одним из этих тегов в этой подаче И нетекущая часть есть. Нет ни одной балансовой части на
+    дате -- запасной вариант: прежняя цепочка «полного» тега, basis «полный тег, балансовые части не размечены».
+    LongTermDebt при расхождении с суммой частей > 10 % -- флаг DEBT_TAG_INCONSISTENT (в расчёт идут части).
+    Минус деньги (CASH_CHAIN) на той же дате. Точка несёт tags, parts (строки-слагаемые), cash, debt_basis, debt_flags."""
+    full = _by_end(facts, ef, DEBT_FULL_CHAIN)
+    bal = _rows_by_end_accn(facts, ef, [DEBT_NONC_TAG] + DEBT_CUR_TAGS + [DEBT_CROSS_TAG])
+    bal_ends = {e: c for e, c in bal.items() if any(t in cc for cc in c.values() for t in [DEBT_NONC_TAG] + DEBT_CUR_TAGS)}
+    if not full and not bal_ends:
+        return None, refusal("DEBT_TAG_ABSENT", "нет ни одного тега долга (балансовые %s, %s; полные %s): «долга нет» и "
+                             "«тег не заполнен» неотличимы, ноль не подставляется"
+                             % (DEBT_NONC_TAG, ",".join(DEBT_CUR_TAGS), ",".join(DEBT_FULL_CHAIN)))
+    cm = _by_end(facts, ef, CASH_CHAIN)
+    out, skipped = [], []
+    for end in sorted(set(full) | set(bal_ends)):
+        if end not in cm:
+            continue
+        flags = []
+        if end in bal_ends:
+            parts, flag, basis, _, why = _balance_point(end, bal_ends[end])
+            if parts is None:
+                skipped.append((end, why))
+                continue
+            if flag:
+                flags.append(flag)
+                basis += "; %s: %s=%s vs сумма частей=%s (accession %s)" % (
+                    DEBT_FLAG, flag["full_tag"], format(round(flag["full_val"]), ","), format(round(flag["parts_sum"]), ","), flag["accn"])
+        else:
+            parts, basis = [full[end]], FALLBACK_BASIS
+        debt = sum(p["val"] for p in parts)
+        out.append({"end": end, "val": debt - cm[end]["val"], "accn": [r.get("accn") for r in parts + [cm[end]]],
+                    "tags": [r["tag"] for r in parts + [cm[end]]], "parts": parts, "cash": cm[end],
+                    "debt_basis": basis, "debt_flags": flags,
+                    "cash_includes_restricted": cm[end]["tag"] == RESTRICTED_CASH_TAG})
+    if skipped and (not out or skipped[-1][0] > out[-1]["end"]):
+        # самая свежая дата непригодна: старые точки не выдаются за «последнее известное» (иначе причиной стал бы STALE_SERIES)
+        return None, refusal("MISSING_INPUT", "долг не раскрыт полностью: %s" % "; ".join(w for _, w in skipped[-3:]))
+    if not out:
+        return None, refusal("MISSING_INPUT", "долг не раскрыт: последняя точка тега долга %s, денег на тех датах нет "
+                             "или тег долга позднее не заполнен -- это не ноль" % max(set(full) | set(bal_ends)))
+    return out, None
+
+
+def net_debt_series_prev_chain(facts, ef):
+    """ПРЕЖНЯЯ цепочка (до DECISION_2026-11-02_DEBT_CHAIN), оставлена для колонки перехода и отчёта влияния.
+    -> (series, refusal). Долг на дате ФГ: полный долг (цепочка DEBT_FULL_CHAIN), а если его на этой дате нет --
     нетекущая + текущая часть (цепочки), но только когда ОБА слагаемых есть на этой дате (нет текущей части в данных
     != текущая часть ноль). Минус деньги (CASH_CHAIN) на той же дате. Точка несёт tags -- теги, давшие число."""
     full, nonc, cur = (_by_end(facts, ef, c) for c in (DEBT_FULL_CHAIN, DEBT_NONC_CHAIN, DEBT_CUR_CHAIN))
@@ -607,25 +712,32 @@ def sec_fields(out, facts, ef):
 
     nd, nd_ref = net_debt_series(facts, ef)
     if nd:
-        nd, nd_ref = current(nd, fy, "net debt (LongTermDebt - Cash)")
+        nd, nd_ref = current(nd, fy, "net debt (балансовые части долга - Cash)")
     raw["nd"] = nd
+    # переход цепочки (DECISION_2026-11-02 §2): то же значение по прежней цепочке; в F не кладётся (не ячейка покрытия)
+    pv, pv_ref = net_debt_series_prev_chain(facts, ef)
+    if pv:
+        pv, pv_ref = current(pv, fy, "net debt (прежняя цепочка)")
+    raw["nd_prev"] = ok(pv[-1]["val"], "USD", "прежняя цепочка, ФГ %s; теги: %s" % (pv[-1]["end"], ",".join(tag_note(pv[-1])[0])),
+                        accns(pv[-1])) if pv else pv_ref
     if nd_ref:
         F["net_debt_latest"] = F["net_debt_chg_3y"] = nd_ref
     else:
         tags, _ = tag_note(nd[-1])
         r_last = nd[-1].get("cash_includes_restricted", False)
-        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг - Cash ФГ %s; теги: %s%s" % (
-            nd[-1]["end"], ",".join(tags), " [%s]" % RESTRICTED_NOTE if r_last else ""),
-            accns(nd[-1]), tags=tags, cash_includes_restricted=r_last)
+        F["net_debt_latest"] = ok(nd[-1]["val"], "USD", "долг - Cash ФГ %s; теги: %s; %s%s" % (
+            nd[-1]["end"], ",".join(tags), nd[-1]["debt_basis"], " [%s]" % RESTRICTED_NOTE if r_last else ""),
+            accns(nd[-1]), tags=tags, cash_includes_restricted=r_last, debt_flags=nd[-1]["debt_flags"])
         a = at_offset(nd, 3)
         if a:
             tags, mixed = tag_note(a, nd[-1])
             r_win = bool(a.get("cash_includes_restricted") or r_last)
-            F["net_debt_chg_3y"] = ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s; теги: %s%s%s" % (
+            fl = a["debt_flags"] + nd[-1]["debt_flags"]
+            F["net_debt_chg_3y"] = ok(nd[-1]["val"] - a["val"], "USD", "net debt %s минус %s; теги: %s%s%s; %s: %s; %s: %s" % (
                 nd[-1]["end"], a["end"], ",".join(tags),
                 " [РАЗНЫЕ ТЕГИ на концах окна: определения долга могут отличаться]" if mixed else "",
-                " [%s]" % RESTRICTED_NOTE if r_win else ""),
-                accns(a, nd[-1]), tags=tags, mixed_tags=mixed, cash_includes_restricted=r_win)
+                " [%s]" % RESTRICTED_NOTE if r_win else "", a["end"], a["debt_basis"], nd[-1]["end"], nd[-1]["debt_basis"]),
+                accns(a, nd[-1]), tags=tags, mixed_tags=mixed, cash_includes_restricted=r_win, debt_flags=fl)
         else:
             F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
     classify_not_reported(F, facts, ef, fy)
@@ -857,6 +969,7 @@ def build_name(ticker, as_of, source, px, bench, price_err=None):
     else:
         F, raw = sec_fields(out, facts, ef)
         row["flags"] = flags_for(F, raw)
+        row["meta"]["net_debt_prev_chain"] = raw.get("nd_prev")
         rev = out.get("revenue") or []
         st = out.get("_staleness") or {}
         row["meta"].update(fy_end=st.get("latest_annual_end") or (rev[-1]["end"] if rev else None),
@@ -955,6 +1068,32 @@ def _fmt(f):
     return "%.2f" % v
 
 
+# DECISION_2026-11-02 §2: колонка и раздел перехода -- ПО ДАТЕ as_of, не по коду: с 2026-11-21 они исчезают сами.
+TRANSITION_DATES = ("2026-11-07", "2026-11-14")
+TRANSITION_PCT = 0.05
+PREV_COL = "net_debt_latest_prev_chain"
+
+
+def transition_rows(rows):
+    """[(ticker, old, new, pct|None)] имён, где значение по новой цепочке отличается от прежней более чем на 5 % (или
+    где одно из значений -- отказ: это тоже видно оператору, не молчание)."""
+    out = []
+    for r in rows:
+        new, old = r["fields"]["net_debt_latest"], r["meta"].get("net_debt_prev_chain")
+        if old is None:
+            continue
+        if is_ok(new) and is_ok(old):
+            if old["value"] == 0:
+                pct = None if new["value"] != 0 else 0.0
+            else:
+                pct = (new["value"] - old["value"]) / abs(old["value"])
+            if pct is None or abs(pct) > TRANSITION_PCT:
+                out.append((r["ticker"], old, new, pct))
+        elif is_ok(new) != is_ok(old):
+            out.append((r["ticker"], old, new, None))
+    return out
+
+
 def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     os.makedirs(out_dir, exist_ok=True)
     per, cov, n_ok, n_all = coverage(rows)
@@ -971,6 +1110,9 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     cols += ["prov_accessions", "scope", "cells_filled", "cells_gap", "cells_not_applicable", "cells_out_of_scope",
              "cells_not_reported", "cells_short_history", "coverage_A_raw", "coverage_B_applicable",
              "coverage_B_without_new_classes"]
+    transition = as_of in TRANSITION_DATES
+    if transition:
+        cols += [PREV_COL]
     with open(base + ".csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(cols)
@@ -991,6 +1133,10 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
                      c[NOT_REPORTED], c[SHORT_HISTORY],
                      _pct(c["FILLED"], sum(c.values())), _pct(c["FILLED"], c["FILLED"] + c["GAP"]) if in_sc else "",
                      _pct(c["FILLED"], c["FILLED"] + c["GAP"] + c[NOT_REPORTED] + c[SHORT_HISTORY]) if in_sc else ""]
+            if transition:
+                pv = r["meta"].get("net_debt_prev_chain")
+                line.append(repr(pv["value"]) if pv is not None and is_ok(pv) else
+                            ("" if pv is None else "%s: %s" % (pv["refused"], pv["reason"])))
             w.writerow(line)
         # итоговая строка: ticker начинается с «_», в ряд имён не входит; (А)/(Б) по всей карточке
         tot = [""] * len(cols)
@@ -1036,6 +1182,19 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
             f = r["flags"][n]
             if f["state"] == "RAISED":
                 L.append("- **%s** %s: %s" % (r["ticker"], n, f["evidence"]))
+    incons = [(r["ticker"], x) for r in rows if is_ok(r["fields"]["net_debt_latest"])
+              for x in r["fields"]["net_debt_latest"].get("debt_flags") or []]
+    L += ["", "## %s — тег LongTermDebt расходится с суммой балансовых частей более чем на %d %%" % (DEBT_FLAG, DEBT_INCONSISTENT_PCT * 100), ""]
+    L += ["- %s ФГ %s: %s = %s, сумма частей = %s (accession %s); в расчёте — части" % (
+        t, x["end"], x["full_tag"], format(round(x["full_val"]), ","), format(round(x["parts_sum"]), ","), x["accn"])
+        for t, x in incons] or ["- нет"]
+    if transition:
+        tr = transition_rows(rows)
+        L += ["", "## Переход цепочки долга: имена, где значение изменилось больше чем на %d %%" % (TRANSITION_PCT * 100), "",
+              "Решение DECISION_2026-11-02_DEBT_CHAIN §2; раздел и колонка `%s` исчезают с карточки 2026-11-21." % PREV_COL, "",
+              "| тикер | прежняя цепочка | новая цепочка | изменение |", "|---|---|---|---|"]
+        L += ["| %s | %s | %s | %s |" % (t, _fmt(o), _fmt(n), "%+.1f%%" % (p * 100) if p is not None else "—") for t, o, n, p in tr] \
+            or ["| — | — | — | нет имён с изменением > %d %% |" % (TRANSITION_PCT * 100)]
     restricted = [r["ticker"] for r in rows if any(is_ok(f) and f.get("cash_includes_restricted") for f in r["fields"].values())]
     L += ["", "† %s: %s" % (RESTRICTED_NOTE, ", ".join(restricted) or "нет таких имён")]
     L += ["", "## Named limitations (%d)" % len(lim), ""]
@@ -1056,7 +1215,7 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     L += ["", "## Базисы и провенанс", "",
           "Каждое число в CSV сопровождается колонкой `prov_accessions` (accession SEC ФГ-фактов) и для цен — датой Tiingo в basis. "
           "Определения полей — в докстринге `tools/floor1_card.py`. FCF = OCF − capex(PP&E); EPS вычислен как NI/разводнённые акции; "
-          "чистый долг = LongTermDebt − Cash&Equivalents; пороги флагов не заданы — только сравнения (правила — предложение исполнителя).", ""]
+          "чистый долг = (LongTermDebtNoncurrent + текущая часть из той же подачи) − Cash&Equivalents (DECISION_2026-11-02); при отсутствии балансовых частей — «полный» тег с пометкой в basis; пороги флагов не заданы — только сравнения (правила — предложение исполнителя).", ""]
     with open(base + ".md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(L))
     return base, cov, len(lim)

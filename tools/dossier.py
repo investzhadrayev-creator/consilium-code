@@ -80,23 +80,22 @@ def debt_raw(facts, ef, nd_field):
     series, ref = fc.net_debt_series(facts, ef)
     if ref:
         return ref
-    end = series[-1]["end"]
-    full, nonc, cur, cm = (fc._by_end(facts, ef, c) for c in (fc.DEBT_FULL_CHAIN, fc.DEBT_NONC_CHAIN, fc.DEBT_CUR_CHAIN, fc.CASH_CHAIN))
-    parts = [full[end]] if end in full else [nonc[end], cur[end]]
-    cash = cm[end]
+    pt = series[-1]
+    end, parts, cash = pt["end"], pt["parts"], pt["cash"]
     total = sum(r["val"] for r in parts) - cash["val"]
     if total != nd_field["value"]:
         return refusal("RAW_MISMATCH", "слагаемые на %s дают %s, а карточка — %s: сырые факты не показаны" % (end, total, nd_field["value"]))
     used = {r["tag"] for r in parts} | {cash["tag"]}
     unused = []
-    for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_CUR_CHAIN + fc.CASH_CHAIN:
-        if tag in used:
+    for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_CUR_CHAIN + fc.DEBT_CUR_TAGS + fc.CASH_CHAIN:
+        if tag in used or any(u["tag"] == tag for u in unused):
             continue
         rows, _ = ef._annual_instant_series(facts, [tag])
         for r in rows:
             if r["end"] == end:
                 unused.append(r)
-    return {"end": end, "debt": parts, "cash": cash, "total": total, "unused": unused}
+    return {"end": end, "debt": parts, "cash": cash, "total": total, "unused": unused,
+            "basis": pt["debt_basis"], "flags": pt["debt_flags"]}
 
 
 # ----------------------------------------------------------------------------- чистая арифметика
@@ -441,6 +440,11 @@ def sec_b_debt(D):
     L += ["", "Формула: net_debt = %s − cash = %s − %s = %s USD" % (
         " + ".join(format(round(p["val"]), ",") for p in r["debt"]), format(round(sum(p["val"] for p in r["debt"])), ","),
         format(round(c["val"]), ","), format(round(r["total"]), ","))]
+    L += ["", "Базис долга: %s." % r["basis"]]
+    for x in r["flags"]:
+        L += ["", "**%s**: %s = %s USD, сумма балансовых частей = %s USD (accession %s) — расхождение больше 10 %%; "
+              "в расчёте — балансовые части." % (fc.DEBT_FLAG, x["full_tag"], format(round(x["full_val"]), ","),
+                                                  format(round(x["parts_sum"]), ","), x["accn"])]
     if r["unused"]:
         L += ["", "Другие теги цепочек долга/cash со значением на %s (в расчёте НЕ использованы; показаны для сверки читателем):" % r["end"]]
         for p in r["unused"]:

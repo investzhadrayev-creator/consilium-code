@@ -321,7 +321,7 @@ class TestDebtRaw(unittest.TestCase):
     def facts(rows):
         """{тег: {год: значение}} -> companyfacts-подобный dict (годовые instant-факты 10-K)."""
         return {"facts": {"us-gaap": {tag: {"units": {"USD": [
-            {"end": "%d-12-31" % y, "val": v, "accn": "0000000000-%02d-%06d" % ((y + 1) % 100, i), "fy": y, "fp": "FY",
+            {"end": "%d-12-31" % y, "val": v, "accn": "0000000000-%02d-%06d" % ((y + 1) % 100, 1), "fy": y, "fp": "FY",
              "form": "10-K", "filed": "%d-02-10" % (y + 1)} for y, v in sorted(vals.items())]}} for i, (tag, vals) in enumerate(rows.items(), 1)}}}
 
     def nd(self, facts):
@@ -340,11 +340,13 @@ class TestDebtRaw(unittest.TestCase):
 
     def test_dos_61_nonprimary_tag_on_same_date_is_shown_but_not_used(self):
         # NFLX 2019: LongTermDebt = «итого обязательств по долгу» (с процентами), баланс -- LongTermDebtNoncurrent
+        # (DECISION_2026-11-02: в расчёт идут балансовые части, «полный» тег показан справочно + флаг)
         f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
                         "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
         r = dos.debt_raw(f, EF, self.nd(f))
-        self.assertEqual(r["total"], 450)                        # число не подменено «правдоподобным» тегом
-        self.assertEqual([(p["tag"], p["val"]) for p in r["unused"]], [("LongTermDebtNoncurrent", 480)])
+        self.assertEqual(r["total"], 230)                        # число не подменено «правдоподобным» тегом
+        self.assertEqual([(p["tag"], p["val"]) for p in r["unused"]], [("LongTermDebt", 700)])
+        self.assertEqual([x["full_val"] for x in r["flags"]], [700])
 
     def test_dos_62_split_debt_shows_both_terms(self):
         f = self.facts({"LongTermDebtNoncurrent": {2019: 500}, "LongTermDebtCurrent": {2019: 40},
@@ -372,7 +374,11 @@ class TestDebtRaw(unittest.TestCase):
         D["nd_raw"] = dos.debt_raw(f, EF, D["nd"])
         b = dos.render_machine(D).split("## (б)")[1].split("## (в)")[0]
         sec = b.split("Чистый долг — сырые факты")[1]
-        self.assertIn("700 − cash = 700 − 250 = 450", sec)
+        self.assertIn("480 − cash = 480 − 250 = 230", sec)
+        flag_line = [l for l in sec.split("\n") if l.startswith("**DEBT_TAG_INCONSISTENT**")]
+        self.assertEqual(len(flag_line), 1)                   # отдельная строка флага, а не только строка basis
+        self.assertIn("700", flag_line[0])                    # расхождение 700 vs 480 названо в досье с обоими числами
+        self.assertIn("480", flag_line[0])
         self.assertEqual(len(ACCN_RE.findall(sec.split("Формула")[0])), 2)    # accession у долга и у cash
         self.assertIn("LongTermDebtNoncurrent", sec)
 
