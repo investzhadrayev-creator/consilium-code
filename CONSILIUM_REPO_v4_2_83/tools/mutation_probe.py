@@ -1706,6 +1706,9 @@ CASES = [
     ('dos-32', '../tools/dossier.py', 'PS_NOTE_TEXT = "долг не представлен в отчётности;', 'PS_NOTE_TEXT = "долг представлен в отчётности;', 'test_dossier.TestPsPath.test_dos_75_report_carries_the_decision_note_and_block_d_uses_ps', 'P/S path carries the decision note'),
     ('dos-33', '../tools/dossier.py', '        if d["ps_mode"]:\n            T.append("Путь по капитализации (%s)', '        if False:\n            T.append("Путь по капитализации (%s)', 'test_dossier.TestPsPath.test_dos_75_report_carries_the_decision_note_and_block_d_uses_ps', 'block (d) is built on the P/S path'),
     ('dos-34', '../tools/dossier.py', '    d["grid_ps"] = {(g, m): (ps_return(rev, sh, price, g, m) if d["ps_mode"] else ps_ref)', '    d["grid_ps"] = {(g, m): (ps_return(rev, sh + (d["cash_val"] or 0), price, g, m) if d["ps_mode"] else ps_ref)', 'test_dossier.TestPsPath.test_dos_76_ps_result_does_not_depend_on_the_cash_amount', 'cash does not leak into the P/S grid'),
+    ('dos-cnt-01', '../tools/daily_report.py', '        if m["draft"]:\n            draft = True\n            continue\n', '        if m["draft"]:\n            draft = True\n', 'test_daily_dossier_count.TestDossierCount.test_draft_does_not_count', 'dossier counter: a _draft file is not a ready dossier'),
+    ('dos-cnt-02', '../tools/daily_report.py', 'if any(k == {"machine", "brief"} for k in kinds.values()):', 'if any(k for k in kinds.values()):', 'test_daily_dossier_count.TestDossierCount.test_half_pair_is_not_ready', 'dossier counter: machine without brief is not ready'),
+    ('dos-cnt-03', '../tools/daily_report.py', '(?:_v(?P<v>\\d+))?', '', 'test_daily_dossier_count.TestDossierCount.test_v2_counts', 'dossier counter: a _v2 pair is recognised'),
 ]
 
 
