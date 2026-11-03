@@ -383,6 +383,115 @@ class TestDebtRaw(unittest.TestCase):
         self.assertIn("ОТКАЗ NOT_REPORTED", sec)
 
 
+class TestPsPath(unittest.TestCase):
+    """К6 ч. C: путь по капитализации (P/S) при NOT_REPORTED долге и известных деньгах
+    (DECISION_2026-11-02_DOSSIER_COMPLETENESS §1 п. 5, §3). Пины на СВОЙСТВО включения, не на форму текста."""
+    CASH = {"CashAndCashEquivalentsAtCarryingValue": {2019: 250}}
+
+    @staticmethod
+    def build(nd_code, cash_facts=CASH):
+        """D, где чистый долг -- отказ класса nd_code, а в фактах SEC (не) лежат деньги на конец ФГ 2019."""
+        facts = TestDebtRaw.facts(cash_facts) if cash_facts else None
+        D = dos.build("TEST", AS_OF, FakeSource(mk_out(), facts), fake_fetch(100.0))
+        D["nd"] = fc.refusal(nd_code, "тест: %s" % nd_code) if nd_code else fc.ok(50, "USD", "тест", ["тест"])
+        D["derived"] = dos.derive(D)
+        return D
+
+    def cells(self, D):
+        return [v for v in D["derived"]["grid_ps"].values() if not dos.is_ref(v)]
+
+    def test_dos_70_ps_arithmetic_hand_and_roundtrip(self):
+        # 100 выручка, 10 акций, цена 10 (капитализация 100): g=0, P/S=1 -> 0%; P/S=4 -> 4^(1/10)-1
+        self.assertAlmostEqual(dos.ps_return(100, 10, 10, 0.0, 1), 0.0, places=12)
+        self.assertAlmostEqual(dos.ps_return(100, 10, 10, 0.0, 4), 4 ** 0.1 - 1, places=12)
+        self.assertAlmostEqual(dos.ps_return(100, 10, 10, 0.10, 1), 1.1 - 1, places=12)
+        g = dos.required_growth_ps(100, 10, 10, 2.0)
+        self.assertAlmostEqual(dos.ps_return(100, 10, 10, g, 2.0), dos.HURDLE, places=9)
+        self.assertTrue(dos.is_ref(dos.ps_return(0, 10, 10, 0.1, 2)))
+        self.assertTrue(dos.is_ref(dos.ps_return(100, 10, None, 0.1, 2)))
+
+    def test_dos_71_ps_path_on_only_for_not_reported_debt_with_known_cash(self):
+        D = self.build("NOT_REPORTED")
+        d = D["derived"]
+        self.assertTrue(d["ps_mode"])
+        self.assertEqual(d["cash_val"], 250)
+        self.assertEqual(len(self.cells(D)), len(dos.GRID_GROWTH) * len(dos.GRID_PS))
+        self.assertAlmostEqual(d["g_req_ps"], dos.HURDLE, places=9)            # при неизменном P/S -- тождество
+        self.assertGreater(d["g_req_ps_sens"][0.5], d["g_req_ps_sens"][1.0])   # ниже выходной P/S -> нужен больший рост
+        # EV/S-путь остаётся отказом, и класс отказа -- класс отказа долга, а не «наша вина»
+        ev = [v for v in d["grid_ev_s"].values()]
+        self.assertTrue(ev and all(dos.is_ref(v) and v["refused"] == "NOT_REPORTED" for v in ev))
+        self.assertTrue(dos.is_ref(d["g_req"]) and d["g_req"]["refused"] == "NOT_REPORTED")
+
+    def test_dos_72_other_debt_refusal_does_not_enable_ps_path(self):
+        for code in ("DEBT_TAG_ABSENT", "MISSING_INPUT"):       # пробел по нашей вине -- не «долг не представлен»
+            D = self.build(code)
+            self.assertFalse(D["derived"]["ps_mode"], code)
+            self.assertEqual(self.cells(D), [], code)
+            self.assertTrue(all(dos.is_ref(v) and v["refused"] == code for v in D["derived"]["grid_ev_s"].values()), code)
+        D = self.build(None)                                    # долг известен: основной путь EV/S
+        self.assertFalse(D["derived"]["ps_mode"])
+        self.assertTrue(self.cells(D) == [] and any(not dos.is_ref(v) for v in D["derived"]["grid_ev_s"].values()))
+
+    def test_dos_73_unknown_cash_leaves_section_empty_and_says_not_complete(self):
+        for facts in (None, {"CashAndCashEquivalentsAtCarryingValue": {2018: 250}}):    # нет фактов / деньги на другой дате
+            D = self.build("NOT_REPORTED", cash_facts=facts)
+            self.assertFalse(D["derived"]["ps_mode"])
+            self.assertEqual(self.cells(D), [])
+            self.assertTrue(dos.is_ref(D["cash"]) and D["cash"]["refused"] == "MISSING_INPUT")
+            self.assertIn("досье не полное", D["derived"]["ps_reason"])
+            self.assertIn("досье не полное", dos.render_machine(D))
+            self.assertNotIn("Таблица 1а", dos.render_machine(D))
+
+    def test_dos_74_cash_must_be_at_the_fiscal_year_end_not_the_latest_available(self):
+        r = dos.cash_raw(TestDebtRaw.facts({"CashAndCashEquivalentsAtCarryingValue": {2017: 1, 2018: 2}}), EF, "2019-12-31")
+        self.assertTrue(dos.is_ref(r) and r["refused"] == "MISSING_INPUT")
+        ok = dos.cash_raw(TestDebtRaw.facts({"CashAndCashEquivalentsAtCarryingValue": {2018: 2, 2019: 3}}), EF, "2019-12-31")
+        self.assertEqual((ok["val"], ok["end"]), (3, "2019-12-31"))
+        self.assertRegex(ok["accn"], ACCN_RE)
+
+    def test_dos_75_report_carries_the_decision_note_and_block_d_uses_ps(self):
+        D = self.build("NOT_REPORTED")
+        machine, brief = dos.render_machine(D), dos.render_brief(D)
+        note = "долг не представлен в отчётности; оценка по капитализации, не по стоимости компании"
+        self.assertIn(note, machine)
+        self.assertIn(note, brief)
+        self.assertRegex(machine, ACCN_RE.pattern)
+        T, X = dos.truth_refute(D)
+        self.assertTrue(any("по капитализации" in t and dos.pp(D["derived"]["g_req_ps"]) in t for t in T))
+        self.assertTrue(any("по капитализации" in x for x in X))
+        # без пути P/S блок (д) такого пункта не содержит
+        T0, _ = dos.truth_refute(self.build("DEBT_TAG_ABSENT"))
+        self.assertFalse(any("по капитализации" in t for t in T0))
+
+    def test_dos_76_ps_result_does_not_depend_on_the_cash_amount(self):
+        # деньги -- только условие включения; в P/S-сетку они не входят (оценка капитала, не стоимости компании)
+        a = self.build("NOT_REPORTED", {"CashAndCashEquivalentsAtCarryingValue": {2019: 250}})["derived"]["grid_ps"]
+        b = self.build("NOT_REPORTED", {"CashAndCashEquivalentsAtCarryingValue": {2019: 9999}})["derived"]["grid_ps"]
+        self.assertEqual(a, b)
+
+    def test_dos_77_brief_first_line_counts_refusals_by_class(self):
+        D = self.build("NOT_REPORTED")
+        for name, code in (("rev_cagr_5y", "SHORT_HISTORY"), ("gm_med5", "SHORT_HISTORY"), ("om_med5", "SHORT_HISTORY"),
+                           ("net_debt_chg_3y", "NOT_REPORTED")):
+            D["card"]["fields"][name] = fc.refusal(code, "тест")
+        D["card"]["fields"]["net_debt_latest"] = fc.refusal("NOT_REPORTED", "тест")
+        import collections
+        cnt = collections.Counter(D["card"]["fields"][n]["refused"] for n in fc.FIELD_ORDER if not fc.is_ok(D["card"]["fields"][n]))
+        self.assertGreaterEqual(cnt["SHORT_HISTORY"], 3)
+        self.assertGreaterEqual(cnt["NOT_REPORTED"], 2)
+        first = dos.render_brief(D).split("## 5. Чего машина не знает")[1].strip().splitlines()[0]
+        head, tail = first.split(": ", 1)
+        self.assertEqual(head, "%d отказов из %d полей" % (sum(cnt.values()), len(fc.FIELD_ORDER)))
+        got = {k: int(v) for k, v in (x.rsplit(" ", 1) for x in tail.split(", "))}
+        self.assertEqual(got, dict(cnt))                       # каждый класс со своим числом, ничего не слито и не потеряно
+
+    def test_dos_78_cash_is_part_of_the_input_hash(self):
+        a = self.build("NOT_REPORTED", {"CashAndCashEquivalentsAtCarryingValue": {2019: 250}})["input_hash"]
+        b = self.build("NOT_REPORTED", {"CashAndCashEquivalentsAtCarryingValue": {2019: 251}})["input_hash"]
+        self.assertNotEqual(a, b)
+
+
 class TestCli(unittest.TestCase):
     def test_dos_50_hash_is_stable_and_depends_on_inputs(self):
         h1, h2 = make()["input_hash"], make()["input_hash"]
