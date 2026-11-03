@@ -65,8 +65,14 @@ def body_sha(raw, token=""):
         raw = raw.replace(f"AUTH: {token}", "")
     return hashlib.sha256(raw.strip().encode()).hexdigest()[:16]
 
+def one_line(s):
+    """Поле журнала -> одна физическая строка: \r, \n, табы и повторные пробелы -> один пробел.
+    Свёрнутая (RFC 2047/5322 folding) тема раньше ломала строку журнала надвое (issue #229)."""
+    return re.sub(r"\s+", " ", s or "").strip()
+
 def log_command(kind, subject, raw, msgid="", token=""):
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    subject, msgid = one_line(subject), one_line(msgid)
     entry = f"{ts} | {kind} | {subject} | body_sha={body_sha(raw, token)} | msgid={msgid or 'НЕТ'}"
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
@@ -76,6 +82,20 @@ def log_command(kind, subject, raw, msgid="", token=""):
         raise RuntimeError("лог команды не прошёл проверку — команда НЕ исполняется")
     print("logged:", entry)
 
+def log_result(kind, subject, msgid, result):
+    """Строка RESULT в журнал (append-only): исход команды, не являющийся ни успехом, ни ошибкой
+    (напр. SKIP). Не пишет body_sha -> в legacy-ключи дедупа не попадает; msgid тот же."""
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    entry = (f"{ts} | RESULT | {one_line(subject)} | {one_line(result)} | "
+             f"msgid={one_line(msgid) or 'НЕТ'}")
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+    import autocommit
+    if not autocommit.publish([LOG], f"bridge: result {kind}", author="consilium-bridge"):
+        print(f"WARN: RESULT не опубликован: {entry}")
+        return
+    print("logged:", entry)
+
 def _decode_chunk(s, c):
     try:
         return s.decode(c or "utf-8", errors="replace")
@@ -83,25 +103,42 @@ def _decode_chunk(s, c):
         return s.decode("utf-8", errors="replace")
 
 def decode_hdr(h):
-    return "".join(_decode_chunk(s, c) if isinstance(s, bytes) else s
-                   for s, c in email.header.decode_header(h or ""))
+    joined = "".join(_decode_chunk(s, c) if isinstance(s, bytes) else s
+                     for s, c in email.header.decode_header(h or ""))
+    return one_line(joined)   # unfold: свёрнутая тема -> одна строка (issue #229)
+
+def parse_journal(text):
+    """Текст журнала -> (Message-ID'ы, (вид, тема, body_sha) для старых строк без Message-ID)."""
+    # msgid ищем по ВСЕМУ тексту: «разбитые» старые записи (тема с переводом строки) тоже считаются
+    ids, legacy = set(re.findall(r"msgid=(<[^>]+>)", text or "")), set()
+    for ln in (text or "").splitlines():
+        parts = [p.strip() for p in ln.split(" | ")]
+        if len(parts) < 4 or ln.startswith("#"):
+            continue
+        kv = dict(p.split("=", 1) for p in parts[3:] if "=" in p)
+        if kv.get("body_sha"):
+            legacy.add((parts[1], parts[2], kv["body_sha"]))
+    return ids, legacy
 
 def executed_keys(path=LOG):
     """Что уже исполнено: Message-ID из журнала + (вид, тема, body_sha) для старых строк без него."""
-    ids, legacy = set(), set()
     if not os.path.exists(path):
-        return ids, legacy
+        return set(), set()
     with open(path, encoding="utf-8") as f:
-        for ln in f:
-            parts = [p.strip() for p in ln.rstrip("\n").split(" | ")]
-            if len(parts) < 4 or ln.startswith("#"):
-                continue
-            kv = dict(p.split("=", 1) for p in parts[3:] if "=" in p)
-            if kv.get("msgid") and kv["msgid"] != "НЕТ":
-                ids.add(kv["msgid"])
-            if kv.get("body_sha"):
-                legacy.add((parts[1], parts[2], kv["body_sha"]))
-    return ids, legacy
+        return parse_journal(f.read())
+
+def origin_journal_text():
+    """Журнал из origin/main (не из рабочей копии): параллельный прогон мог закоммитить строку
+    уже после нашего checkout (гонка 2026-11-01, PR#181 исполнен дважды). Не удалось получить —
+    RuntimeError (команда не исполняется), а не «журнал пуст»."""
+    sh("git", "fetch", "origin", "main")
+    return sh("git", "show", f"origin/main:{LOG}")
+
+def fresh_executed_keys():
+    """Ключи из origin/main ∪ рабочей копии (своя свежая строка могла ещё не доехать до origin)."""
+    ids, legacy = parse_journal(origin_journal_text())
+    lids, llegacy = executed_keys()
+    return ids | lids, legacy | llegacy
 
 def body_parts(msg):
     """-> (сырой текст после снятия transfer-encoding (QP/base64) и charset, flowed, delsp)."""
@@ -243,19 +280,23 @@ def merge_refusal(pr, checks, now):
 MERGEABLE_RETRIES = 4     # повторов после первого запроса, если REST отдал null
 MERGEABLE_PAUSE = 5       # секунд между повторами (сам запрос запускает расчёт на стороне GitHub)
 
-def rest_mergeable(n):
-    """Признак конфликтов из REST (gh api pulls/N -> mergeable: true/false/null), не из GraphQL:
-    `gh pr view --json mergeable` из Actions стабильно отдаёт UNKNOWN. null -> до MERGEABLE_RETRIES
-    повторов с паузой; после них возвращаем None (именованный отказ), не True."""
+def rest_pr_state(n):
+    """REST pulls/N -> (merged, mergeable). merged=True -> повторы не нужны. mergeable: True/False/None
+    (null -> до MERGEABLE_RETRIES повторов с паузой; после них None — именованный отказ, не True)."""
     import json
-    val = None
+    val = merged = None
     for attempt in range(MERGEABLE_RETRIES + 1):
         if attempt:
             time.sleep(MERGEABLE_PAUSE)
-        val = json.loads(sh("gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{n}") or "{}").get("mergeable")
-        if val is not None:
+        d = json.loads(sh("gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{n}") or "{}")
+        merged, val = d.get("merged"), d.get("mergeable")
+        if merged is True or val is not None:
             break
-    return val   # не-bool (мусор) отсекает merge_refusal: is not True -> отказ
+    return merged, val   # не-bool (мусор) отсекает merge_refusal: is not True -> отказ
+
+def rest_mergeable(n):
+    """Признак конфликтов из REST (не из GraphQL: `gh pr view --json mergeable` из Actions отдаёт UNKNOWN)."""
+    return rest_pr_state(n)[1]
 
 def do_merge(subject, body, now=None):
     m = re.search(r"PR#?(\d+)", subject)
@@ -263,9 +304,13 @@ def do_merge(subject, body, now=None):
         raise CommandFailed("MERGE: номер PR не найден в теме")
     n = m.group(1)
     import json
+    merged, mergeable = rest_pr_state(n)
+    if merged is True:   # повторная/параллельная команда: цель достигнута, это не ошибка
+        print(f"MERGE pr#{n}: уже слит — ничего не делаю")
+        return
     pr = json.loads(sh("gh", "pr", "view", n, "--json",
                        "files,author,body,title,headRefOid") or "{}")
-    pr["mergeable"] = rest_mergeable(n)
+    pr["mergeable"] = mergeable
     sha = pr.get("headRefOid") or ""
     checks = {}
     if sha:
@@ -307,7 +352,9 @@ def do_file(subject, body):
         raise CommandFailed(f"FILE: нет содержимого в ``` ``` или плохой путь (path={path!r})")
     protected = any(path.startswith(p) for p in PROTECTED)
     if os.path.exists(path) and path.startswith("mailbox/"):
-        raise CommandFailed(f"FILE REFUSED: {path} существует; mailbox неизменяем — новый файл с supersedes")
+        msg = f"SKIP: файл уже на main: {path} (mailbox неизменяем; изменение — новым файлом с supersedes)"
+        print(msg)
+        return msg
     if protected:
         br = f"architect/{int(time.time())}"
         sh("git", "checkout", "-b", br)
@@ -414,7 +461,12 @@ def main():
         sender = decode_hdr(msg["From"])
         msgid = (msg["Message-ID"] or "").strip()
         raw, flowed, delsp = body_parts(msg)
-        ids, legacy = executed_keys()
+        try:
+            ids, legacy = fresh_executed_keys()   # КАЖДАЯ команда: свежий origin/main, не checkout старта
+        except Exception as e:
+            print(f"JOURNAL UNREADABLE, command skipped [{kind}] {subject}: {e}")
+            failures.append(f"{kind} {subject}: журнал origin/main не прочитан ({e})")
+            continue
         if (msgid and msgid in ids) or (kind, subject, body_sha(raw, token)) in legacy:
             print(f"SKIP (уже исполнено) {kind} {msgid or '(без Message-ID)'}")
             continue
@@ -425,7 +477,7 @@ def main():
             print(f"REJECT (no auth token): {subject}"); continue
         body = body.replace(f"AUTH: {token}", "").strip() if token else body.strip()
         sh("git", "checkout", "main", check=False)
-        sh("git", "pull", "--rebase", check=False)
+        sh("git", "pull", "--rebase", check=False)   # лог пишется поверх свежего main
         try:
             log_command(kind, subject, raw, msgid, token)  # след ДО исполнения
         except Exception as e:
@@ -433,10 +485,12 @@ def main():
             failures.append(f"{kind} {subject}: лог не записан ({e})")
             continue
         try:
-            {"TASK": lambda: do_task(rest or "Задача архитектора", body),
-             "MERGE": lambda: do_merge(subject, body),
-             "FILE": lambda: do_file(subject, body),
-             "NOTIFY": lambda: do_notify(rest, body)}[kind]()
+            result = {"TASK": lambda: do_task(rest or "Задача архитектора", body),
+                      "MERGE": lambda: do_merge(subject, body),
+                      "FILE": lambda: do_file(subject, body),
+                      "NOTIFY": lambda: do_notify(rest, body)}[kind]()
+            if isinstance(result, str) and result.startswith("SKIP"):
+                log_result(kind, subject, msgid, result)
         except Exception as e:
             print(f"EXEC ERROR [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: {e}")
