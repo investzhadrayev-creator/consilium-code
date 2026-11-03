@@ -82,12 +82,13 @@ def log_command(kind, subject, raw, msgid="", token=""):
         raise RuntimeError("лог команды не прошёл проверку — команда НЕ исполняется")
     print("logged:", entry)
 
-def log_result(kind, subject, msgid, result):
-    """Строка RESULT в журнал (append-only): исход команды, не являющийся ни успехом, ни ошибкой
-    (напр. SKIP). Не пишет body_sha -> в legacy-ключи дедупа не попадает; msgid тот же."""
+def log_result(kind, subject, msgid, status, detail):
+    """Строка RESULT в журнал (append-only): исход КАЖДОЙ команды (issue #196).
+    `<ts> | RESULT | <kind> <subject> | ok|refused | <что сделано / причина> | msgid=<id>`.
+    Не пишет body_sha -> в legacy-ключи дедупа не попадает. Не опубликован -> WARN, не падение."""
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    entry = (f"{ts} | RESULT | {one_line(subject)} | {one_line(result)} | "
-             f"msgid={one_line(msgid) or 'НЕТ'}")
+    entry = (f"{ts} | RESULT | {one_line(kind)} {one_line(subject)} | {one_line(status)} | "
+             f"{one_line(detail) or 'причина не названа'} | msgid={one_line(msgid) or 'НЕТ'}")
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
     import autocommit
@@ -95,6 +96,66 @@ def log_result(kind, subject, msgid, result):
         print(f"WARN: RESULT не опубликован: {entry}")
         return
     print("logged:", entry)
+
+OWNER_LOGIN = "investzhadrayev-creator"
+DIRECT_LABEL = "architect"
+DIRECT_ID_RE = re.compile(r"msgid=issue-(\d+)\b")
+
+def direct_task_lines(issues, known, now, owner=OWNER_LOGIN, days=WINDOW_DAYS):
+    """Чистая функция: список issues (gh json) -> строки TASK-DIRECT для тех, которых нет в `known`
+    (множество номеров). Берутся: автор == владелец, метка architect, created_at за `days` дней.
+    Неразбираемая дата — не «наверное свежая»: issue пропускается и называется в skipped.
+    -> (строки, [(номер, причина пропуска)])"""
+    lines, skipped = [], []
+    cut = now - dt.timedelta(days=days)
+    for it in sorted(issues, key=lambda i: i.get("number", 0)):
+        n = it.get("number")
+        if (it.get("author") or {}).get("login") != owner:
+            continue
+        if DIRECT_LABEL not in [(l.get("name") if isinstance(l, dict) else l) for l in it.get("labels") or []]:
+            continue
+        try:
+            created = dt.datetime.strptime(it["createdAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+        except (KeyError, ValueError, TypeError):
+            skipped.append((n, f"created_at не разобран: {it.get('createdAt')!r}"))
+            continue
+        if created < cut or n in known:
+            continue
+        lines.append(f"{it['createdAt']} | TASK-DIRECT | #{n} {one_line(it.get('title'))} | msgid=issue-{n}")
+    return lines, skipped
+
+def log_direct_tasks(now=None):
+    """Задачи архитектора напрямую (issues с меткой architect от владельца за 7 дней) -> журнал.
+    Дедуп по `issue-<n>` из origin/main ∪ рабочей копии. Недоступный gh/журнал — RuntimeError
+    (named refusal), не «задач нет». -> число дописанных строк."""
+    import json
+    now = now or dt.datetime.now(dt.timezone.utc)
+    out = sh("gh", "issue", "list", "--label", DIRECT_LABEL, "--author", OWNER_LOGIN, "--state", "all",
+             "--limit", "100", "--json", "number,title,createdAt,author,labels")
+    try:
+        issues = json.loads(out or "[]")
+    except ValueError as e:
+        raise RuntimeError(f"gh issue list: ответ не разобран: {e}")
+    if not isinstance(issues, list):
+        raise RuntimeError("gh issue list: ответ не список")
+    text = origin_journal_text()
+    if os.path.exists(LOG):
+        with open(LOG, encoding="utf-8") as f:
+            text += "\n" + f.read()
+    known = {int(x) for x in DIRECT_ID_RE.findall(text)}
+    lines, skipped = direct_task_lines(issues, known, now)
+    for n, why in skipped:
+        print(f"WARN TASK-DIRECT #{n}: {why}")
+    if not lines:
+        return 0
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    import autocommit
+    if not autocommit.publish([LOG], "bridge: log architect command [TASK-DIRECT]", author="consilium-bridge"):
+        raise RuntimeError("строки TASK-DIRECT не прошли проверку публикации")
+    for ln in lines:
+        print("logged:", ln)
+    return len(lines)
 
 def _decode_chunk(s, c):
     try:
@@ -207,6 +268,7 @@ def do_task(title, body):
     print("issue:", out.stdout or out.stderr)
     if out.returncode != 0:
         raise CommandFailed(f"TASK: issue не создан: {out.stderr.strip()[:300]}")
+    return f"issue {out.stdout.strip().splitlines()[-1] if out.stdout.strip() else '(url не получен)'}"
 
 # Контрольная плоскость оператора (DECISION_2026-11-01_KOD_AUTOPILOT, п. 1а): РОВНО эти пути для MERGE.
 # Запись на «/» или «_» — префикс (каталог / семейство файлов), остальное — точное имя файла.
@@ -307,7 +369,7 @@ def do_merge(subject, body, now=None):
     merged, mergeable = rest_pr_state(n)
     if merged is True:   # повторная/параллельная команда: цель достигнута, это не ошибка
         print(f"MERGE pr#{n}: уже слит — ничего не делаю")
-        return
+        return f"PR #{n} уже был слит"
     pr = json.loads(sh("gh", "pr", "view", n, "--json",
                        "files,author,body,title,headRefOid") or "{}")
     pr["mergeable"] = mergeable
@@ -328,6 +390,7 @@ def do_merge(subject, body, now=None):
     if r.returncode != 0:
         raise CommandFailed(f"MERGE pr#{n} не выполнен: {r.stderr.strip()[:300]}")
     L.notify(f"слит PR #{n}: {title}", L.INFO)
+    return f"PR #{n} слит"
 
 def operator_pr_body(content):
     """Тело PR моста начинается с блока «## ДЛЯ ОПЕРАТОРА» (CLAUDE.md, issue #92): блок берётся из
@@ -366,7 +429,7 @@ def do_file(subject, body):
         if not autocommit.publish([path], f"architect via bridge: {path}", author="consilium-bridge"):
             raise CommandFailed(f"FILE {path}: публикация не прошла проверку")
         print(f"FILE published: {path}")
-        return
+        return f"файл {path}"
     sh("git", "add", path)
     sh("git", "commit", "-m", f"architect via bridge: {path}")
     sh("git", "push", "-u", "origin", br)
@@ -380,6 +443,7 @@ def do_file(subject, body):
     url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     L.notify(f"PR «ТРЕБУЕТ ОДОБРЕНИЯ ОПЕРАТОРА»: {path} {url}", L.ACTION)
     print(f"FILE -> PR (protected): {path} {url}")
+    return f"файл {path}: PR оператору {url or '(url не получен)'}"
 
 def notify_level(title):
     """Тема [CONSILIUM-NOTIFY]: «!ACTION ...» / «!ALARM ...» -> уровень, иначе INFO.
@@ -394,6 +458,7 @@ def do_notify(title, body):
     text = (title + ("\n" + body if body else "")).strip() or "(пустое уведомление)"
     if not L.notify(text, level):
         raise CommandFailed("NOTIFY: Telegram не принял сообщение (нет секретов или ошибка отправки)")
+    return f"уведомление отправлено ({level})"
 
 ALL_MAIL = '"[Gmail]/All Mail"'
 
@@ -449,13 +514,20 @@ def main():
     token = os.environ.get("MAIL_AUTH_TOKEN", "")
     sh("git", "config", "user.name", "consilium-bridge")
     sh("git", "config", "user.email", "actions@github.com")
+    failures = []
+    try:   # прямые задачи архитектора не зависят от почты: ошибка IMAP ниже их не отменяет
+        sh("git", "checkout", "main", check=False)
+        sh("git", "pull", "--rebase", check=False)
+        print(f"bridge: TASK-DIRECT дописано строк: {log_direct_tasks()}")
+    except Exception as e:
+        print(f"TASK-DIRECT FAILED: {e}")
+        failures.append(f"TASK-DIRECT: журнал прямых задач не обновлён ({e})")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
     M.login(addr, pwd); box = open_mailbox(M)
     print(f"bridge: mailbox {box}")
     cands = recent_commands(M)
     M.logout()
     print(f"bridge: {len(cands)} command-subject message(s) in last {WINDOW_DAYS}d")
-    failures = []
     for msg, subject in cands:
         kind, rest = parse_command(subject)
         sender = decode_hdr(msg["From"])
@@ -490,11 +562,18 @@ def main():
                       "FILE": lambda: do_file(subject, body),
                       "NOTIFY": lambda: do_notify(rest, body)}[kind]()
             if isinstance(result, str) and result.startswith("SKIP"):
-                log_result(kind, subject, msgid, result)
+                log_result(kind, subject, msgid, "refused", result)
+            else:
+                log_result(kind, subject, msgid, "ok",
+                           result if isinstance(result, str) else "исполнитель не вернул описание результата")
         except Exception as e:
             print(f"EXEC ERROR [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: {e}")
             sh("git", "checkout", "main", check=False)
+            try:
+                log_result(kind, subject, msgid, "refused", str(e))
+            except Exception as le:
+                print(f"WARN: RESULT (refused) не записан: {le}")
     if failures:
         L.notify(f"Мост: не исполнено {len(failures)} команд(ы): " + "; ".join(f[:120] for f in failures[:3]), L.ALARM)
         sys.exit(1)

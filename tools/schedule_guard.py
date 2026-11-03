@@ -27,6 +27,8 @@ GRACE = dt.timedelta(minutes=60)            # прогон последнего 
 NOTIFY_WINDOW = dt.timedelta(hours=26)      # о пропуске периода сообщаем один раз, не неделю подряд
 RUN_LIMIT = 200
 PUBLISHED, MISSING, NOT_REQUIRED, UNKNOWN = "PUBLISHED", "MISSING", "NOT_REQUIRED", "UNKNOWN"
+DEGRADED = "DEGRADED"                       # мост жив, но запускается реже нормы (issue #196)
+BRIDGE_MIN_RUNS = 24                        # успешных прогонов mail-bridge за 24 ч; будильник каждые 15 мин даёт ~96
 WAITING = "WAITING"                         # слоты периода не кончились / GitHub ещё может запустить слот
 THIS_REPORT = "этот отчёт"                  # строка самого формируемого отчёта: он не может «пропустить» себя
 REPORT_WAIT = dt.timedelta(hours=6)         # GitHub задерживает cron до ~5 ч (слот 15:37 -> публикация 20:04)
@@ -283,23 +285,39 @@ def gh_runs(file, since_date):
     return runs, None
 
 
+def bridge_runs_24h(runs, now):
+    """Число УСПЕШНЫХ прогонов mail-bridge (любой event) за 24 ч до now. Упавшие не считаются."""
+    since = now - dt.timedelta(hours=24)
+    return len([r for r in runs if r["conclusion"] == "success" and since <= r["_t"] <= now])
+
+
 def bridge_check(runs, since_date, now):
-    """Возраст последнего УСПЕШНОГО прогона mail-bridge (любой event: schedule / workflow_run / dispatch).
-    -> (state, detail, alert|None). Старше BRIDGE_MAX_AGE или успешных нет -> MISSING + alert.
+    """Возраст последнего УСПЕШНОГО прогона mail-bridge (любой event: schedule / workflow_run / dispatch)
+    и ЧАСТОТА за 24 ч. -> (state, detail, alert|None).
+    Старше BRIDGE_MAX_AGE или успешных нет -> MISSING + alert.
+    Свежий, но успешных прогонов за сутки < BRIDGE_MIN_RUNS -> DEGRADED + alert (issue #196).
+    PUBLISHED только при свежем прогоне И N >= BRIDGE_MIN_RUNS.
     Нет успешного прогона в окне -> возраст неизвестен, называется нижняя граница («более N ч»)."""
     ok = [r["_t"] for r in runs if r["conclusion"] == "success"]
+    n = bridge_runs_24h(runs, now)
+    freq = (f"мост: {n} запусков за сутки (норма ≥ {BRIDGE_MIN_RUNS} при внешнем будильнике "
+            f"каждые 15 мин)")
     if ok:
         age = max(now - max(ok), dt.timedelta(0))
         hours, bound = int(age.total_seconds() // 3600), ""
-        detail = f"последний успешный прогон {max(ok):%Y-%m-%d %H:%M}Z, возраст {hours} ч"
+        detail = f"последний успешный прогон {max(ok):%Y-%m-%d %H:%M}Z, возраст {hours} ч; {freq}"
     else:
         age = now - _dt(dt.date.fromisoformat(since_date))
         hours, bound = int(age.total_seconds() // 3600), "более "
-        detail = f"успешных прогонов в окне с {since_date} нет (возраст не определить, нижняя граница {hours} ч)"
-    if age <= BRIDGE_MAX_AGE:
-        return PUBLISHED, detail, None
-    return MISSING, detail, (f"Мост не запускался {bound}{hours} ч — Actions → mail-bridge → Run workflow "
-                             f"{BRIDGE_URL}")
+        detail = (f"успешных прогонов в окне с {since_date} нет (возраст не определить, "
+                  f"нижняя граница {hours} ч); {freq}")
+    if age > BRIDGE_MAX_AGE:
+        return MISSING, detail, (f"Мост не запускался {bound}{hours} ч — Actions → mail-bridge → Run workflow "
+                                 f"{BRIDGE_URL}")
+    if n < BRIDGE_MIN_RUNS:
+        return DEGRADED, detail, (f"{freq}. Внешний будильник (cron-job.org, repository_dispatch "
+                                  f"cron-mail-bridge) не срабатывает — проверь его. {BRIDGE_URL}")
+    return PUBLISHED, detail, None
 
 
 def result_state(name, p, check_activity=False):
