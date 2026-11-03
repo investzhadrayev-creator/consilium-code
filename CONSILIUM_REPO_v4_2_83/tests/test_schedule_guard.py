@@ -442,6 +442,12 @@ def runs_at(*stamps, event="schedule", conclusion="success"):
     return [{"event": event, "conclusion": conclusion, "createdAt": s} for s in stamps]
 
 
+def bridge_ok_runs(n=30, end="2026-10-19T15:20:00Z"):
+    """n successful bridge runs, 15 min apart, newest = end (a healthy day with the external alarm)."""
+    t = dt.datetime.strptime(end, "%Y-%m-%dT%H:%M:%SZ")
+    return runs_at(*[(t - dt.timedelta(minutes=15 * i)).strftime("%Y-%m-%dT%H:%M:%SZ") for i in range(n)])
+
+
 class TestWatchdog(Base):
     def healthy(self):
         """Monday 2026-10-19 15:40Z with everything of the closed periods published."""
@@ -449,7 +455,7 @@ class TestWatchdog(Base):
         self.w.files.add("journal/audits/MONTHLY_ARCHITECT_AUDIT_2026-10.md")
         self.w.add_panel_row("2026-10-18")
         self.w.runs["weekly_digest.yml"] = runs_at("2026-10-17T07:44:10Z")
-        self.w.runs["mail_bridge.yml"] = runs_at("2026-10-19T15:20:00Z")
+        self.w.runs["mail_bridge.yml"] = bridge_ok_runs()
         self.w.runs["calibrate-auditor.yml"] = runs_at("2026-10-18T16:55:00Z")
         self.w.runs["daily_report.yml"] = runs_at("2026-10-19T15:41:00Z")
 
@@ -743,7 +749,7 @@ class TestBridgeAgeWatchdog(Base):
 
     def test_fresh_run_is_silent(self):
         self.healthy()
-        self.bridge(*runs_at("2026-10-19T09:41:00Z"))         # 5 h 59 min
+        self.bridge(*bridge_ok_runs(30, "2026-10-19T09:41:00Z"))   # 5 h 59 min
         md, n = G.watch_section(self.now)
         self.assertEqual(self.msgs(), [])
         self.assertEqual(n, 0, md)
@@ -751,7 +757,7 @@ class TestBridgeAgeWatchdog(Base):
 
     def test_exactly_six_hours_is_still_fresh(self):
         self.healthy()
-        self.bridge(*runs_at("2026-10-19T09:40:00Z"))
+        self.bridge(*bridge_ok_runs(30, "2026-10-19T09:40:00Z"))
         self.assertIsNone(self.rows()["mail-bridge"]["alert"])
 
     def test_a_recent_FAILED_run_does_not_make_the_bridge_fresh(self):

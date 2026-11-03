@@ -158,6 +158,33 @@ def missed_runs_section():
     except Exception as e:
         return f"## Пропущенные запуски\n\nUNAVAILABLE (schedule_guard): {e!r}\n"
 
+DIRECT_OWNER = "investzhadrayev-creator"
+DIRECT_LIMIT = 100
+
+def direct_tasks_section(now=None, hours=26):
+    """«Задачи архитектора напрямую (метка architect) за 26 ч»: номер, заголовок, created_at, state.
+    Автор = владелец. Подпись выборки обязательна; недоступный gh — UNAVAILABLE, не «задач нет»."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    head = f"## Задачи архитектора напрямую (метка architect) за {hours} ч"
+    rc, out, err = sh("gh", "issue", "list", "--label", "architect", "--author", DIRECT_OWNER,
+                      "--state", "all", "--limit", str(DIRECT_LIMIT),
+                      "--json", "number,title,createdAt,state")
+    if rc != 0:
+        return f"{head}\n\n{_unavailable('architect issues', rc, err)}\n"
+    try:
+        items = json.loads(out)
+        cut = now - dt.timedelta(hours=hours)
+        rows = [i for i in items
+                if dt.datetime.strptime(i["createdAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc) >= cut]
+    except Exception as e:
+        return f"{head}\n\n{_unavailable('architect issues parse', 0, repr(e))}\n"
+    # total неизвестен отдельно: если вернулось ровно лимит, выборка могла быть усечена
+    cap = caption(len(items), None if len(items) >= DIRECT_LIMIT else len(items), DIRECT_LIMIT)
+    body = "\n".join(f"#{i['number']} | {' '.join(str(i['title']).split())} | {i['createdAt']} | {i['state']}"
+                     for i in sorted(rows, key=lambda i: i["number"])) or "(нет)"
+    return (f"{head}\n\n{cap} всего issues с меткой architect от владельца; "
+            f"за {hours} ч: {len(rows)}\n{body}\n")
+
 def _runs_api(limit, status=None):
     """Прогоны через REST (там есть автор запуска; `gh run list --json` его не отдаёт).
     -> (runs, total, err); runs в форме databaseId/name/createdAt/event/headBranch/actor/..."""
