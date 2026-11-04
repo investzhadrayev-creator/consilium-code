@@ -83,6 +83,32 @@ class Harness(unittest.TestCase):
         self.assertTrue(any(c[:3] == ("gh", "pr", "comment") for c in self.last_calls), "refusal is commented on the PR")
 
 
+class TestAlreadyMerged(Harness):
+    def run_already_merged(self):
+        notes, calls = [], []
+        def fake_sh(*a, **k):
+            calls.append(a)
+            if a[:2] == ("gh", "api") and re.search(r"/pulls/\d+$", a[2]):
+                return json.dumps({"merged": True, "mergeable": None})   # GitHub: merged PR has mergeable=null
+            return ""
+        ran = []
+        saved = (B.sh, B.subprocess.run, L.notify, B.time.sleep)
+        B.sh, B.subprocess.run = fake_sh, lambda cmd, **k: ran.append(cmd) or types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        B.time.sleep = lambda s: None
+        L.notify = lambda text, level=L.INFO: notes.append((level, text)) or True
+        try:
+            B.do_merge("PR#7", "", now=WED)   # must not raise
+        finally:
+            B.sh, B.subprocess.run, L.notify, B.time.sleep = saved
+        return calls, ran, notes
+
+    def test_merge_of_an_already_merged_pr_is_not_an_error_and_not_an_action(self):
+        calls, ran, notes = self.run_already_merged()
+        self.assertEqual(notes, [], "no ACTION/INFO notification for an already merged PR")
+        self.assertEqual(ran, [], "gh pr merge must not run again")
+        self.assertFalse(any(c[:3] == ("gh", "pr", "comment") for c in calls), "no refusal comment")
+
+
 class TestMergeConditions(Harness):
     def test_all_conditions_met_merges_with_marker_subject_pinned_head_and_info(self):
         merged, notes, exc = self.run_merge(pr())

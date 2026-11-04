@@ -40,6 +40,7 @@ HURDLE = 0.12                                # порог мандата; пар
 YEARS = 10
 GRID_GROWTH = (0.00, 0.05, 0.10, 0.15, 0.20, 0.25)
 GRID_EV_S = (10, 15, 20, 25, 30)
+GRID_PS = (2, 4, 6, 8, 10)
 GRID_PE = (10, 15, 20, 25, 30)
 PASSIVE_WINDOWS = ((1, 365), (3, 1095), (5, 1826))   # лет, дней
 PRICE_DAYS = 1850                            # глубина загрузки Tiingo: 5 лет + запас
@@ -47,6 +48,9 @@ SECTIONS = ("а", "б", "в", "г", "д", "е")
 SEC_FIELDS = (("revenue", "Выручка"), ("operating_income", "Операционная прибыль"), ("net_income", "Чистая прибыль (NI)"),
               ("ocf", "Операционный денежный поток (OCF)"), ("capex", "Капзатраты (capex)"),
               ("shares_diluted", "Акции, разводнённые средневзвешенные за ФГ"), ("sbc", "SBC (справочно)"))
+
+
+PS_NOTE_TEXT = "долг не представлен в отчётности; оценка по капитализации, не по стоимости компании"
 
 
 def refusal(code, reason):
@@ -98,6 +102,18 @@ def debt_raw(facts, ef, nd_field):
             "basis": pt["debt_basis"], "flags": pt["debt_flags"]}
 
 
+def cash_raw(facts, ef, fy):
+    """Деньги на конец ФГ `fy` (CASH_CHAIN карточки), с тегом и accession. Нужны гейту пути по капитализации
+    (DECISION_2026-11-02_DOSSIER_COMPLETENESS §1 п. 5): «деньги известны». -> строка факта | отказ.
+    Нет фактов / нет ФГ / нет денег именно на эту дату -- MISSING_INPUT (наш пробел), не ноль."""
+    if facts is None or not fy:
+        return refusal("MISSING_INPUT", "нет фактов SEC или даты ФГ: деньги не прочитаны")
+    row = fc._by_end(facts, ef, fc.CASH_CHAIN).get(fy)
+    if row is None:
+        return refusal("MISSING_INPUT", "нет денег (теги %s) на конец ФГ %s: ноль не подставляется" % (",".join(fc.CASH_CHAIN), fy))
+    return row
+
+
 # ----------------------------------------------------------------------------- чистая арифметика
 
 def _annual(ratio, years):
@@ -113,6 +129,23 @@ def ev_s_return(rev0, shares, net_debt, price, g, mult, years=YEARS):
     if eq_t <= 0:
         return refusal("NONPOSITIVE_EQUITY", "EV на выходе %.0f не покрывает чистый долг %.0f" % (mult * rev0 * (1 + g) ** years, net_debt))
     return _annual(eq_t / shares / price, years)
+
+
+def ps_return(rev0, shares, price, g, mult, years=YEARS):
+    """Путь по капитализации (долг не представлен): выручка растёт g в год, выходной P/S = mult (капитализация / выручка),
+    число акций неизменно, дивидендов нет. Чистый долг НЕ участвует -- это оценка капитала, не стоимости компании."""
+    if rev0 is None or rev0 <= 0:
+        return refusal("NONPOSITIVE_REVENUE", "выручка <= 0: P/S-сетка не определена")
+    if price is None or price <= 0 or not shares or shares <= 0:
+        return refusal("NO_PRICE_OR_SHARES", "нет положительной цены или числа акций")
+    return _annual(mult * rev0 * (1 + g) ** years / shares / price, years)
+
+
+def required_growth_ps(rev0, shares, price, mult, hurdle=HURDLE, years=YEARS):
+    """Рост выручки в год, при котором ps_return == hurdle (закрытая форма). -> число | отказ."""
+    if price is None or price <= 0 or not shares or shares <= 0 or mult is None or mult <= 0 or rev0 is None or rev0 <= 0:
+        return refusal("NO_INPUT", "нужны положительные цена, акции, выручка и множитель")
+    return _annual(price * shares * (1 + hurdle) ** years / (mult * rev0), years)
 
 
 def pe_return(ni0, shares, price, g, mult, years=YEARS):
@@ -271,6 +304,7 @@ def build(ticker, as_of, source, fetch, started=None):
         D["rev_series"] = []
     D["nd"] = D["card"]["fields"]["net_debt_latest"]
     D["nd_raw"] = debt_raw(facts, source.ef, D["nd"]) if sec_ok else D["sec_error"]
+    D["cash"] = cash_raw(facts, source.ef, D["fy"]) if sec_ok else D["sec_error"]
     D["guard"] = _guard(source, ticker, as_of)
     D["seconds"] = round(time.monotonic() - t0, 1)
     D["input_hash"] = input_hash(D, ticker, as_of)
@@ -293,7 +327,7 @@ def input_hash(D, ticker, as_of):
     """Хэш входа: все факты SEC и цены, от которых зависят числа досье (без времени и без сгенерированного текста)."""
     spot = {"price": D["price"], "price_date": D["price_date"]}
     bench = {b: ({d: v for d, v in sorted(D["px"][b].items())} if isinstance(D["px"][b], dict) else D["px"][b]) for b in fc.BENCH_RS}
-    blob = {"ticker": ticker, "as_of": as_of, "raw": D["raw"], "rev_series": D["rev_series"], "nd": D["nd"], "spot": spot,
+    blob = {"ticker": ticker, "as_of": as_of, "raw": D["raw"], "rev_series": D["rev_series"], "nd": D["nd"], "cash": D.get("cash"), "spot": spot,
             "bench": bench, "guard_diag": D["guard"].get("diagnostics")}
     return hashlib.sha256(json.dumps(blob, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
 
@@ -317,15 +351,42 @@ def derive(D):
     d["ev"] = None if d["mcap"] is None or nd is None else d["mcap"] + nd
     d["ev_s"] = None if d["ev"] is None or not rev else d["ev"] / rev
     why = "нет: %s" % ", ".join(miss) if miss else None
-    d["grid_ev_s"] = {(g, m): (ev_s_return(rev, sh, nd, price, g, m) if not miss else refusal("MISSING_INPUT", why))
+    # Класс отказа EV/S-пути. Единственный пробел -- чистый долг: класс берём у отказа самого поля (NOT_REPORTED --
+    # не наша вина; DEBT_TAG_ABSENT / MISSING_INPUT -- наша, и это видно по коду). Иначе -- MISSING_INPUT.
+    miss_code = D["nd"]["refused"] if miss == ["чистый долг"] and is_ref(D["nd"]) else "MISSING_INPUT"
+    ev_ref = (lambda reason: refusal(miss_code, reason))
+    d["grid_ev_s"] = {(g, m): (ev_s_return(rev, sh, nd, price, g, m) if not miss else ev_ref(why))
                       for g in GRID_GROWTH for m in GRID_EV_S}
+    # Путь по капитализации (DECISION_2026-11-02_DOSSIER_COMPLETENESS §1 п. 5): ТОЛЬКО если чистый долг -- именно
+    # NOT_REPORTED (компания не представила), деньги известны, и есть цена, акции, выручка. Иной отказ долга (наш
+    # пробел) путь не включает: это не «долг не представлен», а «мы не прочитали».
+    cash = D.get("cash")
+    d["cash_val"] = None if cash is None or is_ref(cash) else cash["val"]
+    d["ps_mode"], d["ps_reason"] = False, None
+    if not is_ref(D["nd"]):
+        d["ps_reason"] = "чистый долг известен: EV/S-путь основной"
+    elif D["nd"]["refused"] != "NOT_REPORTED":
+        d["ps_reason"] = "отказ чистого долга класса %s, не NOT_REPORTED: путь по капитализации не включается" % D["nd"]["refused"]
+    elif cash is None or is_ref(cash):
+        d["ps_reason"] = "деньги неизвестны (%s): раздел (г) пуст, досье не полное" % ("нет чтения" if cash is None else cash["refused"])
+    elif price is None or not sh or not rev:
+        d["ps_reason"] = "нет: %s" % ", ".join(n for n, x in (("цена", price), ("акции", sh), ("выручка", rev)) if not x)
+    else:
+        d["ps_mode"] = True
+    d["ps"] = None if d["mcap"] is None or not rev or rev <= 0 else d["mcap"] / rev
+    ps_ref = refusal("PS_PATH_OFF", d["ps_reason"] or "путь по капитализации не включён")
+    d["grid_ps"] = {(g, m): (ps_return(rev, sh, price, g, m) if d["ps_mode"] else ps_ref)
+                    for g in GRID_GROWTH for m in GRID_PS}
+    d["g_req_ps"] = required_growth_ps(rev, sh, price, d["ps"]) if d["ps_mode"] and d["ps"] else ps_ref
+    d["g_req_ps_sens"] = {k: (required_growth_ps(rev, sh, price, d["ps"] * k) if d["ps_mode"] and d["ps"] else ps_ref)
+                          for k in (0.5, 1.0, 1.5)}
     d["grid_pe"] = {(g, m): (pe_return(ni, sh, price, g, m) if price is not None and sh else refusal("MISSING_INPUT", "нет цены или акций"))
                     for g in GRID_GROWTH for m in GRID_PE}
-    d["g_req"] = (required_growth_ev_s(rev, sh, nd, price, d["ev_s"]) if d["ev_s"] and not miss else refusal("MISSING_INPUT", why or "нет EV/S"))
+    d["g_req"] = (required_growth_ev_s(rev, sh, nd, price, d["ev_s"]) if d["ev_s"] and not miss else ev_ref(why or "нет EV/S"))
     d["g_req_sens"] = {}
     for k in (0.5, 1.0, 1.5):
         d["g_req_sens"][k] = (required_growth_ev_s(rev, sh, nd, price, d["ev_s"] * k) if d["ev_s"] and not miss
-                              else refusal("MISSING_INPUT", why or "нет EV/S"))
+                              else ev_ref(why or "нет EV/S"))
     ivc = load_ivc()
     d["rdcf"] = {}
     for leg, base in (("gaap_eps", d["eps"]), ("fcf_per_share", d["fcf_ps"])):
@@ -491,6 +552,17 @@ def sec_g(D):
     for g_ in GRID_GROWTH:
         cells = [(pc(v) if not is_ref(v) else "ОТКАЗ:" + v["refused"]) for v in (d["grid_ev_s"][(g_, m)] for m in GRID_EV_S)]
         L.append("| %d%% | %s |" % (round(g_ * 100), " | ".join(cells)))
+    if d["ps_mode"]:
+        L += ["", "**Таблица 1а. Путь по капитализации (P/S вместо EV/S): " + PS_NOTE_TEXT + ".** Чистый долг в расчёте не участвует. "
+              "Деньги на конец ФГ %s: %s (SEC %s, тег %s) -- справочно, как условие включения пути. Текущий P/S = капитализация / выручка = %s." % (
+                  D["fy"], usd(d["cash_val"]), D["cash"].get("accn"), D["cash"].get("tag"), "ОТКАЗ" if d["ps"] is None else "%.2f" % d["ps"]),
+              "(цена_T = P/S × Выручка₀ × (1+g)^10 / акции; число акций неизменно)", "",
+              "| рост \\ P/S | " + " | ".join(str(m) for m in GRID_PS) + " |", "|---|" + "---|" * len(GRID_PS)]
+        for g_ in GRID_GROWTH:
+            cells = [(pc(v) if not is_ref(v) else "ОТКАЗ:" + v["refused"]) for v in (d["grid_ps"][(g_, m)] for m in GRID_PS)]
+            L.append("| %d%% | %s |" % (round(g_ * 100), " | ".join(cells)))
+    else:
+        L += ["", "Путь по капитализации (P/S): не включён -- %s." % d["ps_reason"]]
     L += ["", "**Таблица 2. То же: рост чистой прибыли в год × выходной P/E** (маржа неизменна; NI₀ = %s)" % (
         "ОТКАЗ" if _v(D["raw"].get("net_income")) is None else usd(_v(D["raw"]["net_income"]))), "",
         "| рост \\ P/E | " + " | ".join(str(m) for m in GRID_PE) + " |", "|---|" + "---|" * len(GRID_PE)]
@@ -525,8 +597,17 @@ def truth_refute(D):
     d = D["derived"]
     gr = d["g_req"]
     T, X = [], []
+    gp = d["g_req_ps"]
     if is_ref(gr):
         T.append("ОТКАЗ %s: %s" % (gr["refused"], gr["reason"]))
+        if d["ps_mode"]:
+            T.append("Путь по капитализации (%s): при неизменном P/S = %.2f капитал даёт %d%% годовых 10 лет, только если выручка растёт "
+                     "**%s в год** (при неизменном P/S и числе акций это тождественно порогу: рост капитализации = рост выручки)." % (
+                         PS_NOTE_TEXT, d["ps"], round(HURDLE * 100), pp(gp)))
+            for k in (0.5, 1.5):
+                r = d["g_req_ps_sens"][k]
+                T.append("Путь по капитализации: при выходном P/S, равном %s от нынешнего (%.2f): нужен рост выручки %s в год." % (
+                    "половине" if k == 0.5 else "1,5-кратному", d["ps"] * k, ref_text(r) if is_ref(r) else pp(r)))
     else:
         T.append("Чтобы цена %s дала %d%% годовых 10 лет при неизменном EV/S = %.2f: выручка должна расти **%s в год** 10 лет."
                  % (D["price_date"], round(HURDLE * 100), d["ev_s"], pp(gr)))
@@ -538,11 +619,14 @@ def truth_refute(D):
         T.append("Денежная конвертация: " + ref_text(refusal("MISSING_INPUT", "FCF/NI не определено (нет OCF/capex или NI <= 0)")))
     else:
         T.append("Прибыль должна превращаться в деньги: FCF/NI за ФГ %s = %.2f (порог CASH_DECAY %s)." % (D["fy"], d["fcf_ni"], cd.FCF_NI_MIN))
-    if not is_ref(gr):
+    base_g = gr if not is_ref(gr) else (gp if d["ps_mode"] and not is_ref(gp) else None)
+    if base_g is not None:
+        gr = base_g
         thr = gr - 0.05
         yy = d["yoy"]
         now = "; ".join("%s: %s" % (e, pc(g)) for e, g in yy) if yy else "ОТКАЗ: нужны 3 соседних ФГ выручки"
-        X.append("Рост выручки ниже **%s** (= %s − 5 п.п.) два ФГ подряд. Сейчас, последние два ФГ: %s." % (pp(thr), pp(gr), now))
+        X.append("Рост выручки ниже **%s** (= %s − 5 п.п.%s) два ФГ подряд. Сейчас, последние два ФГ: %s." % (
+            pp(thr), pp(gr), "; порог по капитализации, не по стоимости компании" if is_ref(d["g_req"]) else "", now))
     else:
         X.append("Порог роста выручки: " + ref_text(gr))
     X.append("FCF/NI < %s (порог CASH_DECAY). Сейчас: %s." % (cd.FCF_NI_MIN, "ОТКАЗ (не определено)" if d["fcf_ni"] is None else "%.2f" % d["fcf_ni"]))
@@ -579,6 +663,19 @@ def guard_words(D):
             cd.UNDEFINED: "не определён"}.get(v, v)
 
 
+def refusal_summary(D):
+    """Первая строка раздела «Чего машина не знает» (DECISION_2026-11-02_DOSSIER_COMPLETENESS §3): число отказов и их классы
+    по полям этажа 1: «N отказов из M полей: КЛАСС k, …». Классы берутся из кода отказа поля, не из текста; по убыванию, затем по имени."""
+    codes = {}
+    for name in fc.FIELD_ORDER:
+        f = D["card"]["fields"][name]
+        if not fc.is_ok(f):
+            codes[f["refused"]] = codes.get(f["refused"], 0) + 1
+    n = sum(codes.values())
+    tail = ", ".join("%s %d" % (c, k) for c, k in sorted(codes.items(), key=lambda x: (-x[1], x[0])))
+    return "%d отказов из %d полей%s" % (n, len(fc.FIELD_ORDER), ": " + tail if tail else "")
+
+
 def render_brief(D):
     d = D["derived"]
     T, X = truth_refute(D)
@@ -588,8 +685,16 @@ def render_brief(D):
              D["entity"] or "название — ОТКАЗ: SEC не вернул", fy or "ОТКАЗ: нет годовых данных", D["as_of"]), "",
          "## 2. Три главных числа", ""]
     gr = d["g_req"]
-    L.append("1. Рост выручки, который уже заложен в цену (чтобы получить 12%% в год 10 лет, если оценка компании к выручке не изменится): %s." %
-             (ref_text(gr) if is_ref(gr) else "**%s в год**" % pp(gr)))
+    if is_ref(gr) and d["ps_mode"] and not is_ref(d["g_req_ps"]):
+        s_lo, s_hi = d["g_req_ps_sens"][0.5], d["g_req_ps_sens"][1.5]
+        L.append("1. Рост выручки, нужный для 12%% в год 10 лет (%s). Если оценка капитала к выручке (P/S) не изменится, нужен ровно порог "
+                 "**%s в год** -- это тождество, не открытие. Содержательно другое: при P/S вдвое ниже нынешнего нужно %s в год, при "
+                 "P/S в 1,5 раза выше -- %s в год. По стоимости компании (EV/S): %s." % (
+                     PS_NOTE_TEXT, pp(d["g_req_ps"]), ref_text(s_lo) if is_ref(s_lo) else pp(s_lo),
+                     ref_text(s_hi) if is_ref(s_hi) else pp(s_hi), ref_text(gr)))
+    else:
+        L.append("1. Рост выручки, который уже заложен в цену (чтобы получить 12%% в год 10 лет, если оценка компании к выручке не изменится): %s." %
+                 (ref_text(gr) if is_ref(gr) else "**%s в год**" % pp(gr)))
     L.append("2. Сколько прибыли превращается в свободные деньги (FCF/NI за ФГ): %s." %
              ("ОТКАЗ: не определено" if d["fcf_ni"] is None else "**%.2f**" % d["fcf_ni"]))
     r5 = D["passive"]["VOO"][5]
@@ -602,7 +707,7 @@ def render_brief(D):
         f = D["card"]["flags"].get(name) or {}
         L.append("- %s: %s. %s" % (name, f.get("state", "не вычислен"), f.get("evidence") or f.get("reason") or ""))
     L += ["", "## 4. Что должно быть правдой / что опровергнет", ""] + ["- " + x for x in T] + ["- Опровергнет: " + x for x in X]
-    L += ["", "## 5. Чего машина не знает", "",
+    L += ["", "## 5. Чего машина не знает", "", refusal_summary(D),
           "- Non-GAAP показатели компании: не проверено машиной (в XBRL us-gaap их нет).",
           "- Будущее: сетка и обратный DCF — арифметика от допущений (множитель, горизонт, неизменные акции и долг), не прогноз."]
     refs = []
