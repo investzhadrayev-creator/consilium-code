@@ -1725,6 +1725,9 @@ CASES = [
     ('td-17', '../tools/daily_report.py', '        elif SUBJ_DIRECT.match(subj):', '        elif False:', 'test_z_direct_journal.TestAuditorPacketAndReport.test_day_events_phrase_for_direct_task_commit', 'daily report names direct architect tasks as such'),
     ('td-18', '../tools/daily_report.py', 'r["event"] == "workflow_dispatch" and', 'r["event"] in ("workflow_dispatch", "repository_dispatch") and', 'test_z_direct_journal.TestAuditorPacketAndReport.test_manual_runs_counter_ignores_repository_dispatch', 'repository_dispatch is not a manual operator run'),
     ('td-19', '../tools/mail_bridge.py', '"--label", DIRECT_LABEL, "--author", OWNER_LOGIN, "--state", "all",', '"--label", DIRECT_LABEL, "--author", OWNER_LOGIN, "--state", "open",', 'test_z_direct_journal.TestTaskDirect.test_query_asks_for_closed_issues_too_with_label_and_owner', 'closed architect issues are still journaled'),
+    ('dos-cnt-01', '../tools/daily_report.py', '        if m["draft"]:\n            draft = True\n            continue\n', '        if m["draft"]:\n            draft = True\n', 'test_daily_dossier_count.TestDossierCount.test_draft_does_not_count', 'dossier counter: a _draft file is not a ready dossier'),
+    ('dos-cnt-02', '../tools/daily_report.py', 'if any(k == {"machine", "brief"} for k in kinds.values()):', 'if any(k for k in kinds.values()):', 'test_daily_dossier_count.TestDossierCount.test_half_pair_is_not_ready', 'dossier counter: machine without brief is not ready'),
+    ('dos-cnt-03', '../tools/daily_report.py', '(?:_v(?P<v>\\d+))?', '', 'test_daily_dossier_count.TestDossierCount.test_v2_counts', 'dossier counter: a _v2 pair is recognised'),
 ]
 
 

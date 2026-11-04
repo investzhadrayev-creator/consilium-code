@@ -3,7 +3,7 @@
 """Ежедневный отчёт оператору «сделано / сложности / впереди» (в дни, когда шла работа).
 Автосборка из фактов: коммиты, упавшие прогоны, открытые задачи, незакрытые пункты аудита.
 Сохраняется в journal/digests/ и уходит письмом. Пустой день → выход без письма и коммита."""
-import datetime as dt, os, subprocess, sys
+import datetime as dt, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import llm_clients as L
 import audit_facts as F
@@ -201,10 +201,34 @@ def exam_line(root="."):
     return (f"правило зафиксировано ({os.path.basename(f[0])}), экзамен не проведён" if f
             else "правило сторожа ещё не зафиксировано")
 
-def dossier_line(root="."):
+_DOS_RE = re.compile(r"^(?P<t>[A-Z0-9.]+)_(?P<asof>\d{4}-\d{2}-\d{2})_(?P<kind>machine|brief)"
+                     r"(?:_v(?P<v>\d+))?(?P<draft>_draft)?\.md$")
+
+def dossier_status(ticker, root="."):
+    """'ready' | 'draft' | 'none'. Готово = есть пара <T>_<as_of>_machine.md + _brief.md (одинаковые
+    as_of и версия, без _draft); из нескольких пар берётся последняя (as_of, затем _vN).
+    Файлы *_draft* готовыми не считаются; есть только они -> 'draft'; ничего -> 'none'."""
     import glob
-    ready = [t for t in DOSSIERS if glob.glob(os.path.join(root, f"Reports/dossiers/{t}_*.md"))]
-    return f"- Досье: {len(ready)} из {len(DOSSIERS)} (" + (", ".join(ready) + " готовы" if ready else "ни одно не готово") + ")"
+    kinds, draft = {}, False
+    for f in glob.glob(os.path.join(root, "Reports/dossiers", f"{ticker}_*.md")):
+        m = _DOS_RE.match(os.path.basename(f))
+        if not m or m["t"] != ticker:
+            continue
+        if m["draft"]:
+            draft = True
+            continue
+        kinds.setdefault((m["asof"], int(m["v"] or 1)), set()).add(m["kind"])
+    if any(k == {"machine", "brief"} for k in kinds.values()):
+        return "ready"
+    return "draft" if draft or kinds else "none"
+
+def dossier_line(root="."):
+    st = {label: dossier_status(label.split("-")[0], root) for label in DOSSIERS}
+    part = lambda k: [t for t, v in st.items() if v == k]
+    ready, draft, none = part("ready"), part("draft"), part("none")
+    fmt = lambda xs: ", ".join(xs) if xs else "—"
+    return (f"- Досье: {len(ready)} из {len(DOSSIERS)} "
+            f"(готовы: {fmt(ready)}; черновик: {fmt(draft)}; нет: {fmt(none)})")
 
 def tests_line():
     """Последний прогон tests.yml на main. Эталоны MU/INTC/META/GOOG — часть сьюта (TestGoldens),
