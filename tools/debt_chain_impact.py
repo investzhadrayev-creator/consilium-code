@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Отчёт влияния DECISION_2026-11-02_DEBT_CHAIN §3: прежняя и новая цепочка долга на всех именах watchlist.
+"""Отчёт влияния DECISION_2026-11-04_DEBT_CHAIN_v2 (§2; v1 §3): прежняя цепочка и цепочка v2 на всех именах watchlist.
+Цепочка v2 считается принудительно (force_v2), независимо от as_of: отчёт сравнивает правила, а не даты вступления.
 
-    SEC_USER_AGENT="Имя email" python3 tools/debt_chain_impact.py --as-of 2026-10-31 --out mailbox/REPORT_2026-11-03_DEBT_CHAIN_IMPACT.md
+    SEC_USER_AGENT="Имя email" python3 tools/debt_chain_impact.py --as-of 2026-10-31 --out mailbox/REPORT_2026-11-04_DEBT_CHAIN_IMPACT_v2.md --supersedes mailbox/REPORT_2026-11-03_DEBT_CHAIN_IMPACT.md
 
 Числа берутся с выхода tools/floor1_card.py (build_name: поле net_debt_latest и meta.net_debt_prev_chain), ничего не пересчитывается
 вручную. Цены не нужны (Tiingo не вызывается). Существующий файл не перезаписывается (append-only). Отказ нового правила там, где
@@ -44,6 +45,7 @@ def main(argv=None):
     ap.add_argument("--as-of", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--tickers", default="")
+    ap.add_argument("--supersedes", default="", help="путь отчёта, который заменяет этот (строка в шапке)")
     a = ap.parse_args(argv)
     if os.path.exists(a.out):
         print("ОТКАЗ: %s уже существует (append-only); исправление — новым файлом с supersedes" % a.out, file=sys.stderr)
@@ -55,7 +57,7 @@ def main(argv=None):
     src = fc.LiveSource(a.as_of)
     rows, cats = [], {}
     for i, t in enumerate(names, 1):
-        r = fc.build_name(t, a.as_of, src, None, {}, "цены не нужны для отчёта по долгу")
+        r = fc.build_name(t, a.as_of, src, None, {}, "цены не нужны для отчёта по долгу", force_v2=True)
         old = r["meta"].get("net_debt_prev_chain")
         new = r["fields"]["net_debt_latest"]
         if old is None:         # имя вне scope / SEC недоступен: обе цепочки не вычислялись
@@ -66,7 +68,9 @@ def main(argv=None):
         if flagged:
             cats.setdefault("FLAG", []).append(t)
         print("[%d/%d] %s %s" % (i, len(names), t, cat), file=sys.stderr)
-    L = ["# REPORT %s — влияние цепочки долга по DECISION_2026-11-02_DEBT_CHAIN §3" % dt.datetime.now(dt.timezone.utc).date().isoformat(), "",
+    L = (["supersedes: %s" % a.supersedes, "reason: DECISION_2026-11-04_DEBT_CHAIN_v2 §2 — отчёт пересчитан по цепочке v2 (расширенные теги, запасной «полный» тег); "
+          "прежний отчёт не тронут (append-only).", ""] if a.supersedes else []) + [
+         "# REPORT %s — влияние цепочки долга по DECISION_2026-11-04_DEBT_CHAIN_v2" % dt.datetime.now(dt.timezone.utc).date().isoformat(), "",
          "Сгенерировано `tools/debt_chain_impact.py` (вывод `tools/floor1_card.py`: поле net_debt_latest и прежняя цепочка из той же "
          "функции-двойника). as_of SEC = %s; имён: %d; edgartools==%s; сформировано %s UTC. Значения — чистый долг в USD "
          "(долг минус Cash&Equivalents, ФГ последней карточки). Числа этого файла напечатаны инструментом, не набраны вручную." % (
@@ -82,6 +86,9 @@ def main(argv=None):
     with open(a.out, "x", encoding="utf-8") as fh:
         fh.write("\n".join(L))
     print("отчёт: %s" % a.out)
+    if cats.get("LOST"):
+        print("ОТКАЗ: число -> отказ остаётся у %s: по v2 §2 слияние откладывается" % ", ".join(cats["LOST"]), file=sys.stderr)
+        return 3
     return 0
 
 

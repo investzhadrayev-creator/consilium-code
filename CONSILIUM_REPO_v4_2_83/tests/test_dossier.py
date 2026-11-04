@@ -18,6 +18,7 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.dont_write_bytecode = True   # мутационный зонд правит tools/ -- устаревший .pyc не должен пережить правку
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -381,6 +382,39 @@ class TestDebtRaw(unittest.TestCase):
         self.assertIn("480", flag_line[0])
         self.assertEqual(len(ACCN_RE.findall(sec.split("Формула")[0])), 2)    # accession у долга и у cash
         self.assertIn("LongTermDebtNoncurrent", sec)
+
+    def test_dos_67_raw_facts_follow_the_card_chain_switch_and_the_forced_v2_exception(self):
+        # сырые слагаемые берутся из ТОЙ ЖЕ точки ряда, что число карточки, при любой цепочке (иначе RAW_MISMATCH)
+        f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
+                        "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
+        def raw(as_of, force):
+            series, ref = fc.net_debt_series(f, EF, as_of, force)
+            last = series[-1]
+            nd = fc.ok(last["val"], "USD", "тест", last["accn"], tags=last["tags"])
+            return dos.debt_raw(f, EF, nd, as_of, force)
+        self.assertEqual(raw("2026-11-07", False)["total"], 700 - 250)         # до 14.11: прежняя цепочка (полный тег)
+        self.assertEqual(raw("2026-11-14", False)["total"], 480 - 250)         # с 14.11: части
+        self.assertEqual(raw("2020-02-15", True)["total"], 480 - 250)          # исключение: v2 на старом as_of
+        self.assertEqual(raw("2020-02-15", False)["total"], 700 - 250)
+
+    def test_dos_68_forced_v2_is_named_in_the_header_only_when_it_changes_the_chain_and_build_passes_it(self):
+        D = make(nd=None)
+        self.assertNotIn("принудительно", dos.render_machine(D))
+        D["debt_chain_forced_v2"], D["as_of"] = True, "2020-02-15"
+        self.assertIn("v2 применена принудительно", dos.render_machine(D))
+        D["as_of"] = "2026-11-14"                                              # с 14.11 v2 и так обычная: пометка не нужна
+        self.assertNotIn("принудительно", dos.render_machine(D))
+        seen = []
+        real = fc.build_name
+        with unittest.mock.patch.object(fc, "build_name", lambda *a, **k: (seen.append(a), real(*a, **k))[1]):
+            dos.build("TEST", AS_OF, FakeSource(mk_out()), fake_fetch(100.0), force_v2=True)
+            dos.build("TEST", AS_OF, FakeSource(mk_out()), fake_fetch(100.0))
+        self.assertEqual([x[-1] for x in seen], [True, False])
+        raw_calls = []
+        real_raw = dos.debt_raw
+        with unittest.mock.patch.object(dos, "debt_raw", lambda *x, **k: (raw_calls.append(x), real_raw(*x, **k))[1]):
+            dos.build("TEST", AS_OF, FakeSource(mk_out(), self.facts({"LongTermDebtNoncurrent": {2019: 1}})), fake_fetch(100.0), force_v2=True)
+        self.assertEqual([(x[3], x[4]) for x in raw_calls], [(AS_OF, True)])        # сырые факты получают тот же as_of и флаг, что карточка
 
     def test_dos_66_report_names_refusal_when_raw_facts_unavailable(self):
         D = make(nd=None)

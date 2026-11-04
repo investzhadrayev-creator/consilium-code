@@ -70,7 +70,7 @@ def load_ivc():
 
 # ----------------------------------------------------------------------------- сырые факты чистого долга
 
-def debt_raw(facts, ef, nd_field):
+def debt_raw(facts, ef, nd_field, as_of=None, force_v2=False):
     """Сырые факты, из которых карточка собрала net_debt_latest: каждое слагаемое долга и cash с тегом, accession,
     концом периода и значением; плюс остальные теги цепочек долга, у которых на ТОМ ЖЕ конце периода есть значение
     (показаны, не используются: чтобы расхождение тегов было видно читателю, а не угадывалось). Ничего не выбирается
@@ -81,7 +81,7 @@ def debt_raw(facts, ef, nd_field):
         return nd_field
     if facts is None:
         return refusal("NOT_IN_SOURCE", "нет фактов SEC для разбора слагаемых чистого долга")
-    series, ref = fc.net_debt_series(facts, ef)
+    series, ref = fc.net_debt_series(facts, ef, as_of, force_v2)
     if ref:
         return ref
     pt = series[-1]
@@ -91,7 +91,7 @@ def debt_raw(facts, ef, nd_field):
         return refusal("RAW_MISMATCH", "слагаемые на %s дают %s, а карточка — %s: сырые факты не показаны" % (end, total, nd_field["value"]))
     used = {r["tag"] for r in parts} | {cash["tag"]}
     unused = []
-    for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_CUR_CHAIN + fc.DEBT_CUR_TAGS + fc.CASH_CHAIN:
+    for tag in fc.DEBT_FULL_CHAIN + fc.DEBT_NONC_CHAIN + fc.DEBT_NONC_V2 + fc.DEBT_CUR_CHAIN + fc.DEBT_CUR_TAGS + fc.CASH_CHAIN:
         if tag in used or any(u["tag"] == tag for u in unused):
             continue
         rows, _ = ef._annual_instant_series(facts, [tag])
@@ -258,11 +258,11 @@ def pt(series, fy, name):
     return ref if ser is None else ser[-1]
 
 
-def build(ticker, as_of, source, fetch, started=None):
+def build(ticker, as_of, source, fetch, started=None, force_v2=False):
     """source.read(ticker) -> (out, facts, cik); fetch(ticker) -> {date: (close, adj)} (бросает исключение).
     -> dict D со всеми данными досье. Любой сбой источника -- именованный отказ в соответствующем поле."""
     t0 = time.monotonic() if started is None else started
-    D = {"ticker": ticker, "as_of": as_of, "refusals": {}}
+    D = {"ticker": ticker, "as_of": as_of, "refusals": {}, "debt_chain_forced_v2": bool(force_v2)}
     source.as_of = as_of
     try:
         out, facts, cik = source.read(ticker)
@@ -284,7 +284,7 @@ def build(ticker, as_of, source, fetch, started=None):
     adj_own = _col(own, 1) if isinstance(own, dict) else None
     for b in fc.BENCH_RS:
         bench[b] = _col(px[b], 1) if isinstance(px[b], dict) else px[b]
-    D["card"] = fc.build_name(ticker, as_of, source, adj_own, bench, None if adj_own else (own if isinstance(own, str) else "нет цен"))
+    D["card"] = fc.build_name(ticker, as_of, source, adj_own, bench, None if adj_own else (own if isinstance(own, str) else "нет цен"), force_v2)
     D["passive"] = {b: passive_returns(px[b], as_of) for b in fc.BENCH_RS}
     D["price"], D["price_date"], D["price_ref"] = (None, None, refusal("TIINGO_UNAVAILABLE", own)) if isinstance(own, str) else spot_price(own, as_of)
 
@@ -303,7 +303,7 @@ def build(ticker, as_of, source, fetch, started=None):
         D["raw"] = {k: D["sec_error"] for k, _ in SEC_FIELDS}
         D["rev_series"] = []
     D["nd"] = D["card"]["fields"]["net_debt_latest"]
-    D["nd_raw"] = debt_raw(facts, source.ef, D["nd"]) if sec_ok else D["sec_error"]
+    D["nd_raw"] = debt_raw(facts, source.ef, D["nd"], as_of, force_v2) if sec_ok else D["sec_error"]
     D["cash"] = cash_raw(facts, source.ef, D["fy"]) if sec_ok else D["sec_error"]
     D["guard"] = _guard(source, ticker, as_of)
     D["seconds"] = round(time.monotonic() - t0, 1)
@@ -649,6 +649,9 @@ def render_machine(D):
     head = ["# Досье (machine) — %s, срез %s" % (D["ticker"], D["as_of"]), "",
             "%s (CIK %s). Сгенерировано `tools/dossier.py` (К6 ч. A). Детерминированно, модели не вызывались. Вердикта нет: решение за оператором." % (
                 D["entity"] or "название: ОТКАЗ (нет в SEC-ответе)", D["cik"] or "ОТКАЗ"), ""]
+    if D.get("debt_chain_forced_v2") and not fc.debt_chain_is_v2(D["as_of"]):
+        head += ["Цепочка долга: v2 применена принудительно (флаг --debt-chain-v2) при as_of %s < %s — исключение для пересборки досье; "
+                 "обычные срезы до %s считаются по прежней цепочке." % (D["as_of"], fc.DEBT_CHAIN_V2_FROM, fc.DEBT_CHAIN_V2_FROM), ""]
     body = []
     for fn in (sec_a, sec_b, sec_c, sec_g, sec_d, sec_e):
         body += fn(D) + [""]
@@ -732,6 +735,8 @@ def main(argv=None, source=None, fetch=None):
     ap.add_argument("ticker")
     ap.add_argument("--as-of", required=True)
     ap.add_argument("--out-dir", default=OUT_DIR)
+    ap.add_argument("--debt-chain-v2", action="store_true",
+                    help="цепочка долга v2 при любом as_of (исключение для пересборки досье до 2026-11-14, DECISION_2026-11-04 §2/v1 §4)")
     a = ap.parse_args(argv)
     try:
         dt.date.fromisoformat(a.as_of)
@@ -745,7 +750,7 @@ def main(argv=None, source=None, fetch=None):
             return 2
         source = fc.LiveSource(a.as_of)
         fetch = lambda t: tiingo_series(t, token, a.as_of)     # noqa: E731
-    D = build(a.ticker.upper(), a.as_of, source, fetch)
+    D = build(a.ticker.upper(), a.as_of, source, fetch, force_v2=a.debt_chain_v2)
     os.makedirs(a.out_dir, exist_ok=True)
     base = os.path.join(a.out_dir, "%s_%s" % (D["ticker"], a.as_of))
     try:

@@ -52,8 +52,8 @@ class FixtureSource:
         return LOADER.listing(cik)
 
 
-def card(ticker, as_of=CHECK_DATE):
-    return fc.build_name(ticker, as_of, FixtureSource(as_of), None, {}, "no prices in this layer")
+def card(ticker, as_of=CHECK_DATE, force_v2=False):
+    return fc.build_name(ticker, as_of, FixtureSource(as_of), None, {}, "no prices in this layer", force_v2)
 
 
 def val(row, name):
@@ -496,17 +496,17 @@ class TestWorkflowReport(unittest.TestCase):
 class TestTagChainsAndDerivedGrossProfit(unittest.TestCase):
     """K1.1 ч.1: дрейф тегов (цепочки) и валовая прибыль = выручка - себестоимость из одного отчёта."""
 
-    def test_f1_34_mu_has_only_a_current_part_so_the_new_chain_refuses_by_name_instead_of_a_number(self):
-        # MU FY2018 (факты фикстуры): DebtCurrent 859M есть, LongTermDebtNoncurrent оборвался в 2012 (нетекущая -- под
-        # LongTermDebtAndCapitalLeaseObligations 3_777M, которого в новой цепочке нет), «полный» DebtAndCapitalLeaseObligations 4_636M.
-        # DECISION_2026-11-02 §1: часть есть -> запасной вариант не включается; текущая без нетекущей -> отказ. Это ПРОБЕЛ ПО НАШЕЙ
-        # ВИНЕ (п. 2 решения), он назван в mailbox/REPORT_*_DEBT_CHAIN_IMPACT.md; прежнее значение -- 4_636M - 6_506M в колонке перехода.
-        mu = card("MU", "2018-10-15")
-        self.assertEqual(refused(mu, "net_debt_latest"), "MISSING_INPUT")
-        self.assertIn("нетекущей", mu["fields"]["net_debt_latest"]["reason"])
-        prev = mu["meta"]["net_debt_prev_chain"]
-        self.assertEqual(prev["value"], 4_636_000_000 - 6_506_000_000)
-        self.assertIn("DebtAndCapitalLeaseObligations", prev["basis"])
+    def test_f1_34_mu_nonc_under_lease_tag_gives_a_number_by_v2_and_the_old_chain_before_14_nov(self):
+        # MU FY2018 (факты фикстуры): DebtCurrent 859M, LongTermDebtNoncurrent оборвался в 2012, нетекущая -- под
+        # LongTermDebtAndCapitalLeaseObligations 3_777M; «полный» DebtAndCapitalLeaseObligations 4_636M. v2 §1: этот тег в списке
+        # нетекущих -> число из частей (3_777 + 859 - cash 6_506), basis называет оба тега. До 2026-11-14 -- прежняя цепочка.
+        mu = card("MU", "2018-10-15", force_v2=True)
+        self.assertEqual(val(mu, "net_debt_latest"), 3_777_000_000 + 859_000_000 - 6_506_000_000)
+        self.assertIn("LongTermDebtAndCapitalLeaseObligations+DebtCurrent", mu["fields"]["net_debt_latest"]["basis"])
+        old = card("MU", "2018-10-15")                       # as_of < 2026-11-14 без форсирования: прежняя цепочка
+        self.assertIn("прежняя цепочка", old["fields"]["net_debt_latest"]["basis"])
+        self.assertIn("DebtAndCapitalLeaseObligations", old["meta"]["net_debt_prev_chain"]["basis"])
+        self.assertEqual(old["meta"]["net_debt_prev_chain"]["value"], 4_636_000_000 - 6_506_000_000)
 
     def test_f1_35_change_across_different_tag_sets_is_marked_mixed(self):
         yrs = lambda a, b: ["%d-12-31" % y for y in range(a, b + 1)]
@@ -817,14 +817,14 @@ class TestK12TagChainExtensions(unittest.TestCase):
 
     def test_f1_50_orcl_style_notes_payable_pair_and_combined_total_tag(self):
         y = self.YRS
-        # новая цепочка (DECISION_2026-11-02) не знает NotesPayable-пару: тегов долга нет -> именованный отказ, не число;
-        # прежнее значение той же пары остаётся в колонке перехода (net_debt_series_prev_chain)
-        F = self.nd({"LongTermNotesPayable": [(e, 120) for e in y], "NotesPayableCurrent": [(e, 9) for e in y],
+        # v2 §1: LongTermNotesPayable -- нетекущая часть; NotesPayableCurrent в списке текущих v2 НЕТ, поэтому при DebtCurrent берётся он
+        F = self.nd({"LongTermNotesPayable": [(e, 120) for e in y], "DebtCurrent": [(e, 9) for e in y],
                      "CashAndCashEquivalentsAtCarryingValue": [(e, 20) for e in y]})
-        self.assertEqual(F["net_debt_latest"]["refused"], "DEBT_TAG_ABSENT")
+        self.assertEqual(F["net_debt_latest"]["value"], 120 + 9 - 20)
+        self.assertEqual(F["net_debt_latest"]["tags"][:2], ["LongTermNotesPayable", "DebtCurrent"])
         pv, _ = fc.net_debt_series_prev_chain(tag_facts({"LongTermNotesPayable": [(e, 120) for e in y], "NotesPayableCurrent": [(e, 9) for e in y],
                                                          "CashAndCashEquivalentsAtCarryingValue": [(e, 20) for e in y]}), EF)
-        self.assertEqual(pv[-1]["val"], 120 + 9 - 20)
+        self.assertEqual(pv[-1]["val"], 120 + 9 - 20)                   # прежняя цепочка (колонка перехода) остаётся доступной
         F = self.nd({"DebtLongtermAndShorttermCombinedAmount": [(e, 50) for e in y],
                      "CashAndCashEquivalentsAtCarryingValue": [(e, 20) for e in y]})
         self.assertEqual(F["net_debt_latest"]["value"], 30)
@@ -835,7 +835,7 @@ class TestK12TagChainExtensions(unittest.TestCase):
         F = self.nd({"LongTermDebtNoncurrent": [(e, 100) for e in y], "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in y]})
         for n in ("net_debt_latest", "net_debt_chg_3y"):
             self.assertEqual(val({"fields": F}, n) if n == "net_debt_latest" else F[n]["value"], 70 if n == "net_debt_latest" else 0)
-            self.assertIn("= 0 (DECISION_2026-11-02", F[n]["basis"])
+            self.assertIn("= 0 (DECISION_2026-11-04", F[n]["basis"])
         # долг оборвался давно (PLTR): отказ с причиной, а не ноль и не «последнее известное»
         old = self.nd({"LongTermDebtNoncurrent": [("2020-12-31", 200), ("2021-12-31", 0)], "ConvertibleDebtCurrent": [("2025-12-31", 0)],
                        "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in ["2020-12-31", "2021-12-31"] + self.YRS]})
@@ -1084,7 +1084,7 @@ def debt_slice(name, as_of=None):
 
 
 class TestDebtChainDecision(unittest.TestCase):
-    """DECISION_2026-11-02_DEBT_CHAIN: долг из балансовых частей одной подачи; «полный» тег -- только запасной вариант."""
+    """DECISION_2026-11-04_DEBT_CHAIN_v2 (supersedes v1 §1, §3): долг из балансовых частей одной подачи; «полный» тег -- только запасной вариант."""
 
     def test_f1_59_nflx_2019_takes_the_balance_part_not_the_total_with_future_interest(self):
         # факты фикстуры: LongTermDebt 20_723_441_000 (таблица сроков: номинал + проценты), LongTermDebtNoncurrent 14_759_260_000,
@@ -1129,7 +1129,7 @@ class TestDebtChainDecision(unittest.TestCase):
                                                "CashAndCashEquivalentsAtCarryingValue": [(e, 30) for e in y]}), EF)
         self.assertIsNone(ref)
         self.assertEqual(s[-1]["val"], 50)
-        self.assertEqual(s[-1]["debt_basis"], "полный тег, балансовые части не размечены")
+        self.assertEqual(s[-1]["debt_basis"], "полный тег; балансовые части не размечены")
         self.assertEqual(s[-1]["tags"][0], "DebtAndCapitalLeaseObligations")
         self.assertEqual(s[-1]["debt_flags"], [])
 
@@ -1154,7 +1154,10 @@ class TestDebtChainDecision(unittest.TestCase):
         self.assertEqual(len(F["net_debt_chg_3y"]["debt_flags"]), 2)
 
     def test_f1_65_prev_chain_column_and_section_exist_only_for_the_two_transition_dates(self):
-        rows = [card("MU", "2018-10-15"), card("INTC", INTC_DATE)]
+        # MU по v2 и по прежней цепочке даёт одно число (3_777+859 = 4_636), поэтому «прежнее» значение MU подменено на другое:
+        # проверяется колонка/раздел, а не арифметика цепочек (она -- в f1_59..f1_64)
+        rows = [card("MU", "2018-10-15", force_v2=True), card("INTC", INTC_DATE, force_v2=True)]
+        rows[0]["meta"]["net_debt_prev_chain"] = fc.ok(-1_000_000_000, "USD", "прежняя цепочка (тест)", ["x"])
         def run(as_of):
             with tempfile.TemporaryDirectory() as td:
                 base, _, _ = fc.write_outputs(rows, as_of, td, "тест", {"edgartools": "test"})
@@ -1162,14 +1165,14 @@ class TestDebtChainDecision(unittest.TestCase):
                     rd = list(csv.DictReader(fh))
                 with open(base + ".md", encoding="utf-8") as fh:
                     return rd, fh.read()
-        for d in ("2026-11-07", "2026-11-14"):
+        for d in ("2026-11-14", "2026-11-21"):
             rd, md = run(d)
             self.assertIn("net_debt_latest_prev_chain", rd[0])
             self.assertIn("Переход цепочки долга: имена, где значение изменилось больше чем на 5 %", md)
         mu = next(r for r in rd if r["ticker"] == "MU")
-        self.assertEqual(mu["net_debt_latest_prev_chain"], repr(4_636_000_000 - 6_506_000_000))   # прежнее значение MU
-        self.assertIn("| MU |", md.split("Переход цепочки долга")[1])        # число -> отказ: видно оператору, не молчание
-        for d in ("2026-11-21", "2026-10-31", "2026-11-28"):
+        self.assertEqual(mu["net_debt_latest_prev_chain"], repr(-1_000_000_000))   # прежнее значение MU
+        self.assertIn("| MU |", md.split("Переход цепочки долга")[1])        # изменение > 5 % видно оператору в разделе
+        for d in ("2026-11-07", "2026-10-31", "2026-11-28"):
             rd, md = run(d)
             self.assertNotIn("net_debt_latest_prev_chain", rd[0])
             self.assertNotIn("Переход цепочки долга", md)
@@ -1182,6 +1185,93 @@ class TestDebtChainDecision(unittest.TestCase):
         rows = [row("SAME", ok(100), ok(100)), row("SMALL", ok(100), ok(105)), row("BIG", ok(100), ok(106)),
                 row("NEG", ok(100), ok(-6)), row("ZERO", ok(0), ok(1)), row("LOST", ok(100), fc.refusal("MISSING_INPUT", "x"))]
         self.assertEqual([t for t, *_ in fc.transition_rows(rows)], ["BIG", "NEG", "ZERO", "LOST"])
+
+    # ---- DECISION_2026-11-04_DEBT_CHAIN_v2 ----
+
+    def test_f1_67_adbe_avgo_orcl_real_slices_give_a_number_not_a_refusal(self):
+        # строки SEC companyfacts (fixtures/debt_chain/*): ожидаемые числа -- арифметика от этих фактов, не вывод кода
+        slices = {n: debt_slice(n) for n in ("ADBE", "AVGO", "ORCL")}
+        for n, f in slices.items():
+            s, ref = fc.net_debt_series(f, EF, "2026-11-14")
+            self.assertIsNone(ref, "%s: %s" % (n, ref))
+            self.assertIsInstance(s[-1]["val"], (int, float))
+        rows = lambda n, tag, end: [r for r in slices[n]["facts"]["us-gaap"][tag]["units"]["USD"] if r["end"] == end]   # noqa: E731
+        def v(n, tag, end):
+            return max(rows(n, tag, end), key=lambda r: r["filed"])["val"]
+        s, _ = fc.net_debt_series(slices["AVGO"], EF, "2026-11-14")
+        self.assertEqual(s[-1]["val"], v("AVGO", "LongTermDebtAndCapitalLeaseObligations", "2025-11-02")
+                         + v("AVGO", "LongTermDebtCurrent", "2025-11-02") - v("AVGO", "CashAndCashEquivalentsAtCarryingValue", "2025-11-02"))
+        self.assertIn("LongTermDebtAndCapitalLeaseObligations+LongTermDebtCurrent", s[-1]["debt_basis"])
+        s, _ = fc.net_debt_series(slices["ORCL"], EF, "2026-11-14")
+        self.assertEqual(s[-1]["val"], v("ORCL", "LongTermNotesPayable", "2026-05-31") + v("ORCL", "DebtCurrent", "2026-05-31")
+                         - v("ORCL", "CashAndCashEquivalentsAtCarryingValue", "2026-05-31"))
+        self.assertIn("LongTermNotesPayable+DebtCurrent", s[-1]["debt_basis"])          # из частей, а не запасным «полным» тегом с тем же числом
+        s, _ = fc.net_debt_series(slices["ADBE"], EF, "2026-11-14")
+        self.assertEqual(s[-1]["val"], v("ADBE", "LongTermDebt", "2025-11-28") - v("ADBE", "CashAndCashEquivalentsAtCarryingValue", "2025-11-28"))
+        self.assertEqual(s[-1]["debt_basis"], "полный тег; балансовые части не размечены")      # ADBE: частей нет на последнем ФГ -> запасной тег
+
+    def test_f1_68_each_v2_noncurrent_tag_is_taken_and_the_first_marked_one_wins(self):
+        e = "2025-12-31"
+        for tag in fc.DEBT_NONC_V2:
+            s, ref = fc.net_debt_series(tag_facts({tag: [(e, 100)], "CashAndCashEquivalentsAtCarryingValue": [(e, 30)]}), EF)
+            self.assertIsNone(ref, tag)
+            self.assertEqual((s[-1]["val"], s[-1]["tags"][0]), (70, tag))
+        # два нетекущих тега в одной подаче: берётся первый по списку, второй не суммируется (иначе двойной счёт)
+        s, _ = fc.net_debt_series(tag_facts({"SeniorLongTermNotes": [(e, 40)], "LongTermNotesPayable": [(e, 100)],
+                                             "CashAndCashEquivalentsAtCarryingValue": [(e, 30)]}), EF)
+        self.assertEqual((s[-1]["val"], s[-1]["tags"][0]), (70, "LongTermNotesPayable"))
+
+    def test_f1_69_current_part_order_and_commercial_paper_sum(self):
+        e = "2025-12-31"
+        base = {"LongTermDebtNoncurrent": [(e, 100)], "CashAndCashEquivalentsAtCarryingValue": [(e, 30)]}
+        s, _ = fc.net_debt_series(tag_facts(dict(base, LongTermDebtAndCapitalLeaseObligationsCurrent=[(e, 7)])), EF)
+        self.assertEqual(s[-1]["val"], 100 + 7 - 30)
+        s, _ = fc.net_debt_series(tag_facts(dict(base, DebtCurrent=[(e, 5)], LongTermDebtAndCapitalLeaseObligationsCurrent=[(e, 7)])), EF)
+        self.assertEqual(s[-1]["val"], 100 + 5 - 30)                           # DebtCurrent раньше LTD&CL-Current
+        s, _ = fc.net_debt_series(tag_facts(dict(base, ShortTermBorrowings=[(e, 3)], CommercialPaper=[(e, 4)])), EF)
+        self.assertEqual(s[-1]["val"], 100 + 3 + 4 - 30)
+
+    def test_f1_70_current_only_with_no_noncurrent_uses_the_full_tag_and_without_a_full_tag_refuses(self):
+        e = "2025-12-31"
+        s, ref = fc.net_debt_series(tag_facts({"DebtCurrent": [(e, 9)], "LongTermDebt": [(e, 80)],
+                                               "CashAndCashEquivalentsAtCarryingValue": [(e, 30)]}), EF)
+        self.assertIsNone(ref)
+        self.assertEqual((s[-1]["val"], s[-1]["debt_basis"]), (50, "полный тег; балансовые части не размечены"))   # текущая 9 не прибавляется
+        s, ref = fc.net_debt_series(tag_facts({"DebtCurrent": [(e, 9)], "CashAndCashEquivalentsAtCarryingValue": [(e, 30)]}), EF)
+        self.assertIsNone(s)
+        self.assertEqual(ref["refused"], "MISSING_INPUT")                       # без «полного» тега текущая часть одна -- не число
+
+    def test_f1_71_chain_switches_by_as_of_old_before_14_nov_new_from_14_nov(self):
+        f = debt_slice("UBER")
+        old_pt = [3_495_000_000, "LongTermDebt"]                               # прежняя цепочка: полный тег 10_600 - cash 7_105
+        new_val = 10_521_000_000 + 0 - 7_105_000_000
+        for as_of in ("2026-11-06", "2026-11-13"):
+            s, _ = fc.net_debt_series(f, EF, as_of)
+            self.assertEqual((s[-1]["val"], s[-1]["tags"][0]), tuple(old_pt), as_of)
+            self.assertIn("прежняя цепочка", s[-1]["debt_basis"])
+            self.assertEqual(s[-1]["debt_flags"], [])
+        for as_of in ("2026-11-14", "2026-11-21"):
+            s, _ = fc.net_debt_series(f, EF, as_of)
+            self.assertEqual((s[-1]["val"], s[-1]["tags"][0]), (new_val, "LongTermDebtNoncurrent"), as_of)
+        s, _ = fc.net_debt_series(f, EF, "2026-11-06", force_v2=True)          # явное исключение (досье NFLX 2020)
+        self.assertEqual(s[-1]["val"], new_val)
+        with self.assertRaises(ValueError):                                    # неизвестная дата не выбирает цепочку молча
+            fc.net_debt_series(f, EF, "не дата")
+
+    def test_f1_72_consumer_card_field_follows_the_as_of_switch(self):
+        # потребитель, не только функция ряда: sec_fields (поле карточки) и build_name передают as_of дальше
+        f = tag_facts({"LongTermDebt": [("2025-12-31", 200)], "LongTermDebtNoncurrent": [("2025-12-31", 100)],
+                       "CashAndCashEquivalentsAtCarryingValue": [("2025-12-31", 10)]})
+        Fo, _ = fc.sec_fields(syn_out(), f, EF, "2026-11-07")
+        Fn, _ = fc.sec_fields(syn_out(), f, EF, "2026-11-14")
+        self.assertEqual((Fo["net_debt_latest"]["value"], Fn["net_debt_latest"]["value"]), (190, 90))
+        seen = []
+        real = fc.sec_fields
+        with unittest.mock.patch.object(fc, "sec_fields", lambda *a, **k: (seen.append((a, k)), real(*a, **k))[1]):
+            card("MU", "2018-10-15")
+            card("MU", "2018-10-15", force_v2=True)
+        self.assertEqual([x[0][3] for x in seen], ["2018-10-15", "2018-10-15"])
+        self.assertEqual([x[0][4] for x in seen], [False, True])
 
 
 import datetime as dt  # noqa: E402

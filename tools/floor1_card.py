@@ -362,16 +362,25 @@ def _by_end(facts, ef, chain):
     return out
 
 
-# DECISION_2026-11-02_DEBT_CHAIN §1: долг собирается из балансовых частей ОДНОЙ подачи (accession) на одну дату.
-DEBT_NONC_TAG = "LongTermDebtNoncurrent"
-DEBT_CUR_FIRST = ["LongTermDebtCurrent", "DebtCurrent"]          # текущая часть: первый размеченный из двух
+# DECISION_2026-11-04_DEBT_CHAIN_v2 §1 (supersedes v1 §1): долг собирается из балансовых частей ОДНОЙ подачи (accession) на дату.
+DEBT_NONC_V2 = ["LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations", "LongTermNotesPayable",
+                "ConvertibleNotesPayableNoncurrent", "SeniorLongTermNotes"]     # нетекущая: первый размеченный в подаче
+DEBT_CUR_FIRST = ["LongTermDebtCurrent", "DebtCurrent", "LongTermDebtAndCapitalLeaseObligationsCurrent"]   # текущая: первый размеченный
 DEBT_CUR_SUM = ["ShortTermBorrowings", "CommercialPaper"]        # иначе сумма этих двух (каждая -- если размечена)
 DEBT_CUR_TAGS = DEBT_CUR_FIRST + DEBT_CUR_SUM
 DEBT_CROSS_TAG = "LongTermDebt"
 DEBT_INCONSISTENT_PCT = 0.10
 DEBT_FLAG = "DEBT_TAG_INCONSISTENT"
-FALLBACK_BASIS = "полный тег, балансовые части не размечены"
-ZERO_CUR_BASIS = "текущая часть не размечена ни под одним тегом в этой подаче = 0 (DECISION_2026-11-02 §1)"
+FALLBACK_BASIS = "полный тег; балансовые части не размечены"
+ZERO_CUR_BASIS = "текущая часть не размечена ни под одним тегом в этой подаче = 0 (DECISION_2026-11-04 §1)"
+# DECISION_2026-11-04 §2: новая цепочка действует при as_of >= этой даты; раньше -- ПРЕЖНЯЯ цепочка (карточка 7.11 по-старому).
+DEBT_CHAIN_V2_FROM = "2026-11-14"
+
+
+def debt_chain_is_v2(as_of):
+    """True -- считать по цепочке v2. as_of обязателен и должен быть датой ISO: неизвестная дата не подменяется
+    выбором цепочки (ValueError), иначе карточка 7.11 могла бы тихо выйти по новому правилу."""
+    return _d(as_of).isoformat() >= DEBT_CHAIN_V2_FROM
 
 
 def _rows_by_end_accn(facts, ef, tags):
@@ -391,13 +400,15 @@ def _rows_by_end_accn(facts, ef, tags):
 
 
 def _balance_point(end, by_accn):
-    """-> (parts, flag_info, basis, cur_zero, refusal_text). Балансовые части на дату из одной подачи (DECISION §1)."""
-    with_nonc = [a for a, c in by_accn.items() if DEBT_NONC_TAG in c]
+    """-> (parts, flag_info, basis, cur_zero, refusal_text, has_nonc). Балансовые части на дату из одной подачи (v2 §1).
+    has_nonc=False -- нетекущая часть не размечена ни в одной подаче на дату (тогда вызывающий пробует «полный» тег)."""
+    nonc_of = {a: next((t for t in DEBT_NONC_V2 if t in c), None) for a, c in by_accn.items()}
+    with_nonc = [a for a, t in nonc_of.items() if t]
     if not with_nonc:
-        return None, None, None, False, "на %s есть только текущая часть без нетекущей: «нет нетекущей части» != ноль" % end
-    accn = max(with_nonc, key=lambda a: by_accn[a][DEBT_NONC_TAG]["filed"])
+        return None, None, None, False, "на %s есть только текущая часть без нетекущей: «нет нетекущей части» != ноль" % end, False
+    accn = max(with_nonc, key=lambda a: by_accn[a][nonc_of[a]]["filed"])
     cell = by_accn[accn]
-    parts = [cell[DEBT_NONC_TAG]]
+    parts = [cell[nonc_of[accn]]]
     first = next((t for t in DEBT_CUR_FIRST if t in cell), None)
     cur_zero = False
     if first:
@@ -408,7 +419,7 @@ def _balance_point(end, by_accn):
         other = sorted({t for a, c in by_accn.items() if a != accn for t in DEBT_CUR_TAGS if t in c})
         if other:
             return None, None, None, False, ("на %s текущая часть (%s) размечена только в другой подаче, чем нетекущая (%s): "
-                                             "одна подача нарушена, ноль не подставляется" % (end, ",".join(other), accn))
+                                             "одна подача нарушена, ноль не подставляется" % (end, ",".join(other), accn)), True
         cur_zero = True
     total = sum(p["val"] for p in parts)
     flag = None
@@ -418,39 +429,48 @@ def _balance_point(end, by_accn):
     basis = "балансовые части: %s" % "+".join(p["tag"] for p in parts)
     if cur_zero:
         basis += "; " + ZERO_CUR_BASIS
-    return parts, flag, basis, cur_zero, None
+    return parts, flag, basis, cur_zero, None, True
 
 
-def net_debt_series(facts, ef):
-    """-> (series, refusal). НОВАЯ цепочка (DECISION_2026-11-02_DEBT_CHAIN §1). Долг на дате ФГ = LongTermDebtNoncurrent +
-    текущая часть ТОЙ ЖЕ подачи (LongTermDebtCurrent -> DebtCurrent -> ShortTermBorrowings+CommercialPaper); текущая часть = 0
-    только если её нет ни под одним из этих тегов в этой подаче И нетекущая часть есть. Нет ни одной балансовой части на
-    дате -- запасной вариант: прежняя цепочка «полного» тега, basis «полный тег, балансовые части не размечены».
-    LongTermDebt при расхождении с суммой частей > 10 % -- флаг DEBT_TAG_INCONSISTENT (в расчёт идут части).
+def net_debt_series(facts, ef, as_of=None, force_v2=False):
+    """-> (series, refusal). Выбор цепочки по as_of (DECISION_2026-11-04 §2): as_of < DEBT_CHAIN_V2_FROM -- ПРЕЖНЯЯ цепочка
+    (net_debt_series_prev_chain, точки дополнены полями parts/cash/debt_basis/debt_flags); as_of >= -- цепочка v2;
+    as_of=None -- цепочка v2 (только для прямых вызовов из тестов; боевые вызовы build_name/dossier передают as_of).
+    force_v2=True -- цепочка v2 при любом as_of (исключение DECISION_2026-11-01/v1 §4: досье NFLX 2020-02-15, явный флаг CLI).
+    Цепочка v2 (§1): долг на дате ФГ = первая размеченная нетекущая часть (DEBT_NONC_V2) + текущая часть ТОЙ ЖЕ подачи
+    (DEBT_CUR_FIRST, иначе ShortTermBorrowings+CommercialPaper); текущая = 0 только если ни один тег текущей части не размечен
+    в этой подаче И нетекущая есть. Нет нетекущей ни в одной подаче, но есть «полный» тег -- он, basis FALLBACK_BASIS (число,
+    не пробел). LongTermDebt при расхождении с суммой частей > 10 % -- флаг DEBT_TAG_INCONSISTENT (в расчёт идут части).
     Минус деньги (CASH_CHAIN) на той же дате. Точка несёт tags, parts (строки-слагаемые), cash, debt_basis, debt_flags."""
+    if as_of is not None and not force_v2 and not debt_chain_is_v2(as_of):
+        return _prev_chain_as_points(facts, ef)
     full = _by_end(facts, ef, DEBT_FULL_CHAIN)
-    bal = _rows_by_end_accn(facts, ef, [DEBT_NONC_TAG] + DEBT_CUR_TAGS + [DEBT_CROSS_TAG])
-    bal_ends = {e: c for e, c in bal.items() if any(t in cc for cc in c.values() for t in [DEBT_NONC_TAG] + DEBT_CUR_TAGS)}
+    bal = _rows_by_end_accn(facts, ef, DEBT_NONC_V2 + DEBT_CUR_TAGS + [DEBT_CROSS_TAG])
+    bal_ends = {e: c for e, c in bal.items() if any(t in cc for cc in c.values() for t in DEBT_NONC_V2 + DEBT_CUR_TAGS)}
     if not full and not bal_ends:
         return None, refusal("DEBT_TAG_ABSENT", "нет ни одного тега долга (балансовые %s, %s; полные %s): «долга нет» и "
                              "«тег не заполнен» неотличимы, ноль не подставляется"
-                             % (DEBT_NONC_TAG, ",".join(DEBT_CUR_TAGS), ",".join(DEBT_FULL_CHAIN)))
+                             % (",".join(DEBT_NONC_V2), ",".join(DEBT_CUR_TAGS), ",".join(DEBT_FULL_CHAIN)))
     cm = _by_end(facts, ef, CASH_CHAIN)
     out, skipped = [], []
     for end in sorted(set(full) | set(bal_ends)):
         if end not in cm:
             continue
         flags = []
+        parts, has_nonc = None, False
         if end in bal_ends:
-            parts, flag, basis, _, why = _balance_point(end, bal_ends[end])
-            if parts is None:
-                skipped.append((end, why))
+            parts, flag, basis, _, why, has_nonc = _balance_point(end, bal_ends[end])
+            if parts is None and has_nonc:
+                skipped.append((end, why))      # нетекущая есть, текущая нарушает «одну подачу»: запасной тег не подменяет
                 continue
-            if flag:
+            if parts is not None and flag:
                 flags.append(flag)
                 basis += "; %s: %s=%s vs сумма частей=%s (accession %s)" % (
                     DEBT_FLAG, flag["full_tag"], format(round(flag["full_val"]), ","), format(round(flag["parts_sum"]), ","), flag["accn"])
-        else:
+        if parts is None:
+            if end not in full:
+                skipped.append((end, why))
+                continue
             parts, basis = [full[end]], FALLBACK_BASIS
         debt = sum(p["val"] for p in parts)
         out.append({"end": end, "val": debt - cm[end]["val"], "accn": [r.get("accn") for r in parts + [cm[end]]],
@@ -464,6 +484,21 @@ def net_debt_series(facts, ef):
         return None, refusal("MISSING_INPUT", "долг не раскрыт: последняя точка тега долга %s, денег на тех датах нет "
                              "или тег долга позднее не заполнен -- это не ноль" % max(set(full) | set(bal_ends)))
     return out, None
+
+
+def _prev_chain_as_points(facts, ef):
+    """Прежняя цепочка в формате точек v2 (parts/cash/debt_basis/debt_flags), чтобы потребители читали один формат."""
+    series, ref = net_debt_series_prev_chain(facts, ef)
+    if ref:
+        return None, ref
+    full, nonc, cur, cm = (_by_end(facts, ef, c) for c in (DEBT_FULL_CHAIN, DEBT_NONC_CHAIN, DEBT_CUR_CHAIN, CASH_CHAIN))
+    for pt in series:
+        e = pt["end"]
+        pt["parts"] = [full[e]] if e in full else [nonc[e], cur[e]]
+        pt["cash"] = cm[e]
+        pt["debt_basis"] = "прежняя цепочка (до DECISION_2026-11-04 §2; действует при as_of < %s)" % DEBT_CHAIN_V2_FROM
+        pt["debt_flags"] = []
+    return series, None
 
 
 def net_debt_series_prev_chain(facts, ef):
@@ -633,8 +668,9 @@ def classify_short_history(F, facts, ef, fy):
                            need_fy=n, fy=fy, window_start=need, earliest_revenue_end=first, was=f.get("refused"))
 
 
-def sec_fields(out, facts, ef):
-    """Все SEC-поля одного имени + сырые ряды для флагов. out — выход адаптера."""
+def sec_fields(out, facts, ef, as_of=None, force_v2=False):
+    """Все SEC-поля одного имени + сырые ряды для флагов. out — выход адаптера. as_of выбирает цепочку долга
+    (DECISION_2026-11-04 §2; None -- v2, только прямые вызовы тестов; build_name передаёт as_of всегда)."""
     F, raw = {}, {}
     rev, ni = out.get("revenue_audit") or out.get("revenue"), out.get("net_income_audit") or out.get("net_income")
     ocf, capex = out.get("ocf_audit") or out.get("ocf"), out.get("capex_audit") or out.get("capex")
@@ -710,11 +746,11 @@ def sec_fields(out, facts, ef):
     F["shares_chg_1y"] = share_change(shares, 1, splits, sh_ref)
     F["shares_chg_3y"] = share_change(shares, 3, splits, sh_ref)
 
-    nd, nd_ref = net_debt_series(facts, ef)
+    nd, nd_ref = net_debt_series(facts, ef, as_of, force_v2)
     if nd:
         nd, nd_ref = current(nd, fy, "net debt (балансовые части долга - Cash)")
     raw["nd"] = nd
-    # переход цепочки (DECISION_2026-11-02 §2): то же значение по прежней цепочке; в F не кладётся (не ячейка покрытия)
+    # переход цепочки (DECISION_2026-11-04 §2): то же значение по прежней цепочке; в F не кладётся (не ячейка покрытия)
     pv, pv_ref = net_debt_series_prev_chain(facts, ef)
     if pv:
         pv, pv_ref = current(pv, fy, "net debt (прежняя цепочка)")
@@ -948,7 +984,7 @@ def sec_unavailable(out, facts):
     return refusal(code, why)
 
 
-def build_name(ticker, as_of, source, px, bench, price_err=None):
+def build_name(ticker, as_of, source, px, bench, price_err=None, force_v2=False):
     """source.read(ticker) -> (adapter_out, companyfacts_filtered, cik). Любое исключение — именованный отказ."""
     ef = source.ef
     row = {"ticker": ticker, "fields": {}, "flags": {}, "meta": {"scope": "IN_SCOPE"}}
@@ -967,7 +1003,7 @@ def build_name(ticker, as_of, source, px, bench, price_err=None):
         raw = {}
         row["flags"] = {f: _und(r["refused"], r["reason"]) for f in FLAG_ORDER}
     else:
-        F, raw = sec_fields(out, facts, ef)
+        F, raw = sec_fields(out, facts, ef, as_of, force_v2)
         row["flags"] = flags_for(F, raw)
         row["meta"]["net_debt_prev_chain"] = raw.get("nd_prev")
         rev = out.get("revenue") or []
@@ -1068,8 +1104,8 @@ def _fmt(f):
     return "%.2f" % v
 
 
-# DECISION_2026-11-02 §2: колонка и раздел перехода -- ПО ДАТЕ as_of, не по коду: с 2026-11-21 они исчезают сами.
-TRANSITION_DATES = ("2026-11-07", "2026-11-14")
+# DECISION_2026-11-04 §2: колонка и раздел перехода -- ПО ДАТЕ as_of, не по коду: карточки 14.11 и 21.11; позже исчезают сами.
+TRANSITION_DATES = ("2026-11-14", "2026-11-21")
 TRANSITION_PCT = 0.05
 PREV_COL = "net_debt_latest_prev_chain"
 
@@ -1191,7 +1227,7 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     if transition:
         tr = transition_rows(rows)
         L += ["", "## Переход цепочки долга: имена, где значение изменилось больше чем на %d %%" % (TRANSITION_PCT * 100), "",
-              "Решение DECISION_2026-11-02_DEBT_CHAIN §2; раздел и колонка `%s` исчезают с карточки 2026-11-21." % PREV_COL, "",
+              "Решение DECISION_2026-11-04_DEBT_CHAIN_v2 §2; раздел и колонка `%s` исчезают с карточки 2026-11-28." % PREV_COL, "",
               "| тикер | прежняя цепочка | новая цепочка | изменение |", "|---|---|---|---|"]
         L += ["| %s | %s | %s | %s |" % (t, _fmt(o), _fmt(n), "%+.1f%%" % (p * 100) if p is not None else "—") for t, o, n, p in tr] \
             or ["| — | — | — | нет имён с изменением > %d %% |" % (TRANSITION_PCT * 100)]
@@ -1215,7 +1251,7 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
     L += ["", "## Базисы и провенанс", "",
           "Каждое число в CSV сопровождается колонкой `prov_accessions` (accession SEC ФГ-фактов) и для цен — датой Tiingo в basis. "
           "Определения полей — в докстринге `tools/floor1_card.py`. FCF = OCF − capex(PP&E); EPS вычислен как NI/разводнённые акции; "
-          "чистый долг = (LongTermDebtNoncurrent + текущая часть из той же подачи) − Cash&Equivalents (DECISION_2026-11-02); при отсутствии балансовых частей — «полный» тег с пометкой в basis; пороги флагов не заданы — только сравнения (правила — предложение исполнителя).", ""]
+          "чистый долг = (LongTermDebtNoncurrent + текущая часть из той же подачи) − Cash&Equivalents (DECISION_2026-11-04 v2, с as_of 2026-11-14; раньше — прежняя цепочка); при отсутствии балансовых частей — «полный» тег с пометкой в basis; пороги флагов не заданы — только сравнения (правила — предложение исполнителя).", ""]
     with open(base + ".md", "w", encoding="utf-8") as fh:
         fh.write("\n".join(L))
     return base, cov, len(lim)
