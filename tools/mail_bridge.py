@@ -34,6 +34,23 @@ COMMAND_RE = re.compile(r"^\s*\[CONSILIUM-(TASK|MERGE|FILE|NOTIFY)\](.*)$", re.S
 class CommandFailed(Exception):
     """Авторизованная команда не исполнена (отказ или ошибка) -> красный job + уведомление."""
 
+# Сбои самого GitHub (5xx, «Merge already in progress», push Internal Server Error): команда НЕ исполнена по
+# не зависящей от неё причине -> RESULT не пишется, повтор на следующем запуске (issue #404).
+TRANSIENT_RE = re.compile(
+    r"HTTP 5\d\d\b|\b50[0-4]\b|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|"
+    r"Merge already in progress|RPC failed|remote end hung up|unable to access .*(?:50\d|timed out|Could not resolve)|"
+    r"Connection (?:reset|timed out)", re.I)
+TRANSIENT = "GITHUB_TRANSIENT"
+MAX_RETRIES = 3     # повторов ПОСЛЕ первой попытки; затем RESULT refused «исчерпаны повторы» + ACTION
+# Старые COMMAND-строки (до #397) RESULT-строк не имеют и повторяться НЕ должны: повтор TASK создал бы дубль issue.
+RETRY_SINCE = "2026-11-04T12:58:27Z"    # момент слияния #397 (строки RESULT) — UTC, ISO: сравнимо как строка
+AUTO_LOG_PREFIX = "auto/bridge-log-"
+STALE_PR_MINUTES = 30
+
+def is_transient(text):
+    """Текст ошибки -> True, если это сбой GitHub (повторяемый), а не отказ по существу."""
+    return bool(TRANSIENT_RE.search(text or ""))
+
 def parse_command(subject):
     """Точная тема команды -> (KIND, остаток темы) либо None. Подстрока в середине темы
     (напр. «[investzhadrayev-creator/consilium-code] ...» от GitHub) командой НЕ является."""
@@ -181,6 +198,33 @@ def parse_journal(text):
             legacy.add((parts[1], parts[2], kv["body_sha"]))
     return ids, legacy
 
+def command_state(text, since=RETRY_SINCE):
+    """Журнал -> {msgid: {"attempts": число COMMAND-строк, "result": статус последней RESULT | None,
+    "first": ts первой COMMAND}} только для писем (msgid=<...>). Исполнение завершено ТОЛЬКО строкой RESULT."""
+    st = {}
+    for ln in dict.fromkeys((text or "").splitlines()):      # дубли строк (origin ∪ копия) считаем раз
+        m = re.search(r"msgid=(<[^>]+>)\s*$", ln)
+        parts = [p.strip() for p in ln.split(" | ")]
+        if not m or len(parts) < 4 or ln.startswith("#"):
+            continue
+        e = st.setdefault(m.group(1), {"attempts": 0, "result": None, "first": None})
+        if parts[1] == "RESULT":
+            e["result"] = parts[3]
+        elif parts[1] in ("TASK", "MERGE", "FILE", "NOTIFY"):
+            e["attempts"] += 1
+            e["first"] = e["first"] or parts[0]
+    return st
+
+def disposition(msgid, state, since=RETRY_SINCE):
+    """-> "new" | "done" | "retry" | "exhausted". done: есть RESULT (ok/refused — не повторять) либо команда
+    записана ДО RETRY_SINCE (старая, без RESULT-эпохи). retry: COMMAND есть, RESULT нет."""
+    e = state.get(msgid)
+    if not e or not e["attempts"]:
+        return "new" if not e else "done"
+    if e["result"] is not None or (e["first"] or "") < since:
+        return "done"
+    return "exhausted" if e["attempts"] > MAX_RETRIES else "retry"
+
 def executed_keys(path=LOG):
     """Что уже исполнено: Message-ID из журнала + (вид, тема, body_sha) для старых строк без него."""
     if not os.path.exists(path):
@@ -195,11 +239,54 @@ def origin_journal_text():
     sh("git", "fetch", "origin", "main")
     return sh("git", "show", f"origin/main:{LOG}")
 
+def fresh_journal_text():
+    """Тексты origin/main и рабочей копии одним блоком (command_state убирает дубли строк)."""
+    local = ""
+    if os.path.exists(LOG):
+        with open(LOG, encoding="utf-8") as f:
+            local = f.read()
+    return origin_journal_text() + "\n" + local
+
 def fresh_executed_keys():
     """Ключи из origin/main ∪ рабочей копии (своя свежая строка могла ещё не доехать до origin)."""
     ids, legacy = parse_journal(origin_journal_text())
     lids, llegacy = executed_keys()
     return ids | lids, legacy | llegacy
+
+def stale_log_prs(prs, now, minutes=STALE_PR_MINUTES):
+    """Открытые PR лога моста (ветка auto/bridge-log-*, из этого же репозитория) старше N минут."""
+    out = []
+    for p in prs or []:
+        if not str(p.get("headRefName") or "").startswith(AUTO_LOG_PREFIX) or p.get("isCrossRepository"):
+            continue
+        try:
+            created = dt.datetime.strptime(p["createdAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            print(f"WARN: PR #{p.get('number')}: createdAt не разобран — не трогаю")   # неизвестно != устарело
+            continue
+        if now - created >= dt.timedelta(minutes=minutes):
+            out.append(p)
+    return out
+
+def close_stale_log_prs(now=None):
+    """Служебные PR лога моста, оставшиеся после неудачного push/проверки (#401): закрыть + удалить ветку.
+    Это не контрольная плоскость. -> номера закрытых. Ошибка — WARN, не падение моста."""
+    import json
+    now = now or dt.datetime.now(dt.timezone.utc)
+    raw = sh("gh", "pr", "list", "--state", "open", "--limit", "100",
+             "--json", "number,headRefName,createdAt,isCrossRepository")
+    closed = []
+    for p in stale_log_prs(json.loads(raw) if (raw or "").strip() else [], now):
+        n = str(p["number"])
+        r = subprocess.run(["gh", "pr", "close", n, "--delete-branch", "--comment",
+                            f"Мост: висячий служебный PR лога (ветка {p['headRefName']}) старше "
+                            f"{STALE_PR_MINUTES} мин — закрыт и ветка удалена (issue #404)."],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            closed.append(n)
+        else:
+            print(f"WARN: не закрыл PR #{n}: {(r.stderr or '').strip()[:200]}")
+    return closed
 
 def body_parts(msg):
     """-> (сырой текст после снятия transfer-encoding (QP/base64) и charset, flowed, delsp)."""
@@ -522,6 +609,11 @@ def main():
     except Exception as e:
         print(f"TASK-DIRECT FAILED: {e}")
         failures.append(f"TASK-DIRECT: журнал прямых задач не обновлён ({e})")
+    try:   # служебная уборка не зависит ни от почты, ни от TASK-DIRECT и красным job не делает
+        closed = close_stale_log_prs()
+        print(f"bridge: закрыто висячих PR лога моста: {len(closed)} {closed or ''}".rstrip())
+    except Exception as e:
+        print(f"WARN: уборка висячих PR лога не выполнена: {e}")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
     M.login(addr, pwd); box = open_mailbox(M)
     print(f"bridge: mailbox {box}")
@@ -539,9 +631,18 @@ def main():
             print(f"JOURNAL UNREADABLE, command skipped [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: журнал origin/main не прочитан ({e})")
             continue
-        if (msgid and msgid in ids) or (kind, subject, body_sha(raw, token)) in legacy:
-            print(f"SKIP (уже исполнено) {kind} {msgid or '(без Message-ID)'}")
+        try:
+            disp = disposition(msgid, command_state(fresh_journal_text())) if msgid else "new"
+        except Exception as e:
+            print(f"JOURNAL STATE UNREADABLE, command skipped [{kind}] {subject}: {e}")
+            failures.append(f"{kind} {subject}: журнал origin/main не прочитан ({e})")
             continue
+        if disp == "retry":      # COMMAND есть, RESULT нет: исполнение не завершено -> повтор (issue #404)
+            print(f"RETRY (нет RESULT) {kind} {msgid}")
+        elif (msgid and msgid in ids) or (kind, subject, body_sha(raw, token)) in legacy:
+            if disp != "exhausted":
+                print(f"SKIP (уже исполнено) {kind} {msgid or '(без Message-ID)'}")
+                continue
         if addr.lower() not in sender.lower():
             print(f"REJECT (from={sender}): {subject}"); continue
         body = normalize_body(raw, flowed, delsp)
@@ -550,9 +651,23 @@ def main():
         body = body.replace(f"AUTH: {token}", "").strip() if token else body.strip()
         sh("git", "checkout", "main", check=False)
         sh("git", "pull", "--rebase", check=False)   # лог пишется поверх свежего main
+        if disp == "exhausted":
+            reason = f"исчерпаны повторы ({MAX_RETRIES}): RESULT так и не получен — {TRANSIENT} или обрыв прогона"
+            try:
+                log_result(kind, subject, msgid, "refused", reason)
+            except Exception as le:
+                print(f"WARN: RESULT (исчерпаны повторы) не записан: {le}")
+            L.notify(f"Мост: команда {kind} «{subject[:80]}» не исполнена: {reason}. "
+                     f"Повтор — новым письмом.", L.ACTION)
+            print(f"EXHAUSTED {kind} {msgid}: {reason}")
+            continue
         try:
             log_command(kind, subject, raw, msgid, token)  # след ДО исполнения
         except Exception as e:
+            sh("git", "checkout", "main", check=False)
+            if is_transient(str(e)):   # push/PR лога упал на стороне GitHub: команда не исполнена, строки в main нет
+                print(f"INFO {TRANSIENT}: лог команды не записан, повтор на следующем запуске [{kind}] {subject}: {e}")
+                continue
             print(f"LOG FAILED, command skipped [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: лог не записан ({e})")
             continue
@@ -567,9 +682,12 @@ def main():
                 log_result(kind, subject, msgid, "ok",
                            result if isinstance(result, str) else "исполнитель не вернул описание результата")
         except Exception as e:
+            sh("git", "checkout", "main", check=False)
+            if is_transient(str(e)):   # RESULT НЕ пишем: его отсутствие и есть сигнал повтора; job не красный
+                print(f"INFO {TRANSIENT}: [{kind}] {subject}: {e} — повтор на следующем запуске")
+                continue
             print(f"EXEC ERROR [{kind}] {subject}: {e}")
             failures.append(f"{kind} {subject}: {e}")
-            sh("git", "checkout", "main", check=False)
             try:
                 log_result(kind, subject, msgid, "refused", str(e))
             except Exception as le:
