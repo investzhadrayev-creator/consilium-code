@@ -267,6 +267,8 @@ def operator_items(prs, now):
 SUBJ_PANEL = re.compile(r"^weekly panel (\d{4}-\d{2}-\d{2})\b")
 SUBJ_AUDIT = re.compile(r"^daily audit (\d{4}-\d{2}-\d{2})( \[RED\])?")
 SUBJ_BRIDGE = re.compile(r"^bridge: log architect command")
+SUBJ_DIRECT = re.compile(r"^bridge: log architect command \[TASK-DIRECT\]")
+SUBJ_RESULT = re.compile(r"^bridge: result ")
 COMMIT_RE = re.compile(r"^- (.*) \(([0-9a-f]+), (.*)\)$")
 PR_SUFFIX = re.compile(r"\s*\(#\d+\)$")
 SUBJ_AUTOMERGE = re.compile(r"^\[CONSILIUM-MERGE\]\s+(.*)$")  # тема squash-коммита, который делает мост
@@ -313,6 +315,17 @@ def bridge_title(sha):
                 return re.sub(r"^\[CONSILIUM-[A-Z]+\]\s*", "", parts[2].strip())
     return "заголовок не определён (строки в журнале нет)"
 
+def direct_titles(sha):
+    """Заголовки всех строк TASK-DIRECT, добавленных коммитом (без «#N »)."""
+    out = sh("git", "show", "--format=", "-U0", sha, "--", "journal/architect_commands.log")
+    titles = []
+    for l in out.splitlines():
+        if l.startswith("+") and not l.startswith("+++") and " | TASK-DIRECT | " in l:
+            parts = l[1:].split(" | ")
+            if len(parts) >= 3:
+                titles.append(re.sub(r"^#\d+\s*", "", parts[2].strip()))
+    return titles or ["заголовок не определён (строки TASK-DIRECT в коммите нет)"]
+
 def day_events(commits):
     ev = []
     for line in commits.splitlines():
@@ -325,6 +338,10 @@ def day_events(commits):
             ev.append(f"- {panel_event(p.group(1))}")
         elif (a := SUBJ_AUDIT.match(subj)):
             ev.append(f"- {audit_event(a.group(1), bool(a.group(2)))}")
+        elif SUBJ_DIRECT.match(subj):
+            ev.extend(f"- Архитектор поставил задачу боту (напрямую): {t}" for t in direct_titles(sha))
+        elif SUBJ_RESULT.match(subj):
+            ev.append(f"- Исход команды архитектора: {bridge_title(sha)}")
         elif SUBJ_BRIDGE.match(subj):
             ev.append(f"- Архитектор поставил задачу боту: {bridge_title(sha)}")
         elif (am := SUBJ_AUTOMERGE.match(subj)):

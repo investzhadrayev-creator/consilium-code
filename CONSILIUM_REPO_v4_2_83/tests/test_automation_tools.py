@@ -309,12 +309,13 @@ class TestBridgeMain(Patched):
         reads = []
         def origin():
             reads.append(1)
-            # a parallel run journals m2 while we are busy with m1 (visible from the 2nd read on)
+            # read #1 is the TASK-DIRECT sync at start (issue #196); a parallel run journals m2 while we
+            # are busy with m1 -> visible from the 3rd read (the 2nd command-level read) on
             return ("2026-11-01T18:00:31Z | TASK | [CONSILIUM-TASK] Два | body_sha=0 | msgid=<m2@x>\n"
-                    if len(reads) >= 2 else "")
+                    if len(reads) >= 3 else "")
         self.patch(B, "origin_journal_text", origin)
         self.run_main()
-        self.assertGreaterEqual(len(reads), 2)
+        self.assertGreaterEqual(len(reads), 3)
         self.assertEqual([c[1] for c in self.calls], ["Один"])
 
     def test_unreadable_origin_journal_is_a_named_failure_not_an_empty_journal(self):
@@ -380,7 +381,7 @@ class TestBridgeMain(Patched):
         self.add(b"1", self.task_mail(msgid="<fold@x>", subject=self.FOLDED, body="```\nx\n```"))
         self.run_main()
         with open(B.LOG, encoding="utf-8") as f:
-            lines = [l for l in f.read().splitlines() if "msgid=<fold@x>" in l]
+            lines = [l for l in f.read().splitlines() if "msgid=<fold@x>" in l and " | RESULT | " not in l]
         self.assertEqual(len(lines), 1, "journal entry split across physical lines")
         self.assertIn("[CONSILIUM-FILE] mailbox/DECISION_2026-11-02_ARCHITECT_DIRECT_ACCESS.md", lines[0])
         self.assertEqual(self.calls[0][1], "[CONSILIUM-FILE] mailbox/DECISION_2026-11-02_ARCHITECT_DIRECT_ACCESS.md")
@@ -539,7 +540,7 @@ class TestJournalReplayDoesNotReexecute(Patched):
         FakeIMAP.mails[b"1"] = test_b_mail("TOK", subject="[CONSILIUM-FILE] mailbox/REPORT_new.md", msgid="<n@x>")
         with contextlib.redirect_stdout(io.StringIO()):
             B.main()
-        line = open(B.LOG, encoding="utf-8").read().splitlines()[-1]
+        line = [l for l in open(B.LOG, encoding="utf-8").read().splitlines() if " | RESULT | " not in l][-1]
         self.assertIn(f"body_sha={TEST_B_SHA}", line)
 
 
