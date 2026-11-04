@@ -360,3 +360,17 @@
 2026-11-04T04:05:06Z | MERGE | [CONSILIUM-MERGE] PR#394 | body_sha=b2c1e1b8aa3b80ba | msgid=<CAPaEdTKaW14wKCO1qqoRFgx7G_ynP21dj4iE9ixzU83hArCP_w@mail.gmail.com>
 2026-11-04T10:31:36Z | MERGE | [CONSILIUM-MERGE] PR#400 | body_sha=f77330a97e5cea5e | msgid=<CAPaEdT+Lw17_k7XgusDuTRQp63KbdOhVGQbD1vDWkDGo-810EA@mail.gmail.com>
 2026-11-04T12:21:42Z | MERGE | [CONSILIUM-MERGE] PR#400 (повтор) | body_sha=de8c2f9f40bde03b | msgid=<CAPaEdTLTAOF=gMOnHVJTSQ5q_JV_Q2jumVOVCm40xSeLc3Mo3A@mail.gmail.com>
+2026-11-01T18:03:53Z | TASK-DIRECT | #186 Мост: гонка дедупа при частых запусках — читать журнал из origin/main перед каждой командой | msgid=issue-186
+2026-11-01T19:34:37Z | TASK-DIRECT | #189 Мост: читать «[Gmail]/All Mail» вместо INBOX (команды уходят из входящих фильтром оператора) | msgid=issue-189
+2026-11-02T04:41:06Z | TASK-DIRECT | #194 K6 часть B: досье №2 UBER (as_of сегодня) + пригодность RDDT + сырые факты долга в досье | msgid=issue-194
+2026-11-02T04:41:45Z | TASK-DIRECT | #195 Уборка задач: закрыть выполненные (#140…#187, #99/#130/#131), устаревший PR #42, правило Closes #N | msgid=issue-195
+2026-11-02T04:41:45Z | TASK-DIRECT | #196 Журнал: TASK-DIRECT для задач архитектора, исход команд моста, сторож частоты моста, пакет аудитора | msgid=issue-196
+2026-11-02T07:23:33Z | TASK-DIRECT | #229 СРОЧНО мост: свёрнутая тема письма ломает журнал и дедуп — DECISION-команда исполнена 13 раз | msgid=issue-229
+2026-11-02T13:28:24Z | TASK-DIRECT | #258 СРОЧНО: объединить #200 и #233 в один PR на свежем main (оба конфликтуют) | msgid=issue-258
+2026-11-03T16:49:37Z | TASK-DIRECT | #384 Цепочка долга по DECISION_2026-11-02_DEBT_CHAIN: карточка + досье + отчёт влияния по 34 именам (до чт 5.11) | msgid=issue-384
+2026-11-03T16:49:38Z | TASK-DIRECT | #385 K6 часть C: досье №3 RDDT — путь по капитализации (P/S) при NOT_REPORTED долге, перегенерация | msgid=issue-385
+2026-11-03T19:57:36Z | TASK-DIRECT | #391 ЗАКОН: DECISION_2026-11-04_DEBT_CHAIN_v2 — расширить теги нетекущего долга, вступление 14.11 (ADBE/AVGO/ORCL) | msgid=issue-391
+2026-11-03T19:57:50Z | TASK-DIRECT | #392 Дневной отчёт: счётчик досье считает черновики и не видит NFLX | msgid=issue-392
+2026-11-04T07:09:32Z | TASK-DIRECT | #398 Цепочка долга v2 (DECISION_2026-11-04): доработать PR #387 — теги v2, вступление 14.11, отчёт влияния без потерь | msgid=issue-398
+2026-11-04T07:09:52Z | TASK-DIRECT | #399 RESPONSE на аудит 2026-11-03: файл ответа архитектора (3 пункта ложные — merged_by оператор) | msgid=issue-399
+2026-11-04T12:22:35Z | TASK-DIRECT | #404 Мост: повтор команды при сбое GitHub после записи в журнал; уборка висячих auto-PR лога | msgid=issue-404
