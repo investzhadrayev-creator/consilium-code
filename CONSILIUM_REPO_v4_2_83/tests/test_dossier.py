@@ -18,6 +18,7 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.dont_write_bytecode = True   # мутационный зонд правит tools/ -- устаревший .pyc не должен пережить правку
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -321,7 +322,7 @@ class TestDebtRaw(unittest.TestCase):
     def facts(rows):
         """{тег: {год: значение}} -> companyfacts-подобный dict (годовые instant-факты 10-K)."""
         return {"facts": {"us-gaap": {tag: {"units": {"USD": [
-            {"end": "%d-12-31" % y, "val": v, "accn": "0000000000-%02d-%06d" % ((y + 1) % 100, i), "fy": y, "fp": "FY",
+            {"end": "%d-12-31" % y, "val": v, "accn": "0000000000-%02d-%06d" % ((y + 1) % 100, 1), "fy": y, "fp": "FY",
              "form": "10-K", "filed": "%d-02-10" % (y + 1)} for y, v in sorted(vals.items())]}} for i, (tag, vals) in enumerate(rows.items(), 1)}}}
 
     def nd(self, facts):
@@ -340,11 +341,13 @@ class TestDebtRaw(unittest.TestCase):
 
     def test_dos_61_nonprimary_tag_on_same_date_is_shown_but_not_used(self):
         # NFLX 2019: LongTermDebt = «итого обязательств по долгу» (с процентами), баланс -- LongTermDebtNoncurrent
+        # (DECISION_2026-11-02: в расчёт идут балансовые части, «полный» тег показан справочно + флаг)
         f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
                         "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
         r = dos.debt_raw(f, EF, self.nd(f))
-        self.assertEqual(r["total"], 450)                        # число не подменено «правдоподобным» тегом
-        self.assertEqual([(p["tag"], p["val"]) for p in r["unused"]], [("LongTermDebtNoncurrent", 480)])
+        self.assertEqual(r["total"], 230)                        # число не подменено «правдоподобным» тегом
+        self.assertEqual([(p["tag"], p["val"]) for p in r["unused"]], [("LongTermDebt", 700)])
+        self.assertEqual([x["full_val"] for x in r["flags"]], [700])
 
     def test_dos_62_split_debt_shows_both_terms(self):
         f = self.facts({"LongTermDebtNoncurrent": {2019: 500}, "LongTermDebtCurrent": {2019: 40},
@@ -372,9 +375,46 @@ class TestDebtRaw(unittest.TestCase):
         D["nd_raw"] = dos.debt_raw(f, EF, D["nd"])
         b = dos.render_machine(D).split("## (б)")[1].split("## (в)")[0]
         sec = b.split("Чистый долг — сырые факты")[1]
-        self.assertIn("700 − cash = 700 − 250 = 450", sec)
+        self.assertIn("480 − cash = 480 − 250 = 230", sec)
+        flag_line = [l for l in sec.split("\n") if l.startswith("**DEBT_TAG_INCONSISTENT**")]
+        self.assertEqual(len(flag_line), 1)                   # отдельная строка флага, а не только строка basis
+        self.assertIn("700", flag_line[0])                    # расхождение 700 vs 480 названо в досье с обоими числами
+        self.assertIn("480", flag_line[0])
         self.assertEqual(len(ACCN_RE.findall(sec.split("Формула")[0])), 2)    # accession у долга и у cash
         self.assertIn("LongTermDebtNoncurrent", sec)
+
+    def test_dos_67_raw_facts_follow_the_card_chain_switch_and_the_forced_v2_exception(self):
+        # сырые слагаемые берутся из ТОЙ ЖЕ точки ряда, что число карточки, при любой цепочке (иначе RAW_MISMATCH)
+        f = self.facts({"LongTermDebt": {2019: 700}, "LongTermDebtNoncurrent": {2019: 480},
+                        "CashAndCashEquivalentsAtCarryingValue": {2019: 250}})
+        def raw(as_of, force):
+            series, ref = fc.net_debt_series(f, EF, as_of, force)
+            last = series[-1]
+            nd = fc.ok(last["val"], "USD", "тест", last["accn"], tags=last["tags"])
+            return dos.debt_raw(f, EF, nd, as_of, force)
+        self.assertEqual(raw("2026-11-07", False)["total"], 700 - 250)         # до 14.11: прежняя цепочка (полный тег)
+        self.assertEqual(raw("2026-11-14", False)["total"], 480 - 250)         # с 14.11: части
+        self.assertEqual(raw("2020-02-15", True)["total"], 480 - 250)          # исключение: v2 на старом as_of
+        self.assertEqual(raw("2020-02-15", False)["total"], 700 - 250)
+
+    def test_dos_68_forced_v2_is_named_in_the_header_only_when_it_changes_the_chain_and_build_passes_it(self):
+        D = make(nd=None)
+        self.assertNotIn("принудительно", dos.render_machine(D))
+        D["debt_chain_forced_v2"], D["as_of"] = True, "2020-02-15"
+        self.assertIn("v2 применена принудительно", dos.render_machine(D))
+        D["as_of"] = "2026-11-14"                                              # с 14.11 v2 и так обычная: пометка не нужна
+        self.assertNotIn("принудительно", dos.render_machine(D))
+        seen = []
+        real = fc.build_name
+        with unittest.mock.patch.object(fc, "build_name", lambda *a, **k: (seen.append(a), real(*a, **k))[1]):
+            dos.build("TEST", AS_OF, FakeSource(mk_out()), fake_fetch(100.0), force_v2=True)
+            dos.build("TEST", AS_OF, FakeSource(mk_out()), fake_fetch(100.0))
+        self.assertEqual([x[-1] for x in seen], [True, False])
+        raw_calls = []
+        real_raw = dos.debt_raw
+        with unittest.mock.patch.object(dos, "debt_raw", lambda *x, **k: (raw_calls.append(x), real_raw(*x, **k))[1]):
+            dos.build("TEST", AS_OF, FakeSource(mk_out(), self.facts({"LongTermDebtNoncurrent": {2019: 1}})), fake_fetch(100.0), force_v2=True)
+        self.assertEqual([(x[3], x[4]) for x in raw_calls], [(AS_OF, True)])        # сырые факты получают тот же as_of и флаг, что карточка
 
     def test_dos_66_report_names_refusal_when_raw_facts_unavailable(self):
         D = make(nd=None)
