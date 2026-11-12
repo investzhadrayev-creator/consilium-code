@@ -788,8 +788,9 @@ class TestScopeAndApplicabilityClasses(unittest.TestCase):
         tot = recs[-1]
         ab = fc.coverage_ab(rows)
         self.assertEqual(tot["ticker"], "_TOTAL")
-        self.assertEqual(tot["coverage_A_raw"], "%.1f%%" % (100.0 * ab["a_num"] / ab["a_den"]))
-        self.assertEqual(tot["coverage_B_applicable"], "%.1f%%" % (100.0 * ab["b_num"] / ab["b_den"]))
+        self.assertEqual(tot["coverage_A_raw"], fc._pct(ab["a_num"], ab["a_den"]))
+        self.assertRegex(tot["coverage_A_raw"], r"^\d+\.\d{2}%$")
+        self.assertEqual(tot["coverage_B_applicable"], fc._pct(ab["b_num"], ab["b_den"]))
         self.assertEqual(recs[1]["coverage_B_applicable"], "")           # вне scope: (Б) не определено
         self.assertIn("Покрытие (А)", md)
         self.assertIn("Покрытие (Б)", md)
@@ -1278,6 +1279,62 @@ import datetime as dt  # noqa: E402
 
 
 import unittest.mock  # noqa: E402  (после классов: используется внутри тестов выше)
+
+class TestCoverageExactDisplay(unittest.TestCase):
+    """Задача #424 п.3: покрытие с двумя знаками и строка «Порог гейта (Б)» по ТОЧНОМУ сравнению дроби."""
+
+    def test_f1_73_660_of_695_is_shown_94_96_and_threshold_not_reached(self):
+        self.assertEqual(fc._pct(660, 695), "94.96%")
+        self.assertIs(fc.threshold_reached(660, 695), False)
+        self.assertIn("НЕ достигнут", fc.threshold_line(660, 695))
+        self.assertIn("660/695", fc.threshold_line(660, 695))
+
+    def test_f1_74_threshold_is_exact_at_the_boundary_and_unknown_is_neither(self):
+        self.assertIs(fc.threshold_reached(19, 20), True)            # ровно 95 % -- достигнут (>=, не >)
+        self.assertIs(fc.threshold_reached(661, 695), True)          # 660.25 -> минимум 661
+        self.assertIs(fc.threshold_reached(660, 695), False)
+        self.assertIsNone(fc.threshold_reached(0, 0))                # пустой знаменатель: ни «достигнут», ни «НЕ достигнут»
+        line = fc.threshold_line(0, 0)
+        self.assertNotIn("НЕ достигнут", line)
+        self.assertNotIn(" достигнут", line.replace("НЕ достигнут", ""))
+        self.assertIn("н/д", line)
+
+    def test_f1_75_display_truncates_so_95_00_is_never_shown_below_the_threshold(self):
+        # 9499/10000 = 94.99 %; округление до сотых дало бы 94.99, а 94999/100000 = 94.999 % -> «95.00%» при НЕ достигнут
+        self.assertIs(fc.threshold_reached(94999, 100000), False)
+        self.assertEqual(fc._pct(94999, 100000), "94.99%")
+        self.assertEqual(fc._pct(19, 20), "95.00%")
+        self.assertEqual(fc._pct(1, 1), "100.00%")
+        self.assertEqual(fc._pct(0, 0), "н/д (знаменатель 0)")
+
+    def test_f1_76_card_markdown_carries_two_decimals_and_the_threshold_line(self):
+        n_cells = len(fc.FIELD_ORDER) + len(fc.FLAG_ORDER)           # ячеек на имя
+        rows_n = 27                                                  # 27 имён -> знаменатель (Б) = 27 * n_cells
+
+        def card_md(gaps):
+            rows, left = [], gaps
+            for k in range(rows_n):
+                fields = {}
+                for n in fc.FIELD_ORDER:
+                    if left > 0:
+                        fields[n], left = fc.refusal("MISSING_INPUT", "x"), left - 1
+                    else:
+                        fields[n] = fc.ok(1, "USD", "b")
+                flags = {n: {"state": "CLEAR", "evidence": "e"} for n in fc.FLAG_ORDER}
+                rows.append({"ticker": "T%d" % k, "fields": fields, "flags": flags, "meta": {"scope": "IN_SCOPE"}})
+            with tempfile.TemporaryDirectory() as td:
+                fc.write_outputs(rows, CHECK_DATE, td, "t", {"edgartools": "x"})
+                return open(os.path.join(td, "FLOOR1_%s.md" % CHECK_DATE), encoding="utf-8").read()
+        den = rows_n * n_cells                                       # 702; 0.95 * 702 = 666.9 -> минимум 667
+        self.assertEqual(den, 702)
+        low = card_md(36)                                            # 666/702 = 94.871 %
+        self.assertIn("Покрытие (Б), применимое: 666/702 = 94.87%", low)
+        self.assertIn("Порог гейта (Б) ≥ 95 %: НЕ достигнут", low)
+        hi = card_md(35)                                             # 667/702 = 95.014 %
+        self.assertIn("Покрытие (Б), применимое: 667/702 = 95.01%", hi)
+        self.assertIn("Порог гейта (Б) ≥ 95 %: достигнут", hi)
+        self.assertNotIn("НЕ достигнут", hi)
+
 
 if __name__ == "__main__":
     unittest.main()
