@@ -1795,6 +1795,12 @@ CASES = [
     ('rt-21', '../tools/mail_bridge.py', '        if parts[1] == "RESULT":\n            e["result"]', '        if False:\n            e["result"]', 'test_z_bridge_retry.TestRetryWithoutResult.test_ok_result_is_final', 'RESULT lines are read from the journal'),
     ('rt-22', '../tools/mail_bridge.py', 'Повтор — новым письмом.", L.ACTION)', 'Повтор — новым письмом.", L.INFO)', 'test_z_bridge_retry.TestRetryWithoutResult.test_retry_limit_three_then_refused_result_and_action_notice', 'exhausted retries ask the operator loudly (ACTION)'),
     ('rt-23', '../tools/mail_bridge.py', '                log_result(kind, subject, msgid, "refused", reason)', '                pass', 'test_z_bridge_retry.TestRetryWithoutResult.test_retry_limit_three_then_refused_result_and_action_notice', 'exhausted retries are closed with a RESULT refused'),
+    # ---- #424 п.3: точное отображение покрытия (Б) ----
+    ('f1-cov-01', '../tools/floor1_card.py', '    return None if not den else num * 100 >= COVERAGE_TARGET_PCT * den', '    return None if not den else num * 100 > COVERAGE_TARGET_PCT * den', 'test_floor1_card.TestCoverageExactDisplay.test_f1_74_threshold_is_exact_at_the_boundary_and_unknown_is_neither', 'exactly 95 % counts as reached (>=, not >)'),
+    ('f1-cov-02', '../tools/floor1_card.py', '    h = (10000 * num) // den', '    h = round(10000.0 * num / den)', 'test_floor1_card.TestCoverageExactDisplay.test_f1_75_display_truncates_so_95_00_is_never_shown_below_the_threshold', 'display truncates: 94.999 % is not shown as 95.00 %'),
+    ('f1-cov-03', '../tools/floor1_card.py', '    return None if not den else num * 100 >= COVERAGE_TARGET_PCT * den', '    return None if not den else True', 'test_floor1_card.TestCoverageExactDisplay.test_f1_73_660_of_695_is_shown_94_96_and_threshold_not_reached', '660/695 is NOT reached'),
+    ('f1-cov-04', '../tools/floor1_card.py', '         threshold_line(ab["b_num"], ab["b_den"]),\n', '', 'test_floor1_card.TestCoverageExactDisplay.test_f1_76_card_markdown_carries_two_decimals_and_the_threshold_line', 'the card carries the threshold line'),
+    ('f1-cov-05', '../tools/floor1_card.py', '    verdict = "н/д (знаменатель 0)" if r is None else', '    verdict = "достигнут" if r is None else', 'test_floor1_card.TestCoverageExactDisplay.test_f1_74_threshold_is_exact_at_the_boundary_and_unknown_is_neither', 'empty denominator is neither reached nor not reached'),
 ]
 
 

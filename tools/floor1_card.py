@@ -40,7 +40,8 @@ RS_WINDOWS = (("4w", 28), ("13w", 91))
 YEAR_TOL = 21            # дней: ФГ на 52/53 недели дрейфует относительно календаря
 PRICE_FRESH_DAYS = 5     # последний close старше — цена не «на дату запуска»
 PRICE_FETCH_DAYS = 400
-COVERAGE_TARGET = 0.95
+COVERAGE_TARGET_PCT = 95   # порог гейта (Б), целые проценты: сравнение дроби ведётся в целых числах, без float
+COVERAGE_TARGET = COVERAGE_TARGET_PCT / 100.0
 
 
 def refusal(code, reason):
@@ -1090,7 +1091,24 @@ def limitations(rows):
 
 
 def _pct(num, den):
-    return "%.1f%%" % (100.0 * num / den) if den else "н/д (знаменатель 0)"
+    """Покрытие с двумя знаками. Усечение вниз, не округление: «95.00%» на карточке означает, что порог достигнут
+    (94.996 % не должно выглядеть как 95.00 %)."""
+    if not den:
+        return "н/д (знаменатель 0)"
+    h = (10000 * num) // den
+    return "%d.%02d%%" % (h // 100, h % 100)
+
+
+def threshold_reached(num, den):
+    """Порог гейта (Б) >= COVERAGE_TARGET_PCT: точное сравнение дроби num/den в целых числах. Пустой знаменатель -> None
+    (не «достигнут» и не «НЕ достигнут»)."""
+    return None if not den else num * 100 >= COVERAGE_TARGET_PCT * den
+
+
+def threshold_line(num, den):
+    r = threshold_reached(num, den)
+    verdict = "н/д (знаменатель 0)" if r is None else ("достигнут" if r else "НЕ достигнут")
+    return "**Порог гейта (Б) ≥ %d %%: %s** (%s)." % (COVERAGE_TARGET_PCT, verdict, "точное сравнение дроби %s/%s" % (num, den))
 
 
 def _fmt(f):
@@ -1196,6 +1214,7 @@ def write_outputs(rows, as_of, out_dir, bench_status, run_info):
          "**Покрытие (Б), применимое: %d/%d = %s** — заполнено / применимые поля имён в scope "
          "(scope = имя не OUT_OF_SCOPE_FORM; применимое = не NOT_APPLICABLE; пробел по нашей вине остаётся в знаменателе)." % (
              ab["b_num"], ab["b_den"], _pct(ab["b_num"], ab["b_den"])),
+         threshold_line(ab["b_num"], ab["b_den"]),
          "**Покрытие (Б) без новых классов: %d/%d = %s** — то же, но ячейки NOT_REPORTED (%d) и SHORT_HISTORY (%d) остаются в "
          "знаменателе как пробелы; показывается рядом с (Б) каждую неделю, чтобы влияние решения о классах было видно." % (
              ab["b_num"], ab["b0_den"], _pct(ab["b_num"], ab["b0_den"]), ab["not_reported_cells"], ab["short_history_cells"]),
