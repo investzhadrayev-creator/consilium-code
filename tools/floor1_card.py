@@ -376,12 +376,21 @@ FALLBACK_BASIS = "полный тег; балансовые части не ра
 ZERO_CUR_BASIS = "текущая часть не размечена ни под одним тегом в этой подаче = 0 (DECISION_2026-11-04 §1)"
 # DECISION_2026-11-04 §2: новая цепочка действует при as_of >= этой даты; раньше -- ПРЕЖНЯЯ цепочка (карточка 7.11 по-старому).
 DEBT_CHAIN_V2_FROM = "2026-11-14"
+# DECISION_2026-11-17_DEBT_CHAIN_v2_1 §3: выбор подачи на дату (самая поздняя ПОЛНАЯ) и сохранение причины отброшенной точки
+# действуют при as_of >= этой даты; раньше -- поведение v2 без изменений. as_of=None (прямой вызов тестов) -- v2.
+DEBT_CHAIN_V2_1_FROM = "2026-11-21"
+ONE_FILING_BROKEN = "одна подача нарушена"
 
 
 def debt_chain_is_v2(as_of):
     """True -- считать по цепочке v2. as_of обязателен и должен быть датой ISO: неизвестная дата не подменяется
     выбором цепочки (ValueError), иначе карточка 7.11 могла бы тихо выйти по новому правилу."""
     return _d(as_of).isoformat() >= DEBT_CHAIN_V2_FROM
+
+
+def debt_chain_is_v2_1(as_of):
+    """True -- действует DECISION_2026-11-17_DEBT_CHAIN_v2_1. as_of обязателен и должен быть датой ISO (ValueError иначе)."""
+    return _d(as_of).isoformat() >= DEBT_CHAIN_V2_1_FROM
 
 
 def _rows_by_end_accn(facts, ef, tags):
@@ -400,14 +409,21 @@ def _rows_by_end_accn(facts, ef, tags):
     return out
 
 
-def _balance_point(end, by_accn):
+def _balance_point(end, by_accn, v2_1=False):
     """-> (parts, flag_info, basis, cur_zero, refusal_text, has_nonc). Балансовые части на дату из одной подачи (v2 §1).
-    has_nonc=False -- нетекущая часть не размечена ни в одной подаче на дату (тогда вызывающий пробует «полный» тег)."""
+    has_nonc=False -- нетекущая часть не размечена ни в одной подаче на дату (тогда вызывающий пробует «полный» тег).
+    v2_1=True (DECISION_2026-11-17 §1): среди подач с нетекущей частью берётся самая поздняя ПОЛНАЯ -- в ней размечена и текущая
+    часть, либо текущая не размечена ни в одной подаче на дату (тогда = 0). Нет полной -- прежняя ветка отказа «одна подача нарушена»."""
     nonc_of = {a: next((t for t in DEBT_NONC_V2 if t in c), None) for a, c in by_accn.items()}
     with_nonc = [a for a, t in nonc_of.items() if t]
     if not with_nonc:
         return None, None, None, False, "на %s есть только текущая часть без нетекущей: «нет нетекущей части» != ноль" % end, False
-    accn = max(with_nonc, key=lambda a: by_accn[a][nonc_of[a]]["filed"])
+    pool = with_nonc
+    if v2_1:
+        cur_anywhere = any(t in c for c in by_accn.values() for t in DEBT_CUR_TAGS)
+        complete = [a for a in with_nonc if any(t in by_accn[a] for t in DEBT_CUR_TAGS)]
+        pool = complete if cur_anywhere and complete else with_nonc     # нет полной -- старый путь (откажет ниже)
+    accn = max(pool, key=lambda a: by_accn[a][nonc_of[a]]["filed"])
     cell = by_accn[accn]
     parts = [cell[nonc_of[accn]]]
     first = next((t for t in DEBT_CUR_FIRST if t in cell), None)
@@ -420,7 +436,7 @@ def _balance_point(end, by_accn):
         other = sorted({t for a, c in by_accn.items() if a != accn for t in DEBT_CUR_TAGS if t in c})
         if other:
             return None, None, None, False, ("на %s текущая часть (%s) размечена только в другой подаче, чем нетекущая (%s): "
-                                             "одна подача нарушена, ноль не подставляется" % (end, ",".join(other), accn)), True
+                                             "%s, ноль не подставляется" % (end, ",".join(other), accn, ONE_FILING_BROKEN)), True
         cur_zero = True
     total = sum(p["val"] for p in parts)
     flag = None
@@ -434,7 +450,15 @@ def _balance_point(end, by_accn):
 
 
 def net_debt_series(facts, ef, as_of=None, force_v2=False):
-    """-> (series, refusal). Выбор цепочки по as_of (DECISION_2026-11-04 §2): as_of < DEBT_CHAIN_V2_FROM -- ПРЕЖНЯЯ цепочка
+    """-> (series, refusal). Тонкая обёртка над net_debt_series_ex (та же логика, без списка отброшенных точек)."""
+    series, ref, _ = net_debt_series_ex(facts, ef, as_of, force_v2)
+    return series, ref
+
+
+def net_debt_series_ex(facts, ef, as_of=None, force_v2=False):
+    """-> (series, refusal, skipped). skipped = [(end, причина)] точки, отброшенные по «одна подача нарушена» (любая дата ряда;
+    при цепочке до v2.1 список тоже заполняется, но потребитель использует его только при as_of >= DEBT_CHAIN_V2_1_FROM).
+    Серия/отказ -- как у net_debt_series. Выбор цепочки по as_of (DECISION_2026-11-04 §2): as_of < DEBT_CHAIN_V2_FROM -- ПРЕЖНЯЯ цепочка
     (net_debt_series_prev_chain, точки дополнены полями parts/cash/debt_basis/debt_flags); as_of >= -- цепочка v2;
     as_of=None -- цепочка v2 (только для прямых вызовов из тестов; боевые вызовы build_name/dossier передают as_of).
     force_v2=True -- цепочка v2 при любом as_of (исключение DECISION_2026-11-01/v1 §4: досье NFLX 2020-02-15, явный флаг CLI).
@@ -444,14 +468,16 @@ def net_debt_series(facts, ef, as_of=None, force_v2=False):
     не пробел). LongTermDebt при расхождении с суммой частей > 10 % -- флаг DEBT_TAG_INCONSISTENT (в расчёт идут части).
     Минус деньги (CASH_CHAIN) на той же дате. Точка несёт tags, parts (строки-слагаемые), cash, debt_basis, debt_flags."""
     if as_of is not None and not force_v2 and not debt_chain_is_v2(as_of):
-        return _prev_chain_as_points(facts, ef)
+        series, ref = _prev_chain_as_points(facts, ef)
+        return series, ref, []
+    v2_1 = as_of is not None and debt_chain_is_v2_1(as_of)
     full = _by_end(facts, ef, DEBT_FULL_CHAIN)
     bal = _rows_by_end_accn(facts, ef, DEBT_NONC_V2 + DEBT_CUR_TAGS + [DEBT_CROSS_TAG])
     bal_ends = {e: c for e, c in bal.items() if any(t in cc for cc in c.values() for t in DEBT_NONC_V2 + DEBT_CUR_TAGS)}
     if not full and not bal_ends:
         return None, refusal("DEBT_TAG_ABSENT", "нет ни одного тега долга (балансовые %s, %s; полные %s): «долга нет» и "
                              "«тег не заполнен» неотличимы, ноль не подставляется"
-                             % (",".join(DEBT_NONC_V2), ",".join(DEBT_CUR_TAGS), ",".join(DEBT_FULL_CHAIN)))
+                             % (",".join(DEBT_NONC_V2), ",".join(DEBT_CUR_TAGS), ",".join(DEBT_FULL_CHAIN))), []
     cm = _by_end(facts, ef, CASH_CHAIN)
     out, skipped = [], []
     for end in sorted(set(full) | set(bal_ends)):
@@ -460,7 +486,7 @@ def net_debt_series(facts, ef, as_of=None, force_v2=False):
         flags = []
         parts, has_nonc = None, False
         if end in bal_ends:
-            parts, flag, basis, _, why, has_nonc = _balance_point(end, bal_ends[end])
+            parts, flag, basis, _, why, has_nonc = _balance_point(end, bal_ends[end], v2_1)
             if parts is None and has_nonc:
                 skipped.append((end, why))      # нетекущая есть, текущая нарушает «одну подачу»: запасной тег не подменяет
                 continue
@@ -480,11 +506,21 @@ def net_debt_series(facts, ef, as_of=None, force_v2=False):
                     "cash_includes_restricted": cm[end]["tag"] == RESTRICTED_CASH_TAG})
     if skipped and (not out or skipped[-1][0] > out[-1]["end"]):
         # самая свежая дата непригодна: старые точки не выдаются за «последнее известное» (иначе причиной стал бы STALE_SERIES)
-        return None, refusal("MISSING_INPUT", "долг не раскрыт полностью: %s" % "; ".join(w for _, w in skipped[-3:]))
+        return None, refusal("MISSING_INPUT", "долг не раскрыт полностью: %s" % "; ".join(w for _, w in skipped[-3:])), skipped
     if not out:
         return None, refusal("MISSING_INPUT", "долг не раскрыт: последняя точка тега долга %s, денег на тех датах нет "
-                             "или тег долга позднее не заполнен -- это не ноль" % max(set(full) | set(bal_ends)))
-    return out, None
+                             "или тег долга позднее не заполнен -- это не ноль" % max(set(full) | set(bal_ends))), skipped
+    return out, None, skipped
+
+
+def _skipped_note(last_end, n, skipped, as_of):
+    """DECISION_2026-11-17 §2: если нужная точка (n ФГ до last_end, допуск YEAR_TOL, как у at_offset) существовала, но отброшена
+    по «одна подача нарушена», причина и дата попадают в reason отказа. До DEBT_CHAIN_V2_1_FROM (и при as_of=None) -- пусто."""
+    if as_of is None or not debt_chain_is_v2_1(as_of):
+        return ""
+    last = _d(last_end)
+    hit = [(e, w) for e, w in skipped if abs((last - _d(e)).days - 365.25 * n) <= YEAR_TOL]
+    return ("; точка %s отброшена: %s" % (hit[0][0], hit[0][1])) if hit else ""
 
 
 def _prev_chain_as_points(facts, ef):
@@ -747,7 +783,7 @@ def sec_fields(out, facts, ef, as_of=None, force_v2=False):
     F["shares_chg_1y"] = share_change(shares, 1, splits, sh_ref)
     F["shares_chg_3y"] = share_change(shares, 3, splits, sh_ref)
 
-    nd, nd_ref = net_debt_series(facts, ef, as_of, force_v2)
+    nd, nd_ref, nd_skipped = net_debt_series_ex(facts, ef, as_of, force_v2)
     if nd:
         nd, nd_ref = current(nd, fy, "net debt (балансовые части долга - Cash)")
     raw["nd"] = nd
@@ -776,7 +812,8 @@ def sec_fields(out, facts, ef, as_of=None, force_v2=False):
                 " [%s]" % RESTRICTED_NOTE if r_win else "", a["end"], a["debt_basis"], nd[-1]["end"], nd[-1]["debt_basis"]),
                 accns(a, nd[-1]), tags=tags, mixed_tags=mixed, cash_includes_restricted=r_win, debt_flags=fl)
         else:
-            F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s" % nd[-1]["end"])
+            F["net_debt_chg_3y"] = refusal("INSUFFICIENT_HISTORY", "net debt: нет точки за 3 ФГ до %s%s" % (
+                nd[-1]["end"], _skipped_note(nd[-1]["end"], 3, nd_skipped, as_of)))
     classify_not_reported(F, facts, ef, fy)
     classify_short_history(F, facts, ef, fy)
     return F, raw
