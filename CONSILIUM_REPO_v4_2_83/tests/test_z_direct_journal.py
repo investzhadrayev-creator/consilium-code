@@ -69,6 +69,13 @@ class BridgeBase(T.Patched):
                 return self.origin
             return ""
         self.patch(B, "sh", fake_sh)
+        # Frozen clock for EVERY bridge test: the 7-day window in direct_task_lines is measured from
+        # "now", so fixtures dated 2026-11-02 went stale against the real clock (issue #436).
+        self.freeze(NOW)
+
+    def freeze(self, now):
+        self.patch(B.dt, "datetime", type("DT", (dt.datetime,), {
+            "now": classmethod(lambda cls, tz=None: now)}))
 
     def run_main(self):
         return T.TestBridgeMain.run_main(self)
@@ -108,8 +115,6 @@ class TestTaskDirect(BridgeBase):
         self.assertEqual(len([l for l in self.journal() if "TASK-DIRECT" in l]), 1)
 
     def test_only_owner_label_and_seven_day_window(self):
-        self.patch(B.dt, "datetime", type("DT", (dt.datetime,), {
-            "now": classmethod(lambda cls, tz=None: NOW)}))
         self.issues = [issue(1, author="someone-else"), issue(2, labels=("bug",)),
                        issue(3, created="2026-10-20T10:00:00Z"),        # older than 7 days
                        issue(4, created="not-a-date"),                  # unknown != fresh
