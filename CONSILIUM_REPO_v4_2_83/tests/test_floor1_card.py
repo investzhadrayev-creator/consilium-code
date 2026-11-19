@@ -1374,8 +1374,8 @@ def snps_like(with_full_older=True):
 class TestDebtChainV21FilingChoice(unittest.TestCase):
     """DECISION_2026-11-17_DEBT_CHAIN_v2_1: выбор подачи на дату (самая поздняя ПОЛНАЯ) и сохранение причины отброшенной точки."""
 
-    def test_f1_75_a_full_older_filing_beats_an_incomplete_newer_one_from_2026_11_21(self):
-        s, ref = fc.net_debt_series(snps_like(), EF, "2026-11-21")
+    def test_f1_75_a_full_older_filing_beats_an_incomplete_newer_one_from_2026_11_28(self):
+        s, ref = fc.net_debt_series(snps_like(), EF, "2026-11-28")
         self.assertIsNone(ref)
         p = {r["end"]: r for r in s}["2022-12-31"]                         # точка вернулась в ряд
         self.assertEqual(p["val"], 200 + 0 - CASH_22)                      # арифметика от входных фактов
@@ -1384,12 +1384,12 @@ class TestDebtChainV21FilingChoice(unittest.TestCase):
         self.assertEqual([t for t in p["tags"]][:2], ["LongTermDebtNoncurrent", "DebtCurrent"])
         self.assertEqual(p["parts"][0]["accn"], p["parts"][1]["accn"])
         # потребитель: поле карточки получает ЧИСЛО, а не INSUFFICIENT_HISTORY
-        F, _ = fc.sec_fields(syn_out(), snps_like(), EF, "2026-11-21")
+        F, _ = fc.sec_fields(syn_out(), snps_like(), EF, "2026-11-28")
         self.assertEqual(F["net_debt_chg_3y"]["value"], (140 - CASH_25) - (200 - CASH_22))
         self.assertIn(A22, F["net_debt_chg_3y"]["prov"])
 
     def test_f1_76_no_full_filing_refuses_by_name_with_the_date_in_the_field_that_needs_the_point(self):
-        F, _ = fc.sec_fields(syn_out(), snps_like(with_full_older=False), EF, "2026-11-21")
+        F, _ = fc.sec_fields(syn_out(), snps_like(with_full_older=False), EF, "2026-11-28")
         r = F["net_debt_chg_3y"]
         self.assertEqual(r["refused"], "INSUFFICIENT_HISTORY")
         self.assertIn("одна подача нарушена", r["reason"])                 # названа причина...
@@ -1397,18 +1397,20 @@ class TestDebtChainV21FilingChoice(unittest.TestCase):
         self.assertNotIn("value", r)                                       # число не подставлено
         self.assertTrue(fc.is_ok(F["net_debt_latest"]))                    # последняя точка не затронута
         # смешивать части из разных подач нельзя и в v2.1: точка не появляется в ряде
-        s, _ = fc.net_debt_series(snps_like(with_full_older=False), EF, "2026-11-21")
+        s, _ = fc.net_debt_series(snps_like(with_full_older=False), EF, "2026-11-28")
         self.assertNotIn("2022-12-31", [r["end"] for r in s])
 
-    def test_f1_77_before_2026_11_21_the_v2_behaviour_is_unchanged(self):
-        for as_of in ("2026-11-14", "2026-11-20"):
+    def test_f1_77_before_2026_11_28_the_v2_behaviour_is_unchanged(self):
+        for as_of in ("2026-11-14", "2026-11-27"):
             s, ref = fc.net_debt_series(snps_like(), EF, as_of)
             self.assertIsNone(ref)
             self.assertNotIn("2022-12-31", [r["end"] for r in s], as_of)   # v2: неполная новая подача съедает точку
             F, _ = fc.sec_fields(syn_out(), snps_like(), EF, as_of)
             self.assertEqual(F["net_debt_chg_3y"]["refused"], "INSUFFICIENT_HISTORY", as_of)
             self.assertNotIn("одна подача нарушена", F["net_debt_chg_3y"]["reason"], as_of)   # старый текст отказа, без новой причины
-        self.assertEqual(fc.DEBT_CHAIN_V2_1_FROM, "2026-11-21")
+        self.assertEqual(fc.DEBT_CHAIN_V2_1_FROM, "2026-11-28")
+        self.assertFalse(fc.debt_chain_is_v2_1("2026-11-27"))              # граница: день до -- v2
+        self.assertTrue(fc.debt_chain_is_v2_1("2026-11-28"))               # день вступления -- v2.1
         s, _ = fc.net_debt_series(snps_like(), EF)                         # as_of=None -- v2, как прежде
         self.assertNotIn("2022-12-31", [r["end"] for r in s])
 
@@ -1417,10 +1419,10 @@ class TestDebtChainV21FilingChoice(unittest.TestCase):
         rows = [("CashAndCashEquivalentsAtCarryingValue", "2025-12-31", 10, "C", "2026-02-01"),
                 ("LongTermDebtNoncurrent", "2025-12-31", 100, "OLD", "2026-02-01"), ("DebtCurrent", "2025-12-31", 5, "OLD", "2026-02-01"),
                 ("LongTermDebtNoncurrent", "2025-12-31", 110, "NEW", "2026-03-01"), ("DebtCurrent", "2025-12-31", 7, "NEW", "2026-03-01")]
-        s, _ = fc.net_debt_series(filing_facts(rows), EF, "2026-11-21")
+        s, _ = fc.net_debt_series(filing_facts(rows), EF, "2026-11-28")
         self.assertEqual((s[-1]["val"], s[-1]["parts"][0]["accn"], s[-1]["parts"][1]["accn"]), (110 + 7 - 10, "NEW", "NEW"))
         # текущая часть не размечена нигде на дате -> 0 по v2 §1, как прежде
-        s, _ = fc.net_debt_series(filing_facts(rows[:2]), EF, "2026-11-21")
+        s, _ = fc.net_debt_series(filing_facts(rows[:2]), EF, "2026-11-28")
         self.assertEqual(s[-1]["val"], 100 - 10)
 
 

@@ -2,7 +2,7 @@
 """Отчёт влияния DECISION_2026-11-17_DEBT_CHAIN_v2_1 (§4): цепочка v2 (до закона) против v2.1 на всех именах watchlist.
 Поля долга: net_debt_latest, net_debt_chg_3y, флаг DEBT_FOR_BUYBACKS. as_of фиксируется параметром (по закону -- 2026-11-14);
 v2.1 включается подменой fc.DEBT_CHAIN_V2_1_FROM на as_of в памяти процесса (код репозитория не меняется), v2 -- штатный путь
-для as_of < 2026-11-21. SEC читается один раз на имя; цены не нужны (Tiingo не вызывается).
+для as_of < 2026-11-28. SEC читается один раз на имя; цены не нужны (Tiingo не вызывается).
 
     SEC_USER_AGENT="..." python3 tools/debt_chain_v21_impact.py --as-of 2026-11-14 --out Reports/floor1/REPORT_2026-11-18_DEBT_CHAIN_v2_1_IMPACT.md
 
