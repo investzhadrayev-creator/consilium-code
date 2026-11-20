@@ -1338,3 +1338,111 @@ class TestCoverageExactDisplay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def filing_facts(rows):
+    """companyfacts-подобная синтетика с РАЗНЫМИ подачами на одну дату: [(тег, end, val, accn, filed[, form])]."""
+    us = {}
+    for r in rows:
+        tag, end, val, accn, filed = r[:5]
+        form = r[5] if len(r) > 5 else "10-K"
+        us.setdefault(tag, {"units": {"USD": []}})["units"]["USD"].append(
+            {"end": end, "val": val, "form": form, "filed": filed, "accn": accn})
+    return {"facts": {"us-gaap": us}}
+
+
+A22, B23 = "0000000000-23-000001", "0000000000-24-000002"        # SNPS-подобно: полная подача старше, неполная новее
+CASH_22, CASH_25 = 1000, 600
+
+
+def snps_like(with_full_older=True):
+    """ФГ 2022..2025 (31.12). На 2022-12-31 две подачи: A22 (нетекущая 200 + DebtCurrent 0, filed 2023-02-01) и
+    B23 (только нетекущая 200, filed 2024-02-01, сравнительный столбец). На 2023..2025 одна подача на дату."""
+    cash = "CashAndCashEquivalentsAtCarryingValue"
+    rows = [(cash, "%d-12-31" % y, c, "0000000000-%02d-C" % (y % 100), "%d-02-01" % (y + 1)) for y, c in
+            ((2022, CASH_22), (2023, 900), (2024, 700), (2025, CASH_25))]
+    if with_full_older:
+        rows += [("LongTermDebtNoncurrent", "2022-12-31", 200, A22, "2023-02-01"), ("DebtCurrent", "2022-12-31", 0, A22, "2023-02-01")]
+    else:       # обе подачи неполные: текущая часть размечена в третьей подаче без нетекущей
+        rows += [("LongTermDebtNoncurrent", "2022-12-31", 200, A22, "2023-02-01"), ("DebtCurrent", "2022-12-31", 0, "0000000000-23-0000X", "2023-03-01")]
+    rows += [("LongTermDebtNoncurrent", "2022-12-31", 200, B23, "2024-02-01")]
+    rows += [("LongTermDebtNoncurrent", "%d-12-31" % y, v, "0000000000-%02d-D" % (y % 100), "%d-02-01" % (y + 1))
+             for y, v in ((2023, 180), (2024, 160), (2025, 140))]
+    return filing_facts(rows)
+
+
+class TestDebtChainV21FilingChoice(unittest.TestCase):
+    """DECISION_2026-11-17_DEBT_CHAIN_v2_1: выбор подачи на дату (самая поздняя ПОЛНАЯ) и сохранение причины отброшенной точки."""
+
+    def test_f1_75_a_full_older_filing_beats_an_incomplete_newer_one_from_2026_11_28(self):
+        s, ref = fc.net_debt_series(snps_like(), EF, "2026-11-28")
+        self.assertIsNone(ref)
+        p = {r["end"]: r for r in s}["2022-12-31"]                         # точка вернулась в ряд
+        self.assertEqual(p["val"], 200 + 0 - CASH_22)                      # арифметика от входных фактов
+        self.assertIn(A22, p["accn"])                                      # нетекущая и текущая -- из ОДНОЙ (полной) подачи
+        self.assertNotIn(B23, p["accn"])
+        self.assertEqual([t for t in p["tags"]][:2], ["LongTermDebtNoncurrent", "DebtCurrent"])
+        self.assertEqual(p["parts"][0]["accn"], p["parts"][1]["accn"])
+        # потребитель: поле карточки получает ЧИСЛО, а не INSUFFICIENT_HISTORY
+        F, _ = fc.sec_fields(syn_out(), snps_like(), EF, "2026-11-28")
+        self.assertEqual(F["net_debt_chg_3y"]["value"], (140 - CASH_25) - (200 - CASH_22))
+        self.assertIn(A22, F["net_debt_chg_3y"]["prov"])
+
+    def test_f1_76_no_full_filing_refuses_by_name_with_the_date_in_the_field_that_needs_the_point(self):
+        F, _ = fc.sec_fields(syn_out(), snps_like(with_full_older=False), EF, "2026-11-28")
+        r = F["net_debt_chg_3y"]
+        self.assertEqual(r["refused"], "INSUFFICIENT_HISTORY")
+        self.assertIn("одна подача нарушена", r["reason"])                 # названа причина...
+        self.assertIn("2022-12-31", r["reason"])                           # ...и дата отброшенной точки, а не просто «нет точки»
+        self.assertNotIn("value", r)                                       # число не подставлено
+        self.assertTrue(fc.is_ok(F["net_debt_latest"]))                    # последняя точка не затронута
+        # смешивать части из разных подач нельзя и в v2.1: точка не появляется в ряде
+        s, _ = fc.net_debt_series(snps_like(with_full_older=False), EF, "2026-11-28")
+        self.assertNotIn("2022-12-31", [r["end"] for r in s])
+
+    def test_f1_77_before_2026_11_28_the_v2_behaviour_is_unchanged(self):
+        for as_of in ("2026-11-14", "2026-11-27"):
+            s, ref = fc.net_debt_series(snps_like(), EF, as_of)
+            self.assertIsNone(ref)
+            self.assertNotIn("2022-12-31", [r["end"] for r in s], as_of)   # v2: неполная новая подача съедает точку
+            F, _ = fc.sec_fields(syn_out(), snps_like(), EF, as_of)
+            self.assertEqual(F["net_debt_chg_3y"]["refused"], "INSUFFICIENT_HISTORY", as_of)
+            self.assertNotIn("одна подача нарушена", F["net_debt_chg_3y"]["reason"], as_of)   # старый текст отказа, без новой причины
+        self.assertEqual(fc.DEBT_CHAIN_V2_1_FROM, "2026-11-28")
+        self.assertFalse(fc.debt_chain_is_v2_1("2026-11-27"))              # граница: день до -- v2
+        self.assertTrue(fc.debt_chain_is_v2_1("2026-11-28"))               # день вступления -- v2.1
+        s, _ = fc.net_debt_series(snps_like(), EF)                         # as_of=None -- v2, как прежде
+        self.assertNotIn("2022-12-31", [r["end"] for r in s])
+
+    def test_f1_78_v2_1_does_not_mix_parts_and_leaves_ordinary_single_filing_dates_alone(self):
+        # две подачи, обе с текущей частью: берётся самая поздняя (как в v2), значения не смешиваются
+        rows = [("CashAndCashEquivalentsAtCarryingValue", "2025-12-31", 10, "C", "2026-02-01"),
+                ("LongTermDebtNoncurrent", "2025-12-31", 100, "OLD", "2026-02-01"), ("DebtCurrent", "2025-12-31", 5, "OLD", "2026-02-01"),
+                ("LongTermDebtNoncurrent", "2025-12-31", 110, "NEW", "2026-03-01"), ("DebtCurrent", "2025-12-31", 7, "NEW", "2026-03-01")]
+        s, _ = fc.net_debt_series(filing_facts(rows), EF, "2026-11-28")
+        self.assertEqual((s[-1]["val"], s[-1]["parts"][0]["accn"], s[-1]["parts"][1]["accn"]), (110 + 7 - 10, "NEW", "NEW"))
+        # текущая часть не размечена нигде на дате -> 0 по v2 §1, как прежде
+        s, _ = fc.net_debt_series(filing_facts(rows[:2]), EF, "2026-11-28")
+        self.assertEqual(s[-1]["val"], 100 - 10)
+
+
+class TestDebtChainV21ImpactClassifier(unittest.TestCase):
+    """Условие вступления закона v2.1 (§4) проверяет tools/debt_chain_v21_impact.py: «число → отказ» не должно теряться в классификации."""
+
+    def setUp(self):
+        import debt_chain_v21_impact as imp
+        self.imp = imp
+
+    def test_f1_79_number_to_refusal_is_its_own_class_and_fails_the_gate(self):
+        num, ref = (True, "100", None), (False, "—", "MISSING_INPUT: x")
+        c = self.imp.classify
+        self.assertEqual(c(num, ref), "NUM_TO_REFUSAL")
+        self.assertEqual(c(ref, num), "REFUSAL_TO_NUM")
+        self.assertEqual(c(num, (True, "101", None)), "NUM_TO_NUM")
+        self.assertEqual(c(num, num), "SAME")
+        self.assertEqual(c(ref, (False, "—", "MISSING_INPUT: y")), "REFUSAL_REASON_CHANGED")
+        # флаг DEBT_FOR_BUYBACKS: UNDETERMINED -- не число
+        row = {"flags": {"DEBT_FOR_BUYBACKS": {"state": "UNDETERMINED", "evidence": "e"}}, "fields": {}}
+        self.assertFalse(self.imp.cell(row, "DEBT_FOR_BUYBACKS")[0])
+        row["flags"]["DEBT_FOR_BUYBACKS"] = {"state": "CLEAR", "evidence": "e"}
+        self.assertTrue(self.imp.cell(row, "DEBT_FOR_BUYBACKS")[0])
